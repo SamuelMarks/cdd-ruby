@@ -1,0 +1,63 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative '../src/cdd'
+
+def print_help
+  puts "Usage: cdd-ruby [command] [options]"
+  puts "Commands:"
+  puts "  from_openapi -i <spec.json>"
+  puts "  to_openapi -f <path/to/code>"
+  puts "  to_docs_json -i <spec.json> [--no-imports] [--no-wrapping]"
+end
+
+if ARGV.empty? || ARGV.include?('-h') || ARGV.include?('--help')
+  print_help
+  exit
+end
+
+if ARGV.include?('-v') || ARGV.include?('--version')
+  puts "1.0.0"
+  exit
+end
+
+command = ARGV.shift
+
+case command
+when 'to_openapi'
+  if ARGV[0] == '-f'
+    filepath = ARGV[1]
+    puts Cdd::Parser.parse(filepath)
+  else
+    puts "Error: Missing -f <filepath>"
+  end
+when 'from_openapi'
+  if ARGV[0] == '-i'
+    filepath = ARGV[1]
+    puts Cdd::Emitter.emit(filepath)
+  else
+    puts "Error: Missing -i <filepath>"
+  end
+when 'to_docs_json'
+  options = {}
+  filepath = nil
+  while (arg = ARGV.shift)
+    case arg
+    when '-i'
+      filepath = ARGV.shift
+    when '--no-imports'
+      options[:no_imports] = true
+    when '--no-wrapping'
+      options[:no_wrapping] = true
+    end
+  end
+  if filepath
+    puts Cdd::DocsJson::Emitter.emit(filepath, **options)
+  else
+    puts "Error: Missing -i <filepath>"
+  end
+else
+  puts "Unknown command: #{command}"
+  print_help
+  exit 1
+end

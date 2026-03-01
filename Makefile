@@ -59,6 +59,9 @@ run: build
 build_wasm:
 	@echo "Building WASM using emsdk (../emsdk) and ruby.wasm approach..."
 	
-	curl -L -o ruby.wasm https://github.com/ruby/ruby.wasm/releases/download/2.6.0/ruby-3.2-wasm32-unknown-wasip1-full.wasm
+	curl -L -o ruby.tar.gz https://github.com/ruby/ruby.wasm/releases/download/2.8.1/ruby-3.4-wasm32-unknown-wasip1-full.tar.gz
+	tar -xzf ruby.tar.gz ruby-3.4-wasm32-unknown-wasip1-full/usr/local/bin/ruby
+	mv ruby-3.4-wasm32-unknown-wasip1-full/usr/local/bin/ruby ruby.wasm
+	rm -rf ruby-3.4-wasm32-unknown-wasip1-full ruby.tar.gz
 	npx --yes wasi-vfs pack ruby.wasm --mapdir /src::./src --mapdir /bin::./bin -o cdd-ruby.wasm
 	@echo "cdd-ruby.wasm generated."

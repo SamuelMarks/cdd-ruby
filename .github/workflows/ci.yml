@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ruby-version: [ '3.1', '3.2', '3.3']
+        ruby-version: [ '3.4', '4.0']
 
     steps:
     - uses: actions/checkout@v4
@@ -29,11 +29,11 @@ jobs:
       run: bundle exec yard stats "src/**/*.rb" --list-undoc
       
     - name: Setup Node.js
-      if: matrix.ruby-version == '3.3'
+      if: matrix.ruby-version == '3.4'
       uses: actions/setup-node@v3
       with:
         node-version: '18'
 
     - name: Build WASM
-      if: matrix.ruby-version == '3.3'
+      if: matrix.ruby-version == '3.4'
       run: make build_wasm

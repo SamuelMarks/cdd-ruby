@@ -32,7 +32,7 @@ The `cdd-ruby` compiler leverages a unified architecture to support various face
 
 ## 📦 Installation
 
-Requires Ruby 3.0+. Add `gem "cdd-ruby"` to your Gemfile or run `gem install cdd-ruby`
+Requires Ruby 3.4+. Add `gem "cdd-ruby"` to your Gemfile or run `gem install cdd-ruby`
 
 ## 🛠 Usage
 
