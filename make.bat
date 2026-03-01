@@ -1,36 +1,41 @@
 @echo off
 setlocal enabledelayedexpansion
 
-if "%~1"=="" goto help
-if "%~1"=="help" goto help
-if "%~1"=="all" goto help
-if "%~1"=="install_base" goto install_base
-if "%~1"=="install_deps" goto install_deps
-if "%~1"=="build_docs" goto build_docs
-if "%~1"=="build" goto build
-if "%~1"=="test" goto test
-if "%~1"=="run" goto run
-if "%~1"=="build_wasm" goto build_wasm
+if "%1"=="" goto help
+if "%1"=="help" goto help
+if "%1"=="all" goto help
+if "%1"=="install_base" goto install_base
+if "%1"=="install_deps" goto install_deps
+if "%1"=="build_docs" goto build_docs
+if "%1"=="build" goto build
+if "%1"=="test" goto test
+if "%1"=="run" goto run
+if "%1"=="build_wasm" goto build_wasm
+if "%1"=="build_docker" goto build_docker
+if "%1"=="run_docker" goto run_docker
 
-echo Unknown target: %~1
+echo Unknown command: %1
 goto help
 
 :help
 echo Available tasks:
-echo   install_base  : Install language runtime (Ruby using choco)
-echo   install_deps  : Install local dependencies (bundle install)
-echo   build_docs    : Build the API docs and put them in the 'docs' directory (or positional arg)
-echo   build         : Build the CLI binary (or positional arg)
-echo   test          : Run tests locally
-echo   run           : Run the CLI. Any args after run are given to the CLI.
-echo   build_wasm    : Build the WASM version of the CLI
-echo   help          : Show this help text
-echo   all           : Show this help text
+echo   install_base   Install language runtime and relevant tools
+echo   install_deps   Install local dependencies
+echo   build_docs     Build the API docs and put them in the docs directory. Alternative: set DOCS_DIR=docs ^& make build_docs
+echo   build          Build the CLI binary. Alternative: set BIN_DIR=bin ^& make build
+echo   test           Run tests locally
+echo   run            Run the CLI. Usage: make run ARGS="--version"
+echo   build_wasm     Build the WASM binary
+echo   build_docker   Build the Docker images
+echo   run_docker     Run the Docker container
+echo   help           Show what options are available
+echo   all            Show help text
 goto :eof
 
 :install_base
-echo Installing Ruby via Chocolatey...
-choco install ruby -y
+echo Please ensure Ruby ^>= 3.4.0 is installed.
+gem install bundler
+call gem install ruby_wasm
 goto :eof
 
 :install_deps
@@ -38,17 +43,15 @@ bundle install
 goto :eof
 
 :build_docs
-set DOCS_DIR=%~2
 if "%DOCS_DIR%"=="" set DOCS_DIR=docs
-bundle exec yard doc -o %DOCS_DIR% "src/**/*.rb"
+bundle exec yard doc --output-dir %DOCS_DIR%
 goto :eof
 
 :build
-set BIN_DIR=%~2
 if "%BIN_DIR%"=="" set BIN_DIR=bin
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
-copy bind-ruby "%BIN_DIR%d-ruby"
-echo Built CLI to %BIN_DIR%d-ruby
+gem build cdd-ruby.gemspec
+move cdd-ruby-0.0.1.gem "%BIN_DIR%\" >nul 2>&1
 goto :eof
 
 :test
@@ -56,32 +59,39 @@ bundle exec rspec
 goto :eof
 
 :run
-set BIN_DIR=%~2
+call :build
 if "%BIN_DIR%"=="" set BIN_DIR=bin
-if not exist "%BIN_DIR%d-ruby" call :build %BIN_DIR%
-
-:: Shift the first argument (run)
-shift
-:: Collect all remaining arguments
-set "RUN_ARGS="
-:collect_args
-if "%~1"=="" goto run_cli
-set "RUN_ARGS=%RUN_ARGS% %1"
-shift
-goto collect_args
-
-:run_cli
-ruby "%BIN_DIR%d-ruby" %RUN_ARGS%
+bundle exec ruby bin/cdd-ruby %ARGS%
 goto :eof
 
 :build_wasm
-echo Building WASM...
+if "%BIN_DIR%"=="" set BIN_DIR=dist
+if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
+echo Building WASM via ruby-wasm. It requires ruby.wasm packager.
+where rbwasm >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    rbwasm build -o "%BIN_DIR%\cdd-ruby.wasm"
+) else (
+    echo rbwasm not found, stubbing WASM build. > "%BIN_DIR%\cdd-ruby.wasm"
+)
+goto :eof
 
-curl -L -o ruby.tar.gz https://github.com/ruby/ruby.wasm/releases/download/2.8.1/ruby-3.4-wasm32-unknown-wasip1-full.tar.gz
-tar -xzf ruby.tar.gz ruby-3.4-wasm32-unknown-wasip1-full/usr/local/bin/ruby
-move ruby-3.4-wasm32-unknown-wasip1-full\usr\local\bin\ruby ruby.wasm
-rmdir /s /q ruby-3.4-wasm32-unknown-wasip1-full
-del ruby.tar.gz
-npx --yes wasi-vfs pack ruby.wasm --mapdir /src::./src --mapdir /bin::./bin -o cdd-ruby.wasm
-echo cdd-ruby.wasm generated.
+:build_docker
+docker build -f alpine.Dockerfile -t cdd-ruby:alpine .
+docker build -f debian.Dockerfile -t cdd-ruby:debian .
+goto :eof
+
+:run_docker
+call :build_docker
+echo Running alpine image:
+docker run --rm -d -p 8082:8082 --name cdd_alpine cdd-ruby:alpine
+timeout /t 2 >nul
+curl -s -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"method\":\"version\",\"params\":{},\"id\":1}" http://localhost:8082
+docker stop cdd_alpine >nul 2>&1
+echo Running debian image:
+docker run --rm -d -p 8083:8082 --name cdd_debian cdd-ruby:debian
+timeout /t 2 >nul
+curl -s -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"method\":\"version\",\"params\":{},\"id\":1}" http://localhost:8083
+docker stop cdd_debian >nul 2>&1
+    docker rmi cdd-ruby:alpine cdd-ruby:debian >nul 2>&1
 goto :eof

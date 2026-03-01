@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+echo "Running tests..."
+make test
+echo "Updating coverage shields..."
+ruby scripts/update_coverage.rb
+git add README.md ARCHITECTURE.md

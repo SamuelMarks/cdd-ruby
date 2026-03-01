@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec|
   spec.name          = "cdd-ruby"
-  spec.version       = "1.0.0"
+  spec.version       = "0.0.1"
   spec.authors       = ["CDD Developer"]
   spec.email         = ["developer@example.com"]
   spec.summary       = "Compiler Driven Development for Ruby <-> OpenAPI 3.2.0"
@@ -16,4 +16,5 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["src"]
   
   spec.required_ruby_version = ">= 3.4.0"
+  spec.add_dependency "webrick", "~> 1.8"
 end
