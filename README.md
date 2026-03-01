@@ -2,11 +2,9 @@ cdd-ruby
 ============
 
 [![License](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![CI/CD](https://github.com/offscale/cdd-ruby/workflows/CI/badge.svg)](https://github.com/offscale/cdd-ruby/actions)
-<!-- COVERAGE_BADGES_START -->
+[![CI](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml)
 [![Test Coverage](https://img.shields.io/badge/coverage-100.0%25-brightgreen.svg)]()
 [![Doc Coverage](https://img.shields.io/badge/docs-100.0%25-brightgreen.svg)]()
-<!-- COVERAGE_BADGES_END -->
 
 OpenAPI ↔ Ruby. This is one compiler in a suite, all focussed on the same task: Compiler Driven Development (CDD).
 
