@@ -1,0 +1,9 @@
+/docs/
+bin
+build
+custom_bin
+/*.wasm
+/coverage/
+/doc/
+/.yardoc/
+/*.gem
