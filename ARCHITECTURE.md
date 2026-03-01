@@ -1,15 +1,9 @@
 # cdd-ruby Architecture
 
-
-
-[![License](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![CI/CD](https://github.com/offscale/cdd-ruby/workflows/CI/badge.svg)](https://github.com/offscale/cdd-ruby/actions)
 <!-- COVERAGE_BADGES_START -->
 [![Test Coverage](https://img.shields.io/badge/coverage-100.0%25-brightgreen.svg)]()
 [![Doc Coverage](https://img.shields.io/badge/docs-100.0%25-brightgreen.svg)]()
 <!-- COVERAGE_BADGES_END -->
-[![Coverage](https://codecov.io/gh/offscale/cdd-ruby/branch/master/graph/badge.svg)](https://codecov.io/gh/offscale/cdd-ruby)
-
 
 The **cdd-ruby** tool acts as a dedicated compiler and transpiler. Its fundamental architecture follows standard compiler design principles, divided into three distinct phases: **Frontend (Parsing)**, **Intermediate Representation (IR)**, and **Backend (Emitting)**.
 
@@ -27,7 +21,7 @@ graph TD
 
     subgraph Frontend [Parsers]
         A[OpenAPI .yaml/.json]:::endpoint --> P1(OpenAPI Parser):::frontend
-        B[LANGUAGE Models / Source]:::endpoint --> P2(LANGUAGE Parser):::frontend
+        B[Ruby Models / Source]:::endpoint --> P2(Ruby Parser):::frontend
         C[Server Routes / Frameworks]:::endpoint --> P3(Framework Parser):::frontend
         D[Client SDKs / ORMs]:::endpoint --> P4(Ext Parser):::frontend
     end
@@ -38,7 +32,7 @@ graph TD
 
     subgraph Backend [Emitters]
         E1(OpenAPI Emitter):::backend --> X[OpenAPI .yaml/.json]:::endpoint
-        E2(LANGUAGE Emitter):::backend --> Y[LANGUAGE Models / Structs]:::endpoint
+        E2(Ruby Emitter):::backend --> Y[Ruby Models / Structs]:::endpoint
         E3(Server Emitter):::backend --> Z[Server Routes / Controllers]:::endpoint
         E4(Client Emitter):::backend --> W[Client SDKs / API Calls]:::endpoint
         E5(Data Emitter):::backend --> V[ORM Models / CLI Parsers]:::endpoint
@@ -55,8 +49,6 @@ graph TD
     IR --> E4
     IR --> E5
 ```
-
-
 
 ## 🧩 Core Components
 

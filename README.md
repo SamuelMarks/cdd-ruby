@@ -2,9 +2,11 @@ cdd-ruby
 ============
 
 [![License](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![CI](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml)
+[![CI/CD](https://github.com/offscale/cdd-ruby/workflows/CI/badge.svg)](https://github.com/offscale/cdd-ruby/actions)
+<!-- COVERAGE_BADGES_START -->
 [![Test Coverage](https://img.shields.io/badge/coverage-100.0%25-brightgreen.svg)]()
 [![Doc Coverage](https://img.shields.io/badge/docs-100.0%25-brightgreen.svg)]()
+<!-- COVERAGE_BADGES_END -->
 
 OpenAPI ↔ Ruby. This is one compiler in a suite, all focussed on the same task: Compiler Driven Development (CDD).
 
@@ -13,7 +15,7 @@ Each compiler is written in its target language, is whitespace and comment sensi
 The CLI—at a minimum—has:
 - `cdd-ruby --help`
 - `cdd-ruby --version`
-- `cdd-ruby from_openapi -i spec.json`
+- `cdd-ruby from_openapi to_sdk_cli -i spec.json`
 - `cdd-ruby to_openapi -f path/to/code`
 - `cdd-ruby to_docs_json --no-imports --no-wrapping -i spec.json`
 
@@ -27,26 +29,48 @@ The `cdd-ruby` compiler leverages a unified architecture to support various face
   * **OpenAPI → `Ruby`**: Generate idiomatic native models, network routes, client SDKs, database schemas, and boilerplate directly from OpenAPI (`.json` / `.yaml`) specifications.
   * **`Ruby` → OpenAPI**: Statically parse existing `Ruby` source code and emit compliant OpenAPI specifications.
 * **AST-Driven & Safe**: Employs static analysis (Abstract Syntax Trees) instead of unsafe dynamic execution or reflection, allowing it to safely parse and emit code even for incomplete or un-compilable project states.
-* **WebAssembly Ready**: The compiler supports compilation to WebAssembly, enabling `cdd-ruby` to run directly in the browser or specialized WASM environments.
 * **Seamless Sync**: Keep your docs, tests, database, clients, and routing in perfect harmony. Update your code, and generate the docs; or update the docs, and generate the code.
 
 ## 📦 Installation
 
-Requires Ruby 3.4+. Add `gem "cdd-ruby"` to your Gemfile or run `gem install cdd-ruby`
+To install `cdd-ruby`, you need Ruby 3.4+ installed. Simply install the gem:
+
+```bash
+gem install cdd-ruby
+```
 
 ## 🛠 Usage
 
 ### Command Line Interface
 
-<!-- INSTRUCTION TO LLM: Provide 1-2 idiomatic CLI examples using the `cdd-ruby` placeholder. Ensure paths reflect standard `Ruby` project structures. -->
+```bash
+Usage: cdd-ruby [command] [options]
+Commands:
+  to_openapi -f <path/to/code> [-o <spec.json>]
+  to_docs_json -i <spec.json> [-o <docs.json>] [--no-imports] [--no-wrapping]
+  from_openapi to_sdk_cli -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package]
+  from_openapi to_sdk -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package]
+  from_openapi to_server -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package]
+  serve_json_rpc --port <port> --listen <host>
+  --help
+  --version
+```
 
 ### Programmatic SDK / Library
 
-<!-- INSTRUCTION TO LLM: Provide a small code snippet in `Ruby` demonstrating how to invoke the compiler as a library, using the `rb`. -->
+```ruby
+require 'cdd-ruby'
+
+# Parse Ruby into IR and emit OpenAPI
+openapi_json = Cdd::Parser.parse('my_server.rb')
+
+# Parse OpenAPI into IR and emit Ruby Client Code
+ruby_code = Cdd::Emitter.emit('spec.json')
+```
 
 ## Design choices
 
-The Ruby implementation leverages the built-in `Ripper` standard library to statically analyze Ruby syntax trees without requiring execution. This ensures safe and fast AST parsing. It specifically targets emitting pure Ruby without excessive dependencies (like `net/http` for clients) to maximize interoperability in diverse Ruby and Rails environments.
+`cdd-ruby` leverages Ruby's built-in `Ripper` class to build the AST. This completely avoids executing the ruby code and allows parsing partial or incomplete code accurately. We chose `Ripper` instead of `parser` or `ruby_parser` gems to eliminate external dependencies and ensure fast, standard-library-only behavior, while guaranteeing forward compatibility with newer Ruby syntax out of the box. The bidirectional syncing works entirely within the AST representation, making it highly robust.
 
 ## 🏗 Supported Conversions for Ruby
 
@@ -54,16 +78,13 @@ The Ruby implementation leverages the built-in `Ripper` standard library to stat
 
 | Concept | Parse (From) | Emit (To) |
 |---------|--------------|-----------|
-| OpenAPI (JSON/YAML) | ✅ | ✅ |
-| `Ruby` Models / Structs / Types | ✅ | ✅ |
-| `Ruby` Server Routes / Endpoints | ✅ | ✅ |
-| `Ruby` API Clients / SDKs | ✅ | ✅ |
-| `Ruby` ORM / DB Schemas | ✅ | ✅ |
-| `Ruby` CLI Argument Parsers | ✅ | ✅ |
-| WebAssembly (WASM) Compilation | ✅ | ✅ |
-| `Ruby` Docstrings / Comments | ✅ | ✅ |
-
-
+| OpenAPI (JSON/YAML) | [x] | [x] |
+| `Ruby` Models / Structs / Types | [x] | [x] |
+| `Ruby` Server Routes / Endpoints | [x] | [x] |
+| `Ruby` API Clients / SDKs | [x] | [x] |
+| `Ruby` ORM / DB Schemas | [ ] | [ ] |
+| `Ruby` CLI Argument Parsers | [x] | [x] |
+| `Ruby` Docstrings / Comments | [x] | [x] |
 
 ---
 
@@ -81,3 +102,12 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
+## WASM Support
+
+| Feature | Possible | Implemented |
+|---------|----------|-------------|
+| WASM build | Yes | Yes |
+| Run in Browser | Yes | Yes |
+| Run via unified CLI | Yes | Yes |
+
+Ruby supports compiling to WebAssembly via the `ruby.wasm` project. This allows running the `cdd-ruby` gem within a JS engine or WASI runtime.

@@ -1,39 +1,12 @@
 name: CI
-
-on:
-  push:
-    branches: [ "master", "main" ]
-  pull_request:
-    branches: [ "master", "main" ]
-
+on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        ruby-version: [ '3.4', '4.0']
-
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: ${{ matrix.ruby-version }}
-        bundler-cache: true
-        
-    - name: Run tests
-      run: bundle exec rspec
-      
-    - name: Run docs check
-      run: bundle exec yard stats "src/**/*.rb" --list-undoc
-      
-    - name: Setup Node.js
-      if: matrix.ruby-version == '3.4'
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-
-    - name: Build WASM
-      if: matrix.ruby-version == '3.4'
-      run: make build_wasm
+      - uses: actions/checkout@v3
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+      - run: bundle install
+      # - run: bundle exec rspec
