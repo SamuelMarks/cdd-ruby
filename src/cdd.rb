@@ -133,7 +133,7 @@ require 'fileutils'
       openapi = JSON.parse(File.read(input_file))
       
       ruby_code = "# frozen_string_literal: true\n\n"
-      ruby_code += "require 'sinatra'\nrequire 'json'\n\n"
+      ruby_code += "require 'sinatra'\nrequire 'json'\nrequire 'active_record'\n\n"
 require 'fileutils'
       
       if openapi['paths']
