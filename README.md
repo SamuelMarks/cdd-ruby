@@ -82,7 +82,7 @@ ruby_code = Cdd::Emitter.emit('spec.json')
 | `Ruby` Models / Structs / Types | [x] | [x] |
 | `Ruby` Server Routes / Endpoints | [x] | [x] |
 | `Ruby` API Clients / SDKs | [x] | [x] |
-| `Ruby` ORM / DB Schemas | [ ] | [ ] |
+| `Ruby` ORM / DB Schemas | [x] | [x] |
 | `Ruby` CLI Argument Parsers | [x] | [x] |
 | `Ruby` Docstrings / Comments | [x] | [x] |
 

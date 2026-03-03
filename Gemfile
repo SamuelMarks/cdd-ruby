@@ -13,3 +13,4 @@ gem "yard", "~> 0.9.38"
 
 gem "redcarpet", "~> 3.6"
 gem "rdoc", "~> 7.2"
+gemspec
