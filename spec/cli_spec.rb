@@ -83,8 +83,6 @@ class CliTest < Minitest::Test
     Cdd::ClientSdk::Parser.parse(tokens_sdk, ir_sdk)
     assert ir_sdk.openapi_spec["paths"]["/my_method"]
   end
-end
-
   def test_supported_keys
     assert Cdd::ServerGen::Emitter._supported_keys.any?
     assert Cdd::ServerGen::Parser._supported_keys.any?
@@ -93,3 +91,4 @@ end
     assert Cdd::ClientSdkCli::Emitter._supported_keys.any?
     assert Cdd::ClientSdkCli::Parser._supported_keys.any?
   end
+end
