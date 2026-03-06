@@ -1,10 +1,26 @@
 dist/
 /docs/
-bin
-build
-custom_bin
+/build/
+/custom_bin/
 /*.wasm
 /coverage/
 /doc/
 /.yardoc/
 /*.gem
+
+# We want to track bin/cdd-ruby, so ignore other contents but not bin itself
+/bin/*
+!/bin/cdd-ruby
+
+# Generated output directories
+/out_*/
+/out_cli/
+/out_sdk/
+/out_server/
+
+# Test / Scratch files
+/massive*.json
+/massive*.txt
+/test_*.json
+/test_*.rb
+/patch_*.rb
