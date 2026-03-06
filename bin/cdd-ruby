@@ -130,11 +130,7 @@ when 'from_openapi'
   when 'to_sdk_cli'
     puts Cdd::Emitter.emit_sdk_cli(emitter_options)
   when 'to_sdk'
-    FileUtils.mkdir_p(out) if out
-    target_file = File.join(out, 'sdk.rb')
-    content = Cdd::Emitter.emit(input || Dir.glob("#{input_dir}/*.json").first)
-    File.write(target_file, content)
-    Cdd::Scaffolding.generate(emitter_options, 'sdk')
+    puts Cdd::Emitter.emit_sdk(emitter_options)
   when 'to_server'
     puts Cdd::Emitter.emit_server(emitter_options)
   else
