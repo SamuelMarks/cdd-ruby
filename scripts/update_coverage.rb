@@ -2,7 +2,7 @@
 require 'json'
 
 # Run tests and capture output
-output = `bundle exec rspec 2>&1`
+output = `rspec 2>&1`
 
 test_cov = 0.0
 if output =~ /LOC\s+\(([\d\.]+)\%\)\s+covered/

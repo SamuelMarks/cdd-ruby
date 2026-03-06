@@ -1,7 +1,7 @@
 # cdd-ruby Architecture
 
 <!-- COVERAGE_BADGES_START -->
-[![Test Coverage](https://img.shields.io/badge/coverage-100.0%25-brightgreen.svg)]()
+[![Test Coverage](https://img.shields.io/badge/coverage-0.0%25-red.svg)]()
 [![Doc Coverage](https://img.shields.io/badge/docs-100.0%25-brightgreen.svg)]()
 <!-- COVERAGE_BADGES_END -->
 

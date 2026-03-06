@@ -66,7 +66,7 @@ module Cdd
       when 'from_openapi_to_sdk'
         input = params['i'] || params['input']
         input_dir = params['input_dir']
-        Cdd::Emitter.emit(input || Dir.glob("#{input_dir}/*.json").first)
+        Cdd::Emitter.emit_sdk(params.transform_keys(&:to_sym))
       when 'from_openapi_to_server'
         Cdd::Emitter.emit_server(params.transform_keys(&:to_sym))
       else

@@ -4,7 +4,7 @@ cdd-ruby
 [![License](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CI/CD](https://github.com/offscale/cdd-ruby/workflows/CI/badge.svg)](https://github.com/offscale/cdd-ruby/actions)
 <!-- COVERAGE_BADGES_START -->
-[![Test Coverage](https://img.shields.io/badge/coverage-100.0%25-brightgreen.svg)]()
+[![Test Coverage](https://img.shields.io/badge/coverage-0.0%25-red.svg)]()
 [![Doc Coverage](https://img.shields.io/badge/docs-100.0%25-brightgreen.svg)]()
 <!-- COVERAGE_BADGES_END -->
 
