@@ -24,3 +24,8 @@ dist/
 /test_*.json
 /test_*.rb
 /patch_*.rb
+
+# Test / Temporary files
+/rubies/
+Dockerfile.test*
+test_out.txt
