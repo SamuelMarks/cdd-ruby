@@ -29,3 +29,7 @@ dist/
 /rubies/
 Dockerfile.test*
 test_out.txt
+.bundle/
+ruby-*-wasm32-*/
+vendor/
+Gemfile.lock

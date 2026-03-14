@@ -4,7 +4,172 @@ require_relative '../src/cdd'
 class CliTest < Minitest::Test
   def setup
     File.write("dummy.rb", "# @route GET /hello\nclass User\nend\n")
-    File.write("dummy.json", File.read('massive.json'))
+    File.write("dummy.json", <<~JSON
+      {
+        "openapi": "3.2.0",
+        "info": {
+          "title": "API",
+          "version": "1.0.0"
+        },
+        "servers": [
+          {
+            "url": "https://api.example.com",
+            "description": "Production server",
+            "variables": {
+              "port": {
+                "default": "443",
+                "enum": ["443", "8443"]
+              }
+            }
+          }
+        ],
+        "components": {
+          "securitySchemes": {
+            "oauth2": {
+              "type": "oauth2",
+              "flows": {
+                "implicit": {
+                  "authorizationUrl": "https://example.com/api/oauth/dialog",
+                  "scopes": {
+                    "write:pets": "modify pets in your account",
+                    "read:pets": "read your pets"
+                  }
+                }
+              }
+            }
+          },
+          "schemas": {
+            "User": {
+              "type": "object",
+              "example": {"id": 1, "name": "John Doe"},
+              "discriminator": {
+                "propertyName": "userType",
+                "mapping": {
+                  "admin": "#/components/schemas/Admin"
+                }
+              },
+              "xml": {
+                "name": "user"
+              },
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "examples": {
+            "userExample": {
+              "externalValue": "http://example.org/examples/user-example.json"
+            }
+          }
+        },
+        "paths": {
+          "/users/{id}": {
+            "get": {
+              "operationId": "getUser",
+              "parameters": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "allowEmptyValue": false,
+                  "style": "simple",
+                  "explode": false,
+                  "allowReserved": false,
+                  "schema": {
+                    "type": "integer"
+                  }
+                }
+              ],
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    "examples": {
+                      "user": {
+                        "value": {"id": 1}
+                      }
+                    },
+                    "encoding": {
+                      "profileImage": {
+                        "contentType": "image/png, image/jpeg",
+                        "style": "form",
+                        "explode": true,
+                        "allowReserved": true
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "OK",
+                  "headers": {
+                    "X-Rate-Limit": {
+                      "description": "calls per hour allowed by the user",
+                      "required": true,
+                      "style": "simple",
+                      "explode": false,
+                      "schema": {
+                        "type": "integer",
+                        "format": "int32"
+                      }
+                    }
+                  },
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "$ref": "#/components/schemas/User"
+                      }
+                    }
+                  },
+                  "links": {
+                    "GetUserByEmail": {
+                      "operationRef": "#/paths/~1users~1{email}/get"
+                    }
+                  }
+                }
+              },
+              "callbacks": {
+                "myCallback": {
+                  "http://notificationURL.com": {
+                    "post": {
+                      "requestBody": {
+                        "content": {
+                          "application/json": {
+                            "schema": {
+                              "type": "object",
+                              "properties": {
+                                "message": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "responses": {
+                        "200": {
+                          "description": "Callback successfully processed"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    JSON
+    )
   end
 
   def teardown
@@ -83,6 +248,7 @@ class CliTest < Minitest::Test
     Cdd::ClientSdk::Parser.parse(tokens_sdk, ir_sdk)
     assert ir_sdk.openapi_spec["paths"]["/my_method"]
   end
+
   def test_supported_keys
     assert Cdd::ServerGen::Emitter._supported_keys.any?
     assert Cdd::ServerGen::Parser._supported_keys.any?
