@@ -16,12 +16,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build WASM
         run: |
-          if [ -f Makefile ] && grep -q build_wasm Makefile; then
-            make build_wasm || true
-            cp bin/cdd-ruby.wasm . || echo -n -e '\x00asm\x01\x00\x00\x00' > cdd-ruby.wasm
-          else
-            echo -n -e '\x00asm\x01\x00\x00\x00' > cdd-ruby.wasm
-          fi
+          make install_base
+          make build_wasm
+          cp dist/cdd-ruby.wasm .
       - name: Release WASM Artifact
         uses: softprops/action-gh-release@v2
         with:
