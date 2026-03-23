@@ -91,8 +91,16 @@ module Cdd
                 end
               end
               
-              ruby_code += "  def #{operation_id}\n"
-              ruby_code += "    # stub for #{method.upcase} #{path}\n"
+              ruby_code += "  def #{operation_id}(params = {})\n"
+              ruby_code += "    req_path = '#{path}'.dup\n"
+              ruby_code += "    params.each { |k, v| req_path.gsub!(\"{#\{k\}}\", v.to_s) }\n"
+              ruby_code += "    uri = URI('http://localhost' + req_path)\n"
+              ruby_code += "    uri.query = URI.encode_www_form(params) if !params.empty?\n" if method == 'get'
+              ruby_code += "    req = Net::HTTP::#{method.capitalize}.new(uri)\n"
+              ruby_code += "    req['Content-Type'] = 'application/json'\n"
+              ruby_code += "    req.body = params.to_json\n" if ['post', 'put', 'patch'].include?(method)
+              ruby_code += "    res = Net::HTTP.start(uri.hostname, uri.port) { |http| http.request(req) }\n"
+              ruby_code += "    JSON.parse(res.body) rescue res.body\n"
               ruby_code += "    # Auth Required: #{details['security']&.to_json}\n" if details['security']
               ruby_code += "  end\n\n"
             end

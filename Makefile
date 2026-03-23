@@ -47,11 +47,8 @@ build_wasm:
 	@BIN_DIR=$${BIN_DIR:-dist} ; \
 	mkdir -p $$BIN_DIR ; \
 	echo "Building WASM via ruby-wasm. It requires ruby.wasm packager." ; \
-	if command -v rbwasm >/dev/null; then \
-		rbwasm build -o $$BIN_DIR/cdd-ruby.wasm; \
-	else \
-		echo "rbwasm not found, stubbing WASM build." > $$BIN_DIR/cdd-ruby.wasm; \
-	fi
+	rbwasm build -o $$BIN_DIR/ruby.wasm --disable-gems; \
+	rbwasm pack $$BIN_DIR/ruby.wasm --dir src::/src --dir bin::/bin -o $$BIN_DIR/cdd-ruby.wasm;
 
 build_docker:
 	docker build -f alpine.Dockerfile -t cdd-ruby:alpine .
