@@ -57,11 +57,11 @@ end
 
 case command
 when 'to_openapi'
-  file = get_arg(options, :i, 'CDD_INPUT')
+  file = get_arg(options, :f, 'CDD_FILE')
   out = get_arg(options, :o, 'CDD_OUT', 'spec.json')
   
   if file.nil?
-    puts "Error: Missing -i <filepath>"
+    puts "Error: Missing -f <filepath>"
     exit 1
   end
   
