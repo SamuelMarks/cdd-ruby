@@ -33,3 +33,10 @@ test_out.txt
 ruby-*-wasm32-*/
 vendor/
 Gemfile.lock
+
+node_modules/
+__pycache__/
+*.o
+*.so
+target/
+.idea/
