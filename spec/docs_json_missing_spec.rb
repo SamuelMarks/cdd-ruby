@@ -23,25 +23,53 @@ class DocsJsonEmitMissingTest < Minitest::Test
     out = Cdd::DocsJson::Emitter.emit(@filepath)
     parsed = JSON.parse(out)
     
-    assert_equal 1, parsed.length
-    assert_equal "ruby", parsed[0]["language"]
+    endpoints = parsed["endpoints"]
+    assert endpoints.key?("/users")
+    assert endpoints["/users"].key?("get")
     
-    op = parsed[0]["operations"][0]
-    assert_equal "GET", op["method"]
-    assert_equal "/users", op["path"]
-    assert_equal "listUsers", op["operationId"]
-    assert_match(/require 'net\/http'/, op["code"]["imports"])
-    assert_match(/def call_listUsers/, op["code"]["wrapper_start"])
-    assert_match(/end/, op["code"]["wrapper_end"])
+    code = endpoints["/users"]["get"]
+    assert_match(/require 'json'/, code)
+    assert_match(/def main/, code)
+    assert_match(/response = client\.listUsers\(\)/, code)
+    assert_match(/end/, code)
   end
   
   def test_docs_json_emit_no_imports_no_wrapping
     out = Cdd::DocsJson::Emitter.emit(@filepath, no_imports: true, no_wrapping: true)
     parsed = JSON.parse(out)
-    op = parsed[0]["operations"][0]
     
-    assert_nil op["code"]["imports"]
-    assert_nil op["code"]["wrapper_start"]
-    assert_nil op["code"]["wrapper_end"]
+    code = parsed["endpoints"]["/users"]["get"]
+    
+    refute_match(/require/, code)
+    refute_match(/def main/, code)
+    refute_match(/end\n/, code)
+    assert_match(/response = client\.listUsers\(\)/, code)
+  end
+
+  def test_docs_json_emit_from_url
+    url = "https://api.example.com/openapi.json"
+    dummy_response = {
+      "openapi" => "3.2.0",
+      "paths" => {
+        "/users" => {
+          "get" => {
+            "operationId" => "listUsers"
+          }
+        }
+      }
+    }.to_json
+
+    original_get = Net::HTTP.method(:get)
+    Net::HTTP.define_singleton_method(:get) { |uri| dummy_response }
+    begin
+      out = Cdd::DocsJson::Emitter.emit(url)
+      parsed = JSON.parse(out)
+      
+      endpoints = parsed["endpoints"]
+      assert endpoints.key?("/users")
+      assert endpoints["/users"].key?("get")
+    ensure
+      Net::HTTP.define_singleton_method(:get, &original_get)
+    end
   end
 end
