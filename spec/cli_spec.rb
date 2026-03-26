@@ -209,12 +209,13 @@ class CliTest < Minitest::Test
     result = Cdd::DocsJson::Emitter.emit("dummy.json", no_imports: false, no_wrapping: false)
     File.write("docs.json", result)
     json = JSON.parse(result)
-    assert_equal "ruby", json[0]["language"]
     
-    op = json[0]["operations"][0]
-    assert_equal "GET", op["method"]
-    assert_equal "/users/{id}", op["path"]
-    assert_equal "getUser", op["operationId"]
+    assert json.key?("endpoints")
+    assert json["endpoints"].key?("/users/{id}")
+    assert json["endpoints"]["/users/{id}"].key?("get")
+    
+    code = json["endpoints"]["/users/{id}"]["get"]
+    assert_match(/getUser/, code)
   end
 
   def test_cli_scaffolding

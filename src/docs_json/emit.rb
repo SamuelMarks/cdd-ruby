@@ -4,9 +4,17 @@ require 'json'
 require 'net/http'
 require 'uri'
 
+# Documentation for Cdd
 module Cdd
+  # Module for docs_json handling
   module DocsJson
+    # Emitter for docs_json
     class Emitter
+      # Emits docs_json from an OpenAPI specification file
+      # @param filepath [String] OpenAPI spec filepath
+      # @param no_imports [Boolean] whether to omit imports
+      # @param no_wrapping [Boolean] whether to omit wrapping
+      # @return [String] generated JSON output conforming to doc schema
       def self.emit(filepath, no_imports: false, no_wrapping: false)
         if filepath.start_with?("http://") || filepath.start_with?("https://")
           uri = URI(filepath)
