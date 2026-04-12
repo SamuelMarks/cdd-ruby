@@ -2,7 +2,6 @@
 
 require 'json'
 require 'fileutils'
-require 'net/http'
 require 'ripper'
 
 require_relative 'ir'

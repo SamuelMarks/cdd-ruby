@@ -64,12 +64,12 @@ if "%BIN_DIR%"=="" set BIN_DIR=bin
 bundle exec ruby bin/cdd-ruby %ARGS%
 goto :eof
 :build_wasm
-if not defined BIN_DIR set BIN_DIR=dist
+if "%BIN_DIR%"=="" set BIN_DIR=dist
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 echo Building WASM via ruby-wasm. It requires ruby.wasm packager.
-rbwasm build -o "%BIN_DIR%\ruby.wasm" --disable-gems
-rbwasm pack "%BIN_DIR%\ruby.wasm" --dir src::/src --dir bin::/bin -o "%BIN_DIR%\cdd-ruby.wasm"
-exit /b 0
+call rbwasm build -o "%BIN_DIR%\ruby.wasm" --disable-gems
+call rbwasm pack "%BIN_DIR%\ruby.wasm" --dir src::/src --dir bin::/bin -o "%BIN_DIR%\cdd-ruby.wasm"
+goto :eof
 goto :eof
 
 :build_docker

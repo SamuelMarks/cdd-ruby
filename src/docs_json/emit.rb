@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 
 require 'json'
-require 'net/http'
 require 'uri'
+begin
+  require 'net/http'
+rescue LoadError
+  # Running in a WASM or restricted environment without socket support
+end
 
 # Documentation for Cdd
 module Cdd
@@ -17,6 +21,9 @@ module Cdd
       # @return [String] generated JSON output conforming to doc schema
       def self.emit(filepath, no_imports: false, no_wrapping: false)
         if filepath.start_with?("http://") || filepath.start_with?("https://")
+          unless defined?(Net::HTTP)
+            raise "Fetching remote OpenAPI specs is not supported in this environment (WASM/no socket)."
+          end
           uri = URI(filepath)
           response = Net::HTTP.get(uri)
           spec = JSON.parse(response)
