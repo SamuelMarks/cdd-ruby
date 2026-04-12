@@ -40,3 +40,4 @@ __pycache__/
 *.so
 target/
 .idea/
+spec.json
