@@ -4,7 +4,7 @@ on:
     branches: [ "main", "master" ]
     tags:
       - 'v*'
-      - '0.0.1'
+      - 'latest'
   pull_request:
     branches: [ "main", "master" ]
 
@@ -57,6 +57,6 @@ jobs:
         with:
           files: |
             dist/cdd-ruby.wasm
-            bin/cdd-ruby-0.0.1.gem
+            bin/*.gem
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
