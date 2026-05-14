@@ -17,9 +17,9 @@ def print_help
     Commands:
       to_openapi -f <path/to/code> [-o <spec.json>]
       to_docs_json -i <spec.json> [-o <docs.json>] [--no-imports] [--no-wrapping]
-      from_openapi to_sdk_cli -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package]
-      from_openapi to_sdk -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package]
-      from_openapi to_server -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package]
+      from_openapi to_sdk_cli -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package] [--tests]
+      from_openapi to_sdk -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package] [--tests]
+      from_openapi to_server -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package] [--tests]
       serve_json_rpc --port <port> --listen <host>
       --help
       --version
@@ -104,6 +104,7 @@ when 'from_openapi'
     when '--input-dir' then options[:input_dir] = ARGV.shift
     when '--no-github-actions' then options[:no_github_actions] = true
     when '--no-installable-package' then options[:no_installable_package] = true
+    when '--tests' then options[:tests] = true
     end
   end
 
@@ -112,6 +113,7 @@ when 'from_openapi'
   out = get_arg(options, :o, 'CDD_OUT', Dir.pwd)
   no_gh = get_arg(options, :no_github_actions, 'CDD_NO_GITHUB_ACTIONS')
   no_pkg = get_arg(options, :no_installable_package, 'CDD_NO_INSTALLABLE_PACKAGE')
+  tests = get_arg(options, :tests, 'CDD_TESTS')
   
   unless input || input_dir
     puts "Error: Missing -i <filepath> or --input-dir <dir>"
@@ -123,7 +125,8 @@ when 'from_openapi'
     input_dir: input_dir,
     output: out,
     no_github_actions: no_gh,
-    no_installable_package: no_pkg
+    no_installable_package: no_pkg,
+    tests: tests
   }
   
   case subcommand

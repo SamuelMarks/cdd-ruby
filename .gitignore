@@ -25,6 +25,29 @@ dist/
 /test_*.rb
 /patch_*.rb
 
+# Temporary generated test output directories
+test_*/
+*test_dir/
+scaffold_test_dir/
+
+# Temporary files created by scripts
+fix_*.rb
+update_*.rb
+replace_*.rb
+print_*.rb
+temp_*.rb
+
+# Common dummy files used in specs
+dummy.json
+dummy_*.json
+dummy.rb
+
+# Output artifacts
+sdk.rb
+sdk_cli.rb
+server.rb
+docs.json
+
 # Test / Temporary files
 /rubies/
 Dockerfile.test*
@@ -41,3 +64,29 @@ __pycache__/
 target/
 .idea/
 spec.json
+# Dummy directories for tests
+/dummy_cli/
+/dummy_sdk/
+/dummy_server/
+/dummy_*/
+
+# Ignore tmp or custom dev directories
+/tmp/
+/temp/
+
+# Ignore compiled/generated artifacts more broadly
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+env.bak/
+venv.bak/
+.DS_Store
+*.log
+*.sqlite3
+*.db
+coverage/
+.coverage

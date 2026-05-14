@@ -133,6 +133,19 @@ module Cdd
         if options[:output]
           Cdd::Scaffolding.generate(options, 'sdk_cli')
           File.write(File.join(options[:output], 'sdk_cli.rb'), ruby_code)
+          
+          if options[:tests]
+            ir = Cdd::IR.new
+            ir.openapi_spec = openapi
+            
+            tests_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire_relative 'sdk_cli'\n\n"
+            tests_code += Cdd::Tests::Emitter.emit(ir)
+            File.write(File.join(options[:output], 'tests.rb'), tests_code)
+            
+            mocks_code = "# frozen_string_literal: true\n\n"
+            mocks_code += Cdd::Mocks::Emitter.emit(ir)
+            File.write(File.join(options[:output], 'mocks.rb'), mocks_code)
+          end
         end
         
         ruby_code
