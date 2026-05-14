@@ -173,10 +173,12 @@ class CliTest < Minitest::Test
   end
 
   def teardown
-    ["spec.json", "docs.json", "server.rb", "sdk.rb", "sdk_cli.rb"].each { |f| File.delete(f) if File.exist?(f) }
+    ["spec.json", "docs.json", "server.rb", "sdk_cli.rb"].each { |f| File.delete(f) if File.exist?(f) }
+    
     File.delete("dummy.rb") if File.exist?("dummy.rb")
     File.delete("dummy.json") if File.exist?("dummy.json")
     FileUtils.rm_rf("scaffold_test_dir") if Dir.exist?("scaffold_test_dir")
+    FileUtils.rm_rf('test_sdk_out')
   end
 
   def test_cli_to_openapi
@@ -193,9 +195,11 @@ class CliTest < Minitest::Test
   end
 
   def test_cli_from_openapi_sdk
-    Cdd::Emitter.emit_sdk(input: "dummy.json", output: ".", no_installable_package: true, no_github_actions: true)
-    output = File.read("sdk.rb")
+    Cdd::Emitter.emit_sdk(input: "dummy.json", output: "test_sdk_out", no_installable_package: true, no_github_actions: true)
+    output = File.read("test_sdk_out/src/client.rb")
     assert_match(/def getUser/, output)
+    models_output = File.read("test_sdk_out/src/models.rb")
+    assert_match(/module Types/, models_output)
   end
 
   def test_cli_from_openapi_sdk_cli
@@ -220,11 +224,24 @@ class CliTest < Minitest::Test
 
   def test_cli_scaffolding
     out_dir = "scaffold_test_dir"
-    Cdd::Emitter.emit_sdk(input: "dummy.json", output: out_dir)
-    assert File.exist?("#{out_dir}/sdk.rb")
+    Cdd::Emitter.emit_sdk(input: "dummy.json", output: out_dir, tests: true)
+    assert File.exist?("#{out_dir}/src/client.rb")
+    assert File.exist?("#{out_dir}/src/models.rb")
+    assert File.exist?("#{out_dir}/src/tests.rb")
+    assert File.exist?("#{out_dir}/src/mocks.rb")
     assert File.exist?("#{out_dir}/generated_project.gemspec")
     assert File.exist?("#{out_dir}/Gemfile")
     assert File.exist?("#{out_dir}/.github/workflows/ci.yml")
+    
+    # test for server with composable tests and mocks
+    Cdd::Emitter.emit_server(input: "dummy.json", output: out_dir, tests: true)
+    assert File.exist?("#{out_dir}/server.rb")
+    assert File.exist?("#{out_dir}/tests.rb")
+    assert File.exist?("#{out_dir}/mocks.rb")
+
+    # test for cli with composable tests and mocks
+    Cdd::Emitter.emit_sdk_cli(input: "dummy.json", output: out_dir, tests: true)
+    assert File.exist?("#{out_dir}/sdk_cli.rb")
   end
 
   def test_parsers_for_coverage

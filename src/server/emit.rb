@@ -98,6 +98,19 @@ module Cdd
         if options[:output]
           Cdd::Scaffolding.generate(options, 'server')
           File.write(File.join(options[:output], 'server.rb'), ruby_code)
+          
+          if options[:tests]
+            ir = Cdd::IR.new
+            ir.openapi_spec = openapi
+            
+            tests_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire_relative 'server'\n\n"
+            tests_code += Cdd::Tests::Emitter.emit(ir)
+            File.write(File.join(options[:output], 'tests.rb'), tests_code)
+            
+            mocks_code = "# frozen_string_literal: true\n\n"
+            mocks_code += Cdd::Mocks::Emitter.emit(ir)
+            File.write(File.join(options[:output], 'mocks.rb'), mocks_code)
+          end
         end
         
         ruby_code
