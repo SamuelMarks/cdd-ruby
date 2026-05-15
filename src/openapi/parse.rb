@@ -19,6 +19,9 @@ module Cdd
             elsif comment =~ /#\s*@api_version\s+(.*)/
               ir.openapi_spec["info"] ||= {}
               ir.openapi_spec["info"]["version"] = $1.strip
+            elsif comment =~ /#\s*@swagger_version\s+(.*)/
+              ir.openapi_spec["swagger"] = $1.strip
+              ir.openapi_spec.delete("openapi")
             elsif comment =~ /#\s*@api_description\s+(.*)/
               ir.openapi_spec["info"] ||= {}
               ir.openapi_spec["info"]["description"] = $1.strip
