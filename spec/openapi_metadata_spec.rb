@@ -54,4 +54,23 @@ class OpenapiMetadataTest < Minitest::Test
     assert_match(/# @api_externalDocs https:\/\/docs.example.com Full documentation/, emitted)
     assert_match(/# @api_webhook newPet POST/, emitted)
   end
+
+  def test_swagger_metadata
+    code = <<~RUBY
+      # @api_title My Swagger API
+      # @api_version 1.0.0
+      # @swagger_version 2.0
+    RUBY
+
+    ir = Cdd::IR.new
+    tokens = Ripper.lex(code)
+    Cdd::Openapi::Parser.parse(tokens, ir)
+
+    assert_equal "My Swagger API", ir.openapi_spec["info"]["title"]
+    assert_equal "2.0", ir.openapi_spec["swagger"]
+    assert_nil ir.openapi_spec["openapi"]
+
+    emitted = Cdd::Openapi::Emitter.emit(ir)
+    assert_match(/# @swagger_version 2.0/, emitted)
+  end
 end
