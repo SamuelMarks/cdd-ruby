@@ -56,6 +56,25 @@ module Cdd
           end
         end
         
+        has_oauth = false
+        if openapi.dig('components', 'securitySchemes')
+          openapi['components']['securitySchemes'].each do |sname, scheme|
+            has_oauth = true if scheme['type'] == 'oauth2'
+          end
+        end
+        
+        if has_oauth
+          client_code += "  attr_accessor :access_token\n"
+          client_code += "  def authorize_oauth2(client_id, client_secret, token_url)\n"
+          client_code += "    uri = URI(token_url)\n"
+          client_code += "    req = Net::HTTP::Post.new(uri)\n"
+          client_code += "    req.basic_auth(client_id, client_secret)\n"
+          client_code += "    req.set_form_data('grant_type' => 'client_credentials')\n"
+          client_code += "    res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') { |http| http.request(req) }\n"
+          client_code += "    @access_token = JSON.parse(res.body)['access_token']\n"
+          client_code += "  end\n"
+        end
+        
         if openapi['paths']
           openapi['paths'].each do |path, methods|
             methods.each do |method, details|
@@ -125,6 +144,18 @@ module Cdd
           end
         end
         
+        if openapi['webhooks']
+          client_code += "  # Webhooks:\n"
+          openapi['webhooks'].each do |wname, methods|
+            methods.each do |wmethod, wdetails|
+              client_code += "  # @webhook #{wname} [#{wmethod.upcase}]\n"
+              client_code += "  def handle_webhook_#{wname}(payload)\n"
+              client_code += "    # Implement webhook logic here\n"
+              client_code += "  end\n"
+            end
+          end
+        end
+
         client_code += "end\n"
         
         if options[:output]

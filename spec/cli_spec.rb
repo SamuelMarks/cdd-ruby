@@ -67,6 +67,17 @@ class CliTest < Minitest::Test
             }
           }
         },
+        "webhooks": {
+          "newPet": {
+            "post": {
+              "responses": {
+                "200": {
+                  "description": "OK"
+                }
+              }
+            }
+          }
+        },
         "paths": {
           "/users/{id}": {
             "get": {
