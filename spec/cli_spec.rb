@@ -196,9 +196,9 @@ class CliTest < Minitest::Test
 
   def test_cli_from_openapi_sdk
     Cdd::Emitter.emit_sdk(input: "dummy.json", output: "test_sdk_out", no_installable_package: true, no_github_actions: true)
-    output = File.read("test_sdk_out/src/client.rb")
+    output = File.read("test_sdk_out/lib/client.rb")
     assert_match(/def getUser/, output)
-    models_output = File.read("test_sdk_out/src/models.rb")
+    models_output = File.read("test_sdk_out/lib/models.rb")
     assert_match(/module Types/, models_output)
   end
 
@@ -225,10 +225,10 @@ class CliTest < Minitest::Test
   def test_cli_scaffolding
     out_dir = "scaffold_test_dir"
     Cdd::Emitter.emit_sdk(input: "dummy.json", output: out_dir, tests: true)
-    assert File.exist?("#{out_dir}/src/client.rb")
-    assert File.exist?("#{out_dir}/src/models.rb")
-    assert File.exist?("#{out_dir}/src/tests.rb")
-    assert File.exist?("#{out_dir}/src/mocks.rb")
+    assert File.exist?("#{out_dir}/lib/client.rb")
+    assert File.exist?("#{out_dir}/lib/models.rb")
+    assert File.exist?("#{out_dir}/lib/tests.rb")
+    assert File.exist?("#{out_dir}/lib/mocks.rb")
     assert File.exist?("#{out_dir}/generated_project.gemspec")
     assert File.exist?("#{out_dir}/Gemfile")
     assert File.exist?("#{out_dir}/.github/workflows/ci.yml")
