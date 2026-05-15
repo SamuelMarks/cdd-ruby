@@ -57,12 +57,22 @@ end
 
 case command
 when 'to_openapi'
-  file = get_arg(options, :f, 'CDD_FILE')
+  file = get_arg(options, :f, 'CDD_FILE') || get_arg(options, :i, 'CDD_INPUT')
   out = get_arg(options, :o, 'CDD_OUT', 'spec.json')
   
   if file.nil?
-    puts "Error: Missing -f <filepath>"
+    puts "Error: Missing -f <filepath> or -i <filepath>"
     exit 1
+  end
+  
+  if File.directory?(file)
+    # Search for lib/client.rb or similar
+    if File.exist?(File.join(file, 'lib', 'client.rb'))
+      file = File.join(file, 'lib', 'client.rb')
+    else
+      files = Dir.glob(File.join(file, '**', '*.rb'))
+      file = files.first if files.any?
+    end
   end
   
   result = Cdd::Parser.parse(file)
