@@ -25,6 +25,7 @@ module Cdd
               spec.summary       = "Auto-generated #{type}"
               spec.files         = Dir.glob("**/*.rb")
               spec.require_paths = ["lib"]
+              spec.add_development_dependency "rspec", "~> 3.0"
             end
           GEMSPEC
           File.write(gemspec_path, gemspec)
@@ -35,6 +36,7 @@ module Cdd
           gemfile = <<~GEMFILE
             source 'https://rubygems.org'
             gemspec
+            gem 'rspec', group: :test
           GEMFILE
           gemfile += "gem 'sinatra'\n" if type == 'server'
           File.write(gemfile_path, gemfile)
