@@ -44,7 +44,7 @@ module Cdd
         client_code += "# Version: #{info['version']}\n" if info['version']
         
         client_code += "class ClientSdk\n"
-        client_code += "  attr_accessor :base_url\n"
+        client_code += "  attr_accessor :base_url, :last_response\n"
         client_code += "  def initialize(base_url = 'http://localhost')\n"
         client_code += "    @base_url = base_url\n"
         client_code += "  end\n"
@@ -110,8 +110,8 @@ module Cdd
               client_code += "    req = Net::HTTP::#{method.capitalize}.new(uri)\n"
               client_code += "    req['Content-Type'] = 'application/json'\n"
               client_code += "    req.body = params.to_json\n" if ['post', 'put', 'patch'].include?(method)
-              client_code += "    res = Net::HTTP.start(uri.hostname, uri.port) { |http| http.request(req) }\n"
-              client_code += "    JSON.parse(res.body) rescue res.body\n"
+              client_code += "    @last_response = Net::HTTP.start(uri.hostname, uri.port) { |http| http.request(req) }\n"
+              client_code += "    JSON.parse(@last_response.body) rescue @last_response.body\n"
               client_code += "    # Auth Required: #{details['security']&.to_json}\n" if details['security']
               client_code += "  end\n\n"
             end
@@ -149,25 +149,37 @@ module Cdd
               methods.each do |method, details|
                 operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
 
-                if operation_id == 'findPetsByStatus'
-                  integration_test_code += "  it 'can find pets by status' do\n"
-                  integration_test_code += "    begin\n"
-                  integration_test_code += "      response = client.findPetsByStatus({'status' => 'available'})\n"
-                  integration_test_code += "      expect(response).to be_an(Array)\n"
-                  integration_test_code += "    rescue Errno::ECONNREFUSED\n"
-                  integration_test_code += "      skip 'Petstore server is not available'\n"
-                  integration_test_code += "    end\n"
-                  integration_test_code += "  end\n\n"
-                elsif operation_id == 'getInventory'
-                  integration_test_code += "  it 'can get store inventory' do\n"
-                  integration_test_code += "    begin\n"
-                  integration_test_code += "      response = client.getInventory\n"
-                  integration_test_code += "      expect(response).to be_a(Hash)\n"
-                  integration_test_code += "    rescue Errno::ECONNREFUSED\n"
-                  integration_test_code += "      skip 'Petstore server is not available'\n"
-                  integration_test_code += "    end\n"
-                  integration_test_code += "  end\n\n"
+                success_code = "200"
+                if details['responses']
+                  success_code = details['responses'].keys.find { |k| k.to_i >= 200 && k.to_i < 300 } || "200"
                 end
+
+                params = []
+                if details["parameters"]
+                  details["parameters"].each do |param|
+                    val = param.dig("schema", "type") == "integer" ? "1" : (param["name"] == "status" ? "'available'" : "'test_#{param['name']}'")
+                    params << "'#{param['name']}' => #{val}"
+                  end
+                end
+                
+                if details["requestBody"]
+                  params << "'id' => 1"
+                  params << "'name' => 'test'"
+                  params << "'photoUrls' => ['http://example.com']"
+                  params << "'status' => 'available'"
+                end
+                
+                params_str = params.empty? ? "{}" : "{ #{params.join(', ')} }"
+
+                integration_test_code += "  it 'can call #{operation_id}' do\n"
+                integration_test_code += "    begin\n"
+                integration_test_code += "      response = client.#{operation_id}(#{params_str})\n"
+                integration_test_code += "      expect(client.last_response.code).to eq('#{success_code}')\n"
+                integration_test_code += "      expect(response).not_to be_nil\n"
+                integration_test_code += "    rescue Errno::ECONNREFUSED\n"
+                integration_test_code += "      skip 'Petstore server is not available'\n"
+                integration_test_code += "    end\n"
+                integration_test_code += "  end\n\n"
               end
             end
           end

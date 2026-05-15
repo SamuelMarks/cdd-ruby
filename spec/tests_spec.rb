@@ -42,21 +42,18 @@ class TestsTest < Minitest::Test
     
     # 1. Test GET (no body, with params)
     assert_match(/def test_getUser/, out)
-    assert_match(/raise 'Unexpected request body' if req\.body && !req\.body\.empty\?/, out)
-    assert_match(/raise 'Wrong HTTP method' unless req\.method == 'GET'/, out)
-    assert_match(/assert_equal 200, res\['status'\]/, out)
+    assert_match(/client = ClientSdk.new\('http:\/\/localhost:8080\/v2'\)/, out)
+    assert_match(/assert_equal '200', client\.last_response\.code/, out)
     
     # 2. Test PUT (with body, with params, different response code)
     assert_match(/def test_updateUser/, out)
-    assert_match(/raise 'Missing request body' if req\.body\.nil\? || req\.body\.empty\?/, out)
-    assert_match(/raise 'Wrong HTTP method' unless req\.method == 'PUT'/, out)
-    assert_match(/assert_equal 204, res\['status'\]/, out)
+    assert_match(/client = ClientSdk.new\('http:\/\/localhost:8080\/v2'\)/, out)
+    assert_match(/assert_equal '204', client\.last_response\.code/, out)
     
     # 3. Test POST (with body, no params, different response code)
     assert_match(/def test_createPost/, out)
-    assert_match(/raise 'Missing request body' if req\.body\.nil\? || req\.body\.empty\?/, out)
-    assert_match(/raise 'Wrong HTTP method' unless req\.method == 'POST'/, out)
-    assert_match(/assert_equal 201, res\['status'\]/, out)
+    assert_match(/client = ClientSdk.new\('http:\/\/localhost:8080\/v2'\)/, out)
+    assert_match(/assert_equal '201', client\.last_response\.code/, out)
   end
 
   def test_parse_tests

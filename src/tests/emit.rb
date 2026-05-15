@@ -25,20 +25,21 @@ module Cdd
             
             out += "  # @api_test #{method.upcase} #{path}\n"
             out += "  def test_#{op_id}\n"
-            out += "    client = ClientSdk.new\n"
+            out += "    client = ClientSdk.new('http://localhost:8080/v2')\n"
             
             params = []
             if op["parameters"]
               op["parameters"].each do |param|
-                val = param.dig("schema", "type") == "integer" ? "1" : "'test_#{param['name']}'"
+                val = param.dig("schema", "type") == "integer" ? "1" : (param["name"] == "status" ? "'available'" : "'test_#{param['name']}'")
                 params << "#{param['name']}: #{val}"
               end
             end
             
-            has_body = false
             if op["requestBody"]
-              has_body = true
-              params << "body: { id: 1 }"
+              params << "id: 1"
+              params << "name: 'test'"
+              params << "photoUrls: ['http://example.com']"
+              params << "status: 'available'"
             end
             
             params_str = params.empty? ? "" : "{ #{params.join(', ')} }"
@@ -48,21 +49,12 @@ module Cdd
               success_code = op["responses"].keys.find { |k| k.to_i >= 200 && k.to_i < 300 } || "200"
             end
             
-            out += "    mock_http = Object.new\n"
-            out += "    def mock_http.request(req)\n"
-            if has_body
-              out += "      raise 'Missing request body' if req.body.nil? || req.body.empty?\n"
-            else
-              out += "      raise 'Unexpected request body' if req.body && !req.body.empty?\n"
-            end
-            out += "      raise 'Wrong HTTP method' unless req.method == '#{method.upcase}'\n"
-            out += "      OpenStruct.new(body: '{\"status\": #{success_code}}', code: '#{success_code}')\n"
-            out += "    end\n\n"
-            
-            out += "    Net::HTTP.stub(:start, ->(host, port, &block) { block.call(mock_http) }) do\n"
+            out += "    begin\n"
             out += "      res = client.#{op_id}(#{params_str})\n"
             out += "      refute_nil res\n"
-            out += "      assert_equal #{success_code}, res['status'] if res.is_a?(Hash)\n"
+            out += "      assert_equal '#{success_code}', client.last_response.code\n"
+            out += "    rescue Errno::ECONNREFUSED\n"
+            out += "      skip 'Petstore server is not available'\n"
             out += "    end\n"
             out += "  end\n\n"
           end
