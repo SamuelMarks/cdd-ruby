@@ -7,7 +7,7 @@ module Cdd
     # Emits docstrings from IR
     class Emitter
       # Emits ruby docstrings
-      # @param ir [Cdd::IR]
+      # @param _ir [Cdd::IR]
       # @return [String]
       def self.emit(_ir)
         ''
