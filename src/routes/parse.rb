@@ -11,29 +11,28 @@ module Cdd
       # @param ir [Cdd::IR] Intermediate Representation
       def self.parse(tokens, ir)
         tokens.each_with_index do |token, i|
-          if token[1] == :on_ident && %w[get post put delete patch options head trace].include?(token[2].downcase)
-            # Find next non-space token
-            j = i + 1
-            while j < tokens.size && tokens[j][1] == :on_sp
-              j += 1
-            end
-            
-            # Expecting string content
-            if tokens[j] && (tokens[j][1] == :on_tstring_beg || tokens[j][1] == :on_tstring_content)
-              # if it's tstring_beg, find the actual content
-              path_token = tokens[j..j+2].find { |t| t[1] == :on_tstring_content }
-              if path_token
-                method = token[2].downcase
-                path = path_token[2]
-                
-                ir.openapi_spec["paths"] ||= {}
-                ir.openapi_spec["paths"][path] ||= {}
-                ir.openapi_spec["paths"][path][method] ||= {
-                  "responses" => { "200" => { "description" => "OK" } }
-                }
-              end
-            end
-          end
+          next unless token[1] == :on_ident && %w[get post put delete patch options head
+                                                  trace].include?(token[2].downcase)
+
+          # Find next non-space token
+          j = i + 1
+          j += 1 while j < tokens.size && tokens[j][1] == :on_sp
+
+          # Expecting string content
+          next unless tokens[j] && %i[on_tstring_beg on_tstring_content].include?(tokens[j][1])
+
+          # if it's tstring_beg, find the actual content
+          path_token = tokens[j..j + 2].find { |t| t[1] == :on_tstring_content }
+          next unless path_token
+
+          method = token[2].downcase
+          path = path_token[2]
+
+          ir.openapi_spec['paths'] ||= {}
+          ir.openapi_spec['paths'][path] ||= {}
+          ir.openapi_spec['paths'][path][method] ||= {
+            'responses' => { '200' => { 'description' => 'OK' } }
+          }
         end
       end
     end

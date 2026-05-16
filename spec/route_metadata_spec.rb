@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 
 class RouteMetadataTest < Minitest::Test
@@ -15,13 +17,13 @@ class RouteMetadataTest < Minitest::Test
     ir = Cdd::IR.new
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
-    
-    op = ir.openapi_spec["paths"]["/users"]["get"]
-    assert_equal "listUsers", op["operationId"]
-    assert_equal "Get users", op["summary"]
-    assert_equal "Fetches all users from the database", op["description"]
-    assert_equal ["Users", "Admin"], op["tags"]
-    
+
+    op = ir.openapi_spec['paths']['/users']['get']
+    assert_equal 'listUsers', op['operationId']
+    assert_equal 'Get users', op['summary']
+    assert_equal 'Fetches all users from the database', op['description']
+    assert_equal %w[Users Admin], op['tags']
+
     emitted = Cdd::Routes::Emitter.emit(ir)
     assert_match(/# @operationId listUsers/, emitted)
     assert_match(/# @summary Get users/, emitted)

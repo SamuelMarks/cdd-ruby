@@ -1,7 +1,19 @@
 #!/bin/sh
 set -e
+
+echo "Running code formatting and linter..."
+# First run auto-code format fix
+bundle exec rubocop -A || true
+# Then recheck
+bundle exec rubocop
+
 echo "Running tests..."
 make test
+
+echo "Building..."
+make build
+
 echo "Updating coverage shields..."
-ruby scripts/update_coverage.rb
-git add README.md ARCHITECTURE.md
+python3 scripts/update_badges.py
+
+git add README.md

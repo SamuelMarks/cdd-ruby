@@ -23,7 +23,14 @@ def main():
     except Exception as e:
         print(f'Coverage calculation failed: {e}')
         test_cov = 0
-    doc_cov = 100
+    try:
+        res = subprocess.run(["bundle", "exec", "yard", "stats"], capture_output=True, text=True)
+        out = res.stdout + res.stderr
+        m = re.search(r'([0-9.]+)%\s+documented', out)
+        doc_cov = int(float(m.group(1))) if m else 0
+    except Exception as e:
+        print(f'Doc coverage calculation failed: {e}')
+        doc_cov = 0
 
     test_color = get_color(test_cov)
     doc_color = get_color(doc_cov)

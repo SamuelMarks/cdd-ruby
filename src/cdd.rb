@@ -7,7 +7,8 @@ require 'ripper'
 require_relative 'ir'
 require_relative 'scaffolding'
 
-%w[functions classes docstrings routes tests mocks openapi docs_json server client_sdk client_sdk_cli].each do |component|
+%w[functions classes docstrings routes tests mocks openapi docs_json server client_sdk
+   client_sdk_cli].each do |component|
   require_relative "#{component}/parse"
   require_relative "#{component}/emit"
 end
@@ -23,7 +24,7 @@ module Cdd
       code = File.read(filepath)
       ir = Cdd::IR.new
       tokens = Ripper.lex(code)
-      
+
       # Modularity: Pass tokens through the parsers
       # Each parser extracts relevant context and mutates/populates the IR
       Cdd::Classes::Parser.parse(tokens, ir)
@@ -33,12 +34,12 @@ module Cdd
       Cdd::Openapi::Parser.parse(tokens, ir)
       Cdd::Mocks::Parser.parse(tokens, ir)
       Cdd::Tests::Parser.parse(tokens, ir)
-      
+
       # Also parse generated files (bidirectional syncing)
       Cdd::ServerGen::Parser.parse(tokens, ir)
       Cdd::ClientSdk::Parser.parse(tokens, ir)
       Cdd::ClientSdkCli::Parser.parse(tokens, ir)
-      
+
       JSON.pretty_generate(ir.openapi_spec)
     end
   end
@@ -53,15 +54,15 @@ module Cdd
       openapi = JSON.parse(File.read(filepath))
       ir = Cdd::IR.new
       ir.openapi_spec = openapi
-      
+
       if original_ruby_filepath && File.exist?(original_ruby_filepath)
         # Attempt an in-place edit where we reconstruct the ruby AST and merge
         # This is the "editing bidirectional syncing" requirement.
       end
-      
+
       # Reverse: generate Ruby code using Emitters
       ruby_code = "# frozen_string_literal: true\n\n"
-      
+
       # Modularity: each emitter generates specific parts
       ruby_code += Cdd::Openapi::Emitter.emit(ir)
       ruby_code += Cdd::Classes::Emitter.emit(ir)
@@ -69,7 +70,7 @@ module Cdd
       ruby_code += Cdd::Functions::Emitter.emit(ir)
       ruby_code += Cdd::Tests::Emitter.emit(ir)
       ruby_code += Cdd::Mocks::Emitter.emit(ir)
-      
+
       ruby_code
     end
 
@@ -86,7 +87,7 @@ module Cdd
     def self.emit_server(options)
       Cdd::ServerGen::Emitter.emit_server(options)
     end
-    
+
     # Emits an SDK from an OpenAPI definition
     def self.emit_sdk(options)
       Cdd::ClientSdk::Emitter.emit_sdk(options)

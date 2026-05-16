@@ -9,8 +9,8 @@ module Cdd
       # Emits ruby docstrings
       # @param ir [Cdd::IR]
       # @return [String]
-      def self.emit(ir)
-        ""
+      def self.emit(_ir)
+        ''
       end
     end
   end

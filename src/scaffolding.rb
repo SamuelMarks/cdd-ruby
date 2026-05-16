@@ -13,10 +13,10 @@ module Cdd
     def self.generate(options, type, project_name = 'generated_project')
       out_dir = options[:output] || Dir.pwd
       FileUtils.mkdir_p(out_dir) unless Dir.exist?(out_dir)
-      
+
       unless options[:no_installable_package]
         gemspec_path = File.join(out_dir, "#{project_name}.gemspec")
-        unless Dir.glob(File.join(out_dir, "*.gemspec")).any?
+        unless Dir.glob(File.join(out_dir, '*.gemspec')).any?
           gemspec = <<~GEMSPEC
             Gem::Specification.new do |spec|
               spec.name          = "#{project_name}"
@@ -30,8 +30,8 @@ module Cdd
           GEMSPEC
           File.write(gemspec_path, gemspec)
         end
-        
-        gemfile_path = File.join(out_dir, "Gemfile")
+
+        gemfile_path = File.join(out_dir, 'Gemfile')
         unless File.exist?(gemfile_path)
           gemfile = <<~GEMFILE
             source 'https://rubygems.org'
@@ -42,29 +42,29 @@ module Cdd
           File.write(gemfile_path, gemfile)
         end
       end
-      
-      unless options[:no_github_actions]
-        gh_dir = File.join(out_dir, '.github', 'workflows')
-        FileUtils.mkdir_p(gh_dir)
-        ci_path = File.join(gh_dir, "ci.yml")
-        unless File.exist?(ci_path)
-          ci = <<~CI
-            name: CI
-            on: [push, pull_request]
-            jobs:
-              test:
-                runs-on: ubuntu-latest
-                steps:
-                  - uses: actions/checkout@v3
-                  - uses: ruby/setup-ruby@v1
-                    with:
-                      ruby-version: '3.4'
-                  - run: bundle install
-                  # - run: bundle exec rspec
-          CI
-          File.write(ci_path, ci)
-        end
-      end
+
+      return if options[:no_github_actions]
+
+      gh_dir = File.join(out_dir, '.github', 'workflows')
+      FileUtils.mkdir_p(gh_dir)
+      ci_path = File.join(gh_dir, 'ci.yml')
+      return if File.exist?(ci_path)
+
+      ci = <<~CI
+        name: CI
+        on: [push, pull_request]
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v3
+              - uses: ruby/setup-ruby@v1
+                with:
+                  ruby-version: '3.4'
+              - run: bundle install
+              # - run: bundle exec rspec
+      CI
+      File.write(ci_path, ci)
     end
   end
 end
