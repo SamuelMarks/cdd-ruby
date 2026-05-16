@@ -1,10 +1,34 @@
 repos:
-
   - repo: local
     hooks:
+      - id: auto-format
+        name: Auto Format
+        entry: bash -c 'bundle exec rubocop -A || true'
+        language: system
+        types: [ruby]
+        pass_filenames: false
+
+      - id: lint
+        name: Lint
+        entry: bundle exec rubocop
+        language: system
+        types: [ruby]
+        pass_filenames: false
+
+      - id: build
+        name: Build
+        entry: make build
+        language: system
+        pass_filenames: false
+
+      - id: test
+        name: Test
+        entry: make test
+        language: system
+        pass_filenames: false
+
       - id: update-badges
         name: Update Badges
         entry: python3 scripts/update_badges.py
         language: system
-        files: ^README\.md$
         pass_filenames: false

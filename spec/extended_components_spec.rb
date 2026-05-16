@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 
 class ExtendedComponentsTest < Minitest::Test
@@ -13,16 +15,17 @@ class ExtendedComponentsTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    rb = ir.openapi_spec["components"]["requestBodies"]["UserBody"]
-    assert_equal "#/components/schemas/User", rb["content"]["application/json"]["schema"]["$ref"]
-    assert_equal true, rb["required"]
-    assert_equal "The user body", rb["description"]
-    
-    op = ir.openapi_spec["paths"]["/users"]["post"]
-    assert_equal "#/components/requestBodies/UserBody", op["requestBody"]["$ref"]
-    
+    rb = ir.openapi_spec['components']['requestBodies']['UserBody']
+    assert_equal '#/components/schemas/User', rb['content']['application/json']['schema']['$ref']
+    assert_equal true, rb['required']
+    assert_equal 'The user body', rb['description']
+
+    op = ir.openapi_spec['paths']['/users']['post']
+    assert_equal '#/components/requestBodies/UserBody', op['requestBody']['$ref']
+
     out = Cdd::Routes::Emitter.emit(ir)
-    assert_match(/@component_request_body UserBody \[User\] application\/json required:true description:The user body/, out)
+    assert_match(%r{@component_request_body UserBody \[User\] application/json required:true description:The user body},
+                 out)
     assert_match(/@request_body_ref UserBody/, out)
   end
 
@@ -39,13 +42,13 @@ class ExtendedComponentsTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    h = ir.openapi_spec["components"]["headers"]["RateLimit"]
-    assert_equal "integer", h["schema"]["type"]
-    assert_equal "Rate limit", h["description"]
-    
-    op = ir.openapi_spec["paths"]["/limits"]["get"]
-    assert_equal "#/components/headers/RateLimit", op["responses"]["200"]["headers"]["X-Rate-Limit"]["$ref"]
-    
+    h = ir.openapi_spec['components']['headers']['RateLimit']
+    assert_equal 'integer', h['schema']['type']
+    assert_equal 'Rate limit', h['description']
+
+    op = ir.openapi_spec['paths']['/limits']['get']
+    assert_equal '#/components/headers/RateLimit', op['responses']['200']['headers']['X-Rate-Limit']['$ref']
+
     out = Cdd::Routes::Emitter.emit(ir)
     assert_match(/@component_header RateLimit \[integer\] description:Rate limit/, out)
     assert_match(/@response_header_ref 200 X-Rate-Limit RateLimit/, out)
@@ -64,16 +67,18 @@ class ExtendedComponentsTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    l = ir.openapi_spec["components"]["links"]["GetUser"]
-    assert_equal "getUser", l["operationId"]
-    assert_equal "$response.body#/id", l["parameters"]["id"]
-    assert_equal "Link to user", l["description"]
-    
-    op = ir.openapi_spec["paths"]["/linked"]["get"]
-    assert_equal "#/components/links/GetUser", op["responses"]["200"]["links"]["GetUserLink"]["$ref"]
-    
+    l = ir.openapi_spec['components']['links']['GetUser']
+    assert_equal 'getUser', l['operationId']
+    assert_equal '$response.body#/id', l['parameters']['id']
+    assert_equal 'Link to user', l['description']
+
+    op = ir.openapi_spec['paths']['/linked']['get']
+    assert_equal '#/components/links/GetUser', op['responses']['200']['links']['GetUserLink']['$ref']
+
     out = Cdd::Routes::Emitter.emit(ir)
-    assert_match(/@component_link GetUser operationId:getUser parameters\.id:\$response\.body#\/id description:Link to user/, out)
+    assert_match(
+      %r{@component_link GetUser operationId:getUser parameters\.id:\$response\.body#/id description:Link to user}, out
+    )
     assert_match(/@link_ref 200 GetUserLink GetUser/, out)
   end
 end

@@ -15,16 +15,21 @@ module Cdd
         in_mock = false
         schema = nil
         example_name = nil
-        mock_body = ""
-        
-                infer_schema = ->(val) do
+        mock_body = ''
+
+        infer_schema = lambda do |val|
           case val
           when String then { 'type' => 'string' }
           when Integer then { 'type' => 'integer' }
           when Float then { 'type' => 'number' }
           when TrueClass, FalseClass then { 'type' => 'boolean' }
           when Array
-            val.empty? ? { 'type' => 'array', 'items' => {} } : { 'type' => 'array', 'items' => infer_schema.call(val.first) }
+            if val.empty?
+              { 'type' => 'array',
+                'items' => {} }
+            else
+              { 'type' => 'array', 'items' => infer_schema.call(val.first) }
+            end
           when Hash
             props = {}
             val.each { |k, v| props[k] = infer_schema.call(v) }
@@ -34,58 +39,51 @@ module Cdd
           end
         end
 
-process_mock = -> do
-          begin
-            parsed = JSON.parse(mock_body)
-            ir.openapi_spec["components"] ||= {}
-            ir.openapi_spec["components"]["examples"] ||= {}
-            ir.openapi_spec["components"]["examples"][example_name] = {
-              "summary" => "Example for #{schema}",
-              "value" => parsed
-            }
-            ir.openapi_spec["components"]["schemas"] ||= {}
-            ir.openapi_spec["components"]["schemas"][schema] ||= { "type" => "object", "properties" => {} }
-            inferred = infer_schema.call(parsed)
-            if inferred["properties"]
-              inferred["properties"].each do |k, v|
-                              ir.openapi_spec["components"]["schemas"][schema]["properties"][k] = v
-            end
+        process_mock = lambda do
+          parsed = JSON.parse(mock_body)
+          ir.openapi_spec['components'] ||= {}
+          ir.openapi_spec['components']['examples'] ||= {}
+          ir.openapi_spec['components']['examples'][example_name] = {
+            'summary' => "Example for #{schema}",
+            'value' => parsed
+          }
+          ir.openapi_spec['components']['schemas'] ||= {}
+          ir.openapi_spec['components']['schemas'][schema] ||= { 'type' => 'object', 'properties' => {} }
+          inferred = infer_schema.call(parsed)
+          inferred['properties']&.each do |k, v|
+            ir.openapi_spec['components']['schemas'][schema]['properties'][k] = v
           end
         rescue JSON::ParserError
-
-            # ignored
-          end
+          # ignored
         end
 
         tokens.each do |token|
           if token[1] == :on_comment
             if token[2] =~ /#\s*@mock\s+\[(\w+)\]\s+(\w+)/
-  process_mock.call if in_mock
-  in_mock = true
-  schema = $1
-  example_name = $2
-  mock_body = ""
-elsif token[2] =~ /#\s*@example_external\s+\[(\w+)\]\s+(\w+)\s+(.*)/
-  process_mock.call if in_mock
-  in_mock = false
-  schema = $1
-  ex_name = $2
-  ext_url = $3.strip
-  ir.openapi_spec["components"] ||= {}
-  ir.openapi_spec["components"]["examples"] ||= {}
-  ir.openapi_spec["components"]["examples"][ex_name] = {
-    "summary" => "Example for #{schema}",
-    "externalValue" => ext_url
-  }
+              process_mock.call if in_mock
+              in_mock = true
+              schema = ::Regexp.last_match(1)
+              example_name = ::Regexp.last_match(2)
+              mock_body = ''
+            elsif token[2] =~ /#\s*@example_external\s+\[(\w+)\]\s+(\w+)\s+(.*)/
+              process_mock.call if in_mock
+              in_mock = false
+              schema = ::Regexp.last_match(1)
+              ex_name = ::Regexp.last_match(2)
+              ext_url = ::Regexp.last_match(3).strip
+              ir.openapi_spec['components'] ||= {}
+              ir.openapi_spec['components']['examples'] ||= {}
+              ir.openapi_spec['components']['examples'][ex_name] = {
+                'summary' => "Example for #{schema}",
+                'externalValue' => ext_url
+              }
 
             elsif in_mock
-              mock_body += token[2].sub(/^#\s?/, "")
+              mock_body += token[2].sub(/^#\s?/, '')
             end
-          else
-            if in_mock && !token[2].strip.empty?
-              process_mock.call
-              in_mock = false
-            end
+          elsif in_mock && !token[2].strip.empty?
+            process_mock.call
+            in_mock = false
           end
         end
         process_mock.call if in_mock

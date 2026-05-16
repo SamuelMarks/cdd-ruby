@@ -11,10 +11,10 @@ module Cdd
       @classes = []
       @routes = []
       @openapi_spec = {
-        "openapi" => "3.2.0",
-        "info" => { "title" => "Generated API", "version" => "0.0.1" },
-        "paths" => {},
-        "components" => { "schemas" => {} }
+        'openapi' => '3.2.0',
+        'info' => { 'title' => 'Generated API', 'version' => '0.0.1' },
+        'paths' => {},
+        'components' => { 'schemas' => {} }
       }
       @tests = []
       @mocks = []
@@ -23,11 +23,11 @@ module Cdd
     # Documentation for to_h
     def to_h
       {
-        "classes" => @classes,
-        "routes" => @routes,
-        "openapi" => @openapi_spec,
-        "tests" => @tests,
-        "mocks" => @mocks
+        'classes' => @classes,
+        'routes' => @routes,
+        'openapi' => @openapi_spec,
+        'tests' => @tests,
+        'mocks' => @mocks
       }
     end
   end

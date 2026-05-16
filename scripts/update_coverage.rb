@@ -1,30 +1,28 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
 require 'json'
 
 # Run tests and capture output
 output = `bundle exec rspec 2>&1`
 
 test_cov = 0.0
-if output =~ /LOC\s+\(([\d\.]+)\%\)\s+covered/
-  test_cov = $1.to_f
-end
+test_cov = Regexp.last_match(1).to_f if output =~ /LOC\s+\(([\d.]+)%\)\s+covered/
 
 # Get Doc Coverage
 doc_cov_str = `bundle exec yard stats "src/**/*.rb" 2>/dev/null | grep "% documented"`
 doc_cov = 0.0
-if doc_cov_str =~ /([\d\.]+)\s*%/
-  doc_cov = $1.to_f
-end
+doc_cov = Regexp.last_match(1).to_f if doc_cov_str =~ /([\d.]+)\s*%/
 
 def color_for(cov)
   if cov >= 95
-    "brightgreen"
+    'brightgreen'
   elsif cov >= 80
-    "green"
+    'green'
   elsif cov >= 60
-    "yellow"
+    'yellow'
   else
-    "red"
+    'red'
   end
 end
 
@@ -36,15 +34,16 @@ doc_badge = "[![Doc Coverage](https://img.shields.io/badge/docs-#{doc_cov.round(
 
 badge_str = "#{test_badge}\n#{doc_badge}"
 
-["README.md", "ARCHITECTURE.md"].each do |readme_path|
-  if File.exist?(readme_path)
-    content = File.read(readme_path)
-    
-    # Replace between the tags
-    content.sub!(/<!-- COVERAGE_BADGES_START -->.*?<!-- COVERAGE_BADGES_END -->/m, "<!-- COVERAGE_BADGES_START -->\n#{badge_str}\n<!-- COVERAGE_BADGES_END -->")
-    
-    File.write(readme_path, content)
-  end
+['README.md', 'ARCHITECTURE.md'].each do |readme_path|
+  next unless File.exist?(readme_path)
+
+  content = File.read(readme_path)
+
+  # Replace between the tags
+  content.sub!(/<!-- COVERAGE_BADGES_START -->.*?<!-- COVERAGE_BADGES_END -->/m,
+               "<!-- COVERAGE_BADGES_START -->\n#{badge_str}\n<!-- COVERAGE_BADGES_END -->")
+
+  File.write(readme_path, content)
 end
 
 puts "Updated shields with Test Coverage: #{test_cov.round(2)}%, Doc Coverage: #{doc_cov.round(2)}%"

@@ -9,8 +9,7 @@ module Cdd
       # Parses docs_json from tokens and adds to ir
       # @param tokens [Array] tokens array
       # @param ir [Cdd::IR] Intermediate Representation
-      def self.parse(tokens, ir)
-      end
+      def self.parse(tokens, ir); end
     end
   end
 end

@@ -1,10 +1,12 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 require_relative '../src/cdd'
 
 class CliTest < Minitest::Test
   def setup
-    File.write("dummy.rb", "# @route GET /hello\nclass User\nend\n")
-    File.write("dummy.json", <<~JSON
+    File.write('dummy.rb', "# @route GET /hello\nclass User\nend\n")
+    File.write('dummy.json', <<~JSON
       {
         "openapi": "3.2.0",
         "info": {
@@ -184,58 +186,59 @@ class CliTest < Minitest::Test
   end
 
   def teardown
-    ["spec.json", "docs.json", "server.rb", "sdk_cli.rb"].each { |f| File.delete(f) if File.exist?(f) }
-    
-    File.delete("dummy.rb") if File.exist?("dummy.rb")
-    File.delete("dummy.json") if File.exist?("dummy.json")
-    FileUtils.rm_rf("scaffold_test_dir") if Dir.exist?("scaffold_test_dir")
+    ['spec.json', 'docs.json', 'server.rb', 'sdk_cli.rb'].each { |f| File.delete(f) if File.exist?(f) }
+
+    File.delete('dummy.rb') if File.exist?('dummy.rb')
+    File.delete('dummy.json') if File.exist?('dummy.json')
+    FileUtils.rm_rf('scaffold_test_dir') if Dir.exist?('scaffold_test_dir')
     FileUtils.rm_rf('test_sdk_out')
   end
 
   def test_cli_to_openapi
-    result = Cdd::Parser.parse("dummy.rb")
-    File.write("spec.json", result)
+    result = Cdd::Parser.parse('dummy.rb')
+    File.write('spec.json', result)
     json = JSON.parse(result)
-    assert_equal "3.2.0", json["openapi"]
+    assert_equal '3.2.0', json['openapi']
   end
 
   def test_cli_from_openapi
-    Cdd::Emitter.emit_server(input: "dummy.json", output: ".", no_installable_package: true, no_github_actions: true)
-    output = File.read("server.rb")
-    assert_match(/get '\/users\/:\w+' do/, output)
+    Cdd::Emitter.emit_server(input: 'dummy.json', output: '.', no_installable_package: true, no_github_actions: true)
+    output = File.read('server.rb')
+    assert_match(%r{get '/users/:\w+' do}, output)
   end
 
   def test_cli_from_openapi_sdk
-    Cdd::Emitter.emit_sdk(input: "dummy.json", output: "test_sdk_out", no_installable_package: true, no_github_actions: true)
-    output = File.read("test_sdk_out/lib/client.rb")
+    Cdd::Emitter.emit_sdk(input: 'dummy.json', output: 'test_sdk_out', no_installable_package: true,
+                          no_github_actions: true)
+    output = File.read('test_sdk_out/lib/client.rb')
     assert_match(/def getUser/, output)
-    models_output = File.read("test_sdk_out/lib/models.rb")
+    models_output = File.read('test_sdk_out/lib/models.rb')
     assert_match(/module Types/, models_output)
   end
 
   def test_cli_from_openapi_sdk_cli
-    Cdd::Emitter.emit_sdk_cli(input: "dummy.json", output: ".", no_installable_package: true, no_github_actions: true)
-    output = File.read("sdk_cli.rb")
+    Cdd::Emitter.emit_sdk_cli(input: 'dummy.json', output: '.', no_installable_package: true, no_github_actions: true)
+    output = File.read('sdk_cli.rb')
     assert_match(/Auto-generated SDK CLI/, output)
     assert_match(/getUser/, output)
   end
 
   def test_cli_to_docs_json
-    result = Cdd::DocsJson::Emitter.emit("dummy.json", no_imports: false, no_wrapping: false)
-    File.write("docs.json", result)
+    result = Cdd::DocsJson::Emitter.emit('dummy.json', no_imports: false, no_wrapping: false)
+    File.write('docs.json', result)
     json = JSON.parse(result)
-    
-    assert json.key?("endpoints")
-    assert json["endpoints"].key?("/users/{id}")
-    assert json["endpoints"]["/users/{id}"].key?("get")
-    
-    code = json["endpoints"]["/users/{id}"]["get"]
+
+    assert json.key?('endpoints')
+    assert json['endpoints'].key?('/users/{id}')
+    assert json['endpoints']['/users/{id}'].key?('get')
+
+    code = json['endpoints']['/users/{id}']['get']
     assert_match(/getUser/, code)
   end
 
   def test_cli_scaffolding
-    out_dir = "scaffold_test_dir"
-    Cdd::Emitter.emit_sdk(input: "dummy.json", output: out_dir, tests: true)
+    out_dir = 'scaffold_test_dir'
+    Cdd::Emitter.emit_sdk(input: 'dummy.json', output: out_dir, tests: true)
     assert File.exist?("#{out_dir}/lib/client.rb")
     assert File.exist?("#{out_dir}/lib/models.rb")
     assert File.exist?("#{out_dir}/lib/tests.rb")
@@ -243,15 +246,15 @@ class CliTest < Minitest::Test
     assert File.exist?("#{out_dir}/generated_project.gemspec")
     assert File.exist?("#{out_dir}/Gemfile")
     assert File.exist?("#{out_dir}/.github/workflows/ci.yml")
-    
+
     # test for server with composable tests and mocks
-    Cdd::Emitter.emit_server(input: "dummy.json", output: out_dir, tests: true)
+    Cdd::Emitter.emit_server(input: 'dummy.json', output: out_dir, tests: true)
     assert File.exist?("#{out_dir}/server.rb")
     assert File.exist?("#{out_dir}/tests.rb")
     assert File.exist?("#{out_dir}/mocks.rb")
 
     # test for cli with composable tests and mocks
-    Cdd::Emitter.emit_sdk_cli(input: "dummy.json", output: out_dir, tests: true)
+    Cdd::Emitter.emit_sdk_cli(input: 'dummy.json', output: out_dir, tests: true)
     assert File.exist?("#{out_dir}/sdk_cli.rb")
   end
 
@@ -261,21 +264,21 @@ class CliTest < Minitest::Test
     code_server = "get '/foo/:id' do\nend"
     tokens_server = Ripper.lex(code_server)
     Cdd::ServerGen::Parser.parse(tokens_server, ir_server)
-    assert ir_server.openapi_spec["paths"]["/foo/{id}"]
+    assert ir_server.openapi_spec['paths']['/foo/{id}']
 
     # Client SDK CLI parser
     ir_cli = Cdd::IR.new
     code_cli = "case command\nwhen 'my_op'\nputs 'hi'\nend"
     tokens_cli = Ripper.lex(code_cli)
     Cdd::ClientSdkCli::Parser.parse(tokens_cli, ir_cli)
-    assert ir_cli.openapi_spec["paths"]["/my_op"]
+    assert ir_cli.openapi_spec['paths']['/my_op']
 
     # Client SDK parser
     ir_sdk = Cdd::IR.new
     code_sdk = "def my_method\nend"
     tokens_sdk = Ripper.lex(code_sdk)
     Cdd::ClientSdk::Parser.parse(tokens_sdk, ir_sdk)
-    assert ir_sdk.openapi_spec["paths"]["/my_method"]
+    assert ir_sdk.openapi_spec['paths']['/my_method']
   end
 
   def test_supported_keys

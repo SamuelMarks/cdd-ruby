@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 
 class EdgeClassesTest < Minitest::Test
@@ -10,7 +12,7 @@ class EdgeClassesTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    sc = ir.openapi_spec.dig("components", "schemas", "EdgeClass")
-    assert_equal "justvalue", sc["justkey"]
+    sc = ir.openapi_spec.dig('components', 'schemas', 'EdgeClass')
+    assert_equal 'justvalue', sc['justkey']
   end
 end

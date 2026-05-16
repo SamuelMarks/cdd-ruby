@@ -1,13 +1,12 @@
 # frozen_string_literal: true
 
-
 require 'json'
 require_relative 'cdd'
 
 module Cdd
-    # The Server class exposes the CDD compiler as a JSON-RPC server.
+  # The Server class exposes the CDD compiler as a JSON-RPC server.
   class Server
-        # Starts the JSON-RPC server.
+    # Starts the JSON-RPC server.
     # @param listen [String] the host to bind to
     # @param port [Integer, String] the port to listen on
     def self.start(listen, port)
@@ -45,7 +44,7 @@ module Cdd
       server.start
     end
 
-        # Handles an incoming JSON-RPC method.
+    # Handles an incoming JSON-RPC method.
     # @param method [String] the RPC method name
     # @param params [Hash] the RPC parameters
     # @return [Object] the result of the RPC call
@@ -64,8 +63,8 @@ module Cdd
       when 'from_openapi_to_sdk_cli'
         Cdd::Emitter.emit_sdk_cli(params.transform_keys(&:to_sym))
       when 'from_openapi_to_sdk'
-        input = params['i'] || params['input']
-        input_dir = params['input_dir']
+        params['i'] || params['input']
+        params['input_dir']
         Cdd::Emitter.emit_sdk(params.transform_keys(&:to_sym))
       when 'from_openapi_to_server'
         Cdd::Emitter.emit_server(params.transform_keys(&:to_sym))

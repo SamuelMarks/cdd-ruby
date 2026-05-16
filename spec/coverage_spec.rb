@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 
 class CoverageTest < Minitest::Test
@@ -16,41 +18,41 @@ class CoverageTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
   end
-  
+
   def test_emit_refs
     ir = Cdd::IR.new
-    ir.openapi_spec["components"]["parameters"] = {
-      "refParam" => {
-        "name" => "refParam",
-        "in" => "query",
-        "schema" => { "$ref" => "#/components/schemas/RefParam" }
+    ir.openapi_spec['components']['parameters'] = {
+      'refParam' => {
+        'name' => 'refParam',
+        'in' => 'query',
+        'schema' => { '$ref' => '#/components/schemas/RefParam' }
       }
     }
-    
-    ir.openapi_spec["paths"]["/ref"] = {
-      "get" => {
-        "responses" => {
-          "200" => {
-            "description" => "OK",
-            "headers" => {
-              "X-Ref" => {
-                "schema" => { "$ref" => "#/components/schemas/RefHeader" }
+
+    ir.openapi_spec['paths']['/ref'] = {
+      'get' => {
+        'responses' => {
+          '200' => {
+            'description' => 'OK',
+            'headers' => {
+              'X-Ref' => {
+                'schema' => { '$ref' => '#/components/schemas/RefHeader' }
               }
             },
-            "links" => {
-              "MyLink" => {
-                "requestBody" => "$request.body#/id"
+            'links' => {
+              'MyLink' => {
+                'requestBody' => '$request.body#/id'
               }
             }
           }
         }
       }
     }
-    
+
     out = Cdd::Routes::Emitter.emit(ir)
     assert_match(/@component_param refParam \[RefParam\]/, out)
     assert_match(/@response_header 200 X-Ref \[RefHeader\]/, out)
-    assert_match(/@link 200 MyLink requestBody:\$request.body#\/id/, out)
+    assert_match(%r{@link 200 MyLink requestBody:\$request.body#/id}, out)
   end
 
   def test_response_header_desc
@@ -97,10 +99,10 @@ class CoverageTest < Minitest::Test
     ir = Cdd::IR.new
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
-    
+
     # Test emit for header with schema $ref
-    ir.openapi_spec["components"]["headers"]["X-Test"] = {
-      "schema" => { "$ref" => "#/components/schemas/TestSchema" }
+    ir.openapi_spec['components']['headers']['X-Test'] = {
+      'schema' => { '$ref' => '#/components/schemas/TestSchema' }
     }
     Cdd::Routes::Emitter.emit(ir)
   end
@@ -141,10 +143,10 @@ class CoverageTest < Minitest::Test
     ir = Cdd::IR.new
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
-    ir.openapi_spec["paths"]["/enc_head"]["post"]["requestBody"]["content"]["multipart/form-data"]["encoding"] = {
-      "profileImage" => {
-        "headers" => {
-          "X-Rate-Limit" => { "$ref" => "#/components/headers/RateLimit" }
+    ir.openapi_spec['paths']['/enc_head']['post']['requestBody']['content']['multipart/form-data']['encoding'] = {
+      'profileImage' => {
+        'headers' => {
+          'X-Rate-Limit' => { '$ref' => '#/components/headers/RateLimit' }
         }
       }
     }

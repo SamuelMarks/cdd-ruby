@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 
 class ComponentsTest < Minitest::Test
@@ -13,15 +15,15 @@ class ComponentsTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    p = ir.openapi_spec["components"]["parameters"]["limit"]
-    assert_equal "query", p["in"]
-    assert_equal "integer", p["schema"]["type"]
-    assert_equal true, p["required"]
-    assert_equal "Max records to return", p["description"]
-    
-    op = ir.openapi_spec["paths"]["/items"]["get"]
-    assert_equal "#/components/parameters/limit", op["parameters"][0]["$ref"]
-    
+    p = ir.openapi_spec['components']['parameters']['limit']
+    assert_equal 'query', p['in']
+    assert_equal 'integer', p['schema']['type']
+    assert_equal true, p['required']
+    assert_equal 'Max records to return', p['description']
+
+    op = ir.openapi_spec['paths']['/items']['get']
+    assert_equal '#/components/parameters/limit', op['parameters'][0]['$ref']
+
     out = Cdd::Routes::Emitter.emit(ir)
     assert_match(/@component_param limit \[integer\] in:query required:true Max records to return/, out)
     assert_match(/@param_ref limit/, out)
@@ -39,18 +41,18 @@ class ComponentsTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    r = ir.openapi_spec["components"]["responses"]["BadRequest"]
-    assert_equal "#/components/schemas/Error", r["content"]["application/json"]["schema"]["$ref"]
-    assert_equal "Bad Request", r["description"]
-    
-    op = ir.openapi_spec["paths"]["/err"]["get"]
-    assert_equal "#/components/responses/BadRequest", op["responses"]["400"]["$ref"]
-    
+    r = ir.openapi_spec['components']['responses']['BadRequest']
+    assert_equal '#/components/schemas/Error', r['content']['application/json']['schema']['$ref']
+    assert_equal 'Bad Request', r['description']
+
+    op = ir.openapi_spec['paths']['/err']['get']
+    assert_equal '#/components/responses/BadRequest', op['responses']['400']['$ref']
+
     out = Cdd::Routes::Emitter.emit(ir)
-    assert_match(/@component_response BadRequest \[Error\] application\/json description:Bad Request/, out)
+    assert_match(%r{@component_response BadRequest \[Error\] application/json description:Bad Request}, out)
     assert_match(/@response_ref 400 BadRequest/, out)
   end
-  
+
   def test_component_response_no_media
     code = <<~RUBY
       # @component_response NotFound description:Not Found
@@ -62,9 +64,9 @@ class ComponentsTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    r = ir.openapi_spec["components"]["responses"]["NotFound"]
-    assert_equal "Not Found", r["description"]
-    
+    r = ir.openapi_spec['components']['responses']['NotFound']
+    assert_equal 'Not Found', r['description']
+
     out = Cdd::Routes::Emitter.emit(ir)
     assert_match(/@component_response NotFound description:Not Found/, out)
   end

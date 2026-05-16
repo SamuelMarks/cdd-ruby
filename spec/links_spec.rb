@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 
 class LinksTest < Minitest::Test
@@ -12,13 +14,15 @@ class LinksTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    op = ir.openapi_spec["paths"]["/users"]["get"]
-    l = op["responses"]["200"]["links"]["GetUserByUserId"]
-    assert_equal "getUserById", l["operationId"]
-    assert_equal "$response.body#/id", l["parameters"]["userId"]
-    assert_equal "The user", l["description"]
-    
+    op = ir.openapi_spec['paths']['/users']['get']
+    l = op['responses']['200']['links']['GetUserByUserId']
+    assert_equal 'getUserById', l['operationId']
+    assert_equal '$response.body#/id', l['parameters']['userId']
+    assert_equal 'The user', l['description']
+
     out = Cdd::Routes::Emitter.emit(ir)
-    assert_match(/@link 200 GetUserByUserId operationId:getUserById parameters.userId:\$response.body#\/id description:The user/, out)
+    assert_match(
+      %r{@link 200 GetUserByUserId operationId:getUserById parameters.userId:\$response.body#/id description:The user}, out
+    )
   end
 end

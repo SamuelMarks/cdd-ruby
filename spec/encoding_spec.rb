@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 
 class EncodingTest < Minitest::Test
@@ -13,13 +15,15 @@ class EncodingTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    op = ir.openapi_spec["paths"]["/profile"]["post"]
-    enc = op["requestBody"]["content"]["multipart/form-data"]["encoding"]["profileImage"]
-    assert_equal "image/png", enc["contentType"]
-    assert_equal "form", enc["style"]
-    assert_equal true, enc["explode"]
-    
+    op = ir.openapi_spec['paths']['/profile']['post']
+    enc = op['requestBody']['content']['multipart/form-data']['encoding']['profileImage']
+    assert_equal 'image/png', enc['contentType']
+    assert_equal 'form', enc['style']
+    assert_equal true, enc['explode']
+
     out = Cdd::Routes::Emitter.emit(ir)
-    assert_match(/@request_body_encoding multipart\/form-data profileImage contentType:image\/png style:form explode:true/, out)
+    assert_match(
+      %r{@request_body_encoding multipart/form-data profileImage contentType:image/png style:form explode:true}, out
+    )
   end
 end

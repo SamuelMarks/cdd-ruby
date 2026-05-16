@@ -32,7 +32,7 @@ if ARGV.empty? || ARGV.include?('-h') || ARGV.include?('--help')
 end
 
 if ARGV.include?('-v') || ARGV.include?('--version')
-  puts "0.0.1"
+  puts '0.0.1'
   exit
 end
 
@@ -59,12 +59,12 @@ case command
 when 'to_openapi'
   file = get_arg(options, :f, 'CDD_FILE') || get_arg(options, :i, 'CDD_INPUT')
   out = get_arg(options, :o, 'CDD_OUT', 'spec.json')
-  
+
   if file.nil?
-    puts "Error: Missing -f <filepath> or -i <filepath>"
+    puts 'Error: Missing -f <filepath> or -i <filepath>'
     exit 1
   end
-  
+
   if File.directory?(file)
     # Search for lib/client.rb or similar
     if File.exist?(File.join(file, 'lib', 'client.rb'))
@@ -74,9 +74,9 @@ when 'to_openapi'
       file = files.first if files.any?
     end
   end
-  
+
   result = Cdd::Parser.parse(file)
-  
+
   if out
     FileUtils.mkdir_p(File.dirname(out))
     File.write(out, result)
@@ -89,12 +89,12 @@ when 'to_docs_json'
   out = get_arg(options, :o, 'CDD_OUT', 'docs.json')
   no_imports = get_arg(options, :no_imports, 'CDD_NO_IMPORTS', false)
   no_wrapping = get_arg(options, :no_wrapping, 'CDD_NO_WRAPPING', false)
-  
+
   if input.nil?
-    puts "Error: Missing -i <filepath>"
+    puts 'Error: Missing -i <filepath>'
     exit 1
   end
-  
+
   result = Cdd::DocsJson::Emitter.emit(input, no_imports: no_imports, no_wrapping: no_wrapping)
   if out
     FileUtils.mkdir_p(File.dirname(out))
@@ -105,7 +105,7 @@ when 'to_docs_json'
 
 when 'from_openapi'
   subcommand = ARGV.shift
-  
+
   while ARGV.any? && ARGV[0].start_with?('-')
     arg = ARGV.shift
     case arg
@@ -124,12 +124,12 @@ when 'from_openapi'
   no_gh = get_arg(options, :no_github_actions, 'CDD_NO_GITHUB_ACTIONS')
   no_pkg = get_arg(options, :no_installable_package, 'CDD_NO_INSTALLABLE_PACKAGE')
   tests = get_arg(options, :tests, 'CDD_TESTS')
-  
+
   unless input || input_dir
-    puts "Error: Missing -i <filepath> or --input-dir <dir>"
+    puts 'Error: Missing -i <filepath> or --input-dir <dir>'
     exit 1
   end
-  
+
   emitter_options = {
     input: input,
     input_dir: input_dir,
@@ -138,7 +138,7 @@ when 'from_openapi'
     no_installable_package: no_pkg,
     tests: tests
   }
-  
+
   case subcommand
   when 'to_sdk_cli'
     puts Cdd::Emitter.emit_sdk_cli(emitter_options)

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'spec_helper'
 
 class HeadersTest < Minitest::Test
@@ -12,12 +14,12 @@ class HeadersTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Docstrings::Parser.parse(tokens, ir)
 
-    op = ir.openapi_spec["paths"]["/headers"]["get"]
-    h = op["responses"]["200"]["headers"]["X-Rate-Limit"]
-    assert_equal "integer", h["schema"]["type"]
-    assert_equal true, h["required"]
-    assert_equal "Rate limit in seconds", h["description"]
-    
+    op = ir.openapi_spec['paths']['/headers']['get']
+    h = op['responses']['200']['headers']['X-Rate-Limit']
+    assert_equal 'integer', h['schema']['type']
+    assert_equal true, h['required']
+    assert_equal 'Rate limit in seconds', h['description']
+
     out = Cdd::Routes::Emitter.emit(ir)
     assert_match(/@response_header 200 X-Rate-Limit \[integer\] required:true Rate limit in seconds/, out)
   end
