@@ -91,3 +91,6 @@ venv.bak/
 coverage/
 .coverage
 *.bak
+
+# Generated client SDK directories
+/cdd-ruby-client-*/

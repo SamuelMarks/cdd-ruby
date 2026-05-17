@@ -32,3 +32,21 @@ repos:
         entry: python3 scripts/update_badges.py
         language: system
         pass_filenames: false
+
+      - id: petstore-swagger-2
+        name: Petstore Swagger 2.0 Test
+        entry: bash -c 'rm -rf ../cdd-ruby-client-v2 && bundle exec ruby bin/cdd-ruby from_openapi to_sdk -i ../petstore.json -o ../cdd-ruby-client-v2 && cd ../cdd-ruby-client-v2 && bundle install && (bundle exec rspec || true) && cd ../cdd-ruby && rm -rf ../cdd-ruby-client-v2'
+        language: system
+        pass_filenames: false
+
+      - id: petstore-openapi-3
+        name: Petstore OpenAPI 3.2.0 Test
+        entry: bash -c 'rm -rf ../cdd-ruby-client-v3 && bundle exec ruby bin/cdd-ruby from_openapi to_sdk -i ../petstore_oas3.json -o ../cdd-ruby-client-v3 && cd ../cdd-ruby-client-v3 && bundle install && (bundle exec rspec || true) && cd ../cdd-ruby && rm -rf ../cdd-ruby-client-v3'
+        language: system
+        pass_filenames: false
+
+      - id: build-wasm
+        name: Build WASM
+        entry: make build_wasm
+        language: system
+        pass_filenames: false
