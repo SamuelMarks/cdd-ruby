@@ -145,12 +145,12 @@ module Cdd
             client_code += "        body_params.delete(k)\n"
             client_code += "      end\n"
             client_code += "    end\n"
-            
+
             client_code += "    query_params = body_params.select { |k, _| #{query_keys.inspect}.include?(k.to_s) }\n"
             client_code += "    header_params = body_params.select { |k, _| #{header_keys.inspect}.include?(k.to_s) }\n"
             client_code += "    query_params.keys.each { |k| body_params.delete(k) }\n"
             client_code += "    header_params.keys.each { |k| body_params.delete(k) }\n"
-            
+
             client_code += "    base = @base_url.end_with?('/') ? @base_url[0...-1] : @base_url\n"
             client_code += "    path_prefix = req_path.start_with?('/') ? req_path : '/' + req_path\n"
             client_code += "    uri = URI(base + path_prefix)\n"
@@ -168,25 +168,25 @@ module Cdd
             end
             content_type = 'application/json'
             if details['consumes'] && !details['consumes'].empty?
-              if details['consumes'].include?('application/x-www-form-urlencoded')
-                content_type = 'application/x-www-form-urlencoded'
-              elsif details['consumes'].include?('multipart/form-data')
-                content_type = 'multipart/form-data'
-              else
-                content_type = details['consumes'].first
-              end
+              content_type = if details['consumes'].include?('application/x-www-form-urlencoded')
+                               'application/x-www-form-urlencoded'
+                             elsif details['consumes'].include?('multipart/form-data')
+                               'multipart/form-data'
+                             else
+                               details['consumes'].first
+                             end
             elsif details['requestBody'] && details['requestBody']['content']
               content_types = details['requestBody']['content'].keys
-              if content_types.include?('application/x-www-form-urlencoded')
-                content_type = 'application/x-www-form-urlencoded'
-              elsif content_types.include?('multipart/form-data')
-                content_type = 'multipart/form-data'
-              else
-                content_type = content_types.first
-              end
+              content_type = if content_types.include?('application/x-www-form-urlencoded')
+                               'application/x-www-form-urlencoded'
+                             elsif content_types.include?('multipart/form-data')
+                               'multipart/form-data'
+                             else
+                               content_types.first
+                             end
             end
             if %w[post put patch].include?(method)
-              if content_type == 'application/x-www-form-urlencoded' || content_type == 'multipart/form-data'
+              if ['application/x-www-form-urlencoded', 'multipart/form-data'].include?(content_type)
                 client_code += "    req.set_form(body_params.map { |k, v| [k, v.to_s] }, '#{content_type}')\n"
               else
                 client_code += "    req['Content-Type'] = '#{content_type}'\n"
@@ -246,10 +246,10 @@ module Cdd
             methods.each do |method, details|
               operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
 
-              valid_codes = details['responses'] ? details['responses'].keys.select { |k| k.to_i > 0 } : []
+              valid_codes = details['responses'] ? details['responses'].keys.select { |k| k.to_i.positive? } : []
               valid_codes += %w[200 201 202 204 400 404]
               valid_codes.uniq!
-              
+
               params = []
               details['parameters']&.each do |param|
                 val = if param.dig('schema', 'type') == 'integer' || param['type'] == 'integer'
@@ -268,10 +268,8 @@ module Cdd
 
               if details['requestBody']
                 is_array = false
-                details['requestBody']['content']&.each do |_, mt|
-                  if mt.dig('schema', 'type') == 'array' || mt.dig('schema', 'items')
-                    is_array = true
-                  end
+                details['requestBody']['content']&.each_value do |mt|
+                  is_array = true if mt.dig('schema', 'type') == 'array' || mt.dig('schema', 'items')
                 end
                 if is_array
                   params << "'body' => [{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"

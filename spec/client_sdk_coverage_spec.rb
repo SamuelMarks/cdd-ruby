@@ -42,21 +42,21 @@ class ClientSdkCoverageTest < Minitest::Test
         }
       }
     }
-    
+
     file = Tempfile.new('openapi.json')
     file.write(spec.to_json)
     file.close
-    
+
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, 'lib'))
       FileUtils.mkdir_p(File.join(dir, 'spec'))
       Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir })
       out = File.read(File.join(dir, 'lib', 'client.rb'))
-      assert_match(/api\.example\.com\/v2/, out)
+      assert_match(%r{api\.example\.com/v2}, out)
       assert_match(/header_params\.keys\.each/, out)
       assert_match(/req\['api_key'\] = 'special-key'/, out)
-      assert_match(/req.set_form.*\/x-www-form-urlencoded'/, out)
-      assert_match(/req.set_form.*\/form-data'/, out)
+      assert_match(%r{req.set_form.*/x-www-form-urlencoded'}, out)
+      assert_match(%r{req.set_form.*/form-data'}, out)
     end
   ensure
     file.unlink
@@ -101,7 +101,7 @@ class ClientSdkCoverageTest < Minitest::Test
     file = Tempfile.new('openapi.json')
     file.write(spec.to_json)
     file.close
-    
+
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, 'lib'))
       FileUtils.mkdir_p(File.join(dir, 'spec'))
@@ -131,14 +131,14 @@ class ClientSdkCoverageMissedTest < Minitest::Test
     file = Tempfile.new('openapi.json')
     file.write(spec.to_json)
     file.close
-    
+
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, 'lib'))
       FileUtils.mkdir_p(File.join(dir, 'spec'))
       Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir })
       out = File.read(File.join(dir, 'lib', 'client.rb'))
-      assert_match(/base_url = 'http:\/\/localhost\/v3'/, out)
-      assert_match(/'application\/xml'/, out) # Note this regex might need adjustment depending on what is emitted
+      assert_match(%r{base_url = 'http://localhost/v3'}, out)
+      assert_match(%r{'application/xml'}, out) # Note this regex might need adjustment depending on what is emitted
     end
   ensure
     file.unlink

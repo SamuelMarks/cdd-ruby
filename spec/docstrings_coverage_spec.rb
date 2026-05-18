@@ -8,12 +8,12 @@ class DocstringsCoverageTest < Minitest::Test
       # @component_param my_p1 [CustomType1] in:query b:false c:true
       # @component_request_body MyRb [MySchema1] application/json b:false c:true description:test
       # @component_header MyHeader [CustomType2] b:false c:true description:test
-      
+
       # @component_callback MyCb url post
       # @component_callback_response 200 [CustomType3] application/json b:false c:true description:test
-      
+
       # @component_response MyResp [CustomType4] application/json b:false c:true description:test
-      
+
       # @param p2 [CustomType5] in:query b:false c:true
       # @response_header 200 myHeader [CustomType6] b:false c:true description:test
       # @route GET /test
@@ -38,7 +38,7 @@ class DocstringsCoverageTest < Minitest::Test
     assert_equal '#/components/schemas/CustomType2', h['schema']['$ref']
     assert_equal false, h['b']
     assert_equal true, h['c']
-    
+
     cb_resp = ir.openapi_spec['components']['callbacks']['MyCb']['url']['post']['responses']['200']
     assert_equal false, cb_resp['content']['application/json']['b']
     assert_equal true, cb_resp['content']['application/json']['c']
@@ -48,7 +48,7 @@ class DocstringsCoverageTest < Minitest::Test
     assert_equal true, resp['content']['application/json']['c']
 
     op = ir.openapi_spec['paths']['/test']['get']
-    
+
     p2 = op['parameters'].first
     assert_equal '#/components/schemas/CustomType5', p2['schema']['$ref']
     assert_equal false, p2['b']
@@ -66,7 +66,7 @@ class DocstringsCoverageWithoutSchemaTest < Minitest::Test
     code = <<~RUBY
       # @component_callback MyCb url post
       # @component_callback_response 200 b:false c:true
-      
+
       # @component_response MyResp b:false c:true
       # @route GET /test
       def test_route
