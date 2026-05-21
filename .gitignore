@@ -94,3 +94,94 @@ coverage/
 
 # Generated client SDK directories
 /cdd-ruby-client-*/
+
+# ----------------------------------------------------------------------
+# Catch-all Wildcards (for carefree git add .)
+# ----------------------------------------------------------------------
+
+# Build and distribution directories
+[bB]uild/
+[dD]ist/
+[oO]ut*/
+
+# Dependencies
+node_modules/
+vendor/
+.bundle/
+__pycache__/
+
+# IDE and Editor settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs and databases
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Python compiled files
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Ruby compiled / gem files
+*.gem
+*.rbc
+
+# C/C++ compiled objects
+*.o
+*.so
+*.a
+*.lib
+*.dll
+*.exe
+*.out
+*.app
+
+# Coverage and test output
+coverage/
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
+# WASM and output binaries
+*.wasm
+*.wat
+
+# Backup and temp files
+*.bak
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Random scripts/scratches
+patch*.rb
+test_*.rb
+fix_*.rb
+update_*.rb
+replace_*.rb
+print_*.rb
+dummy*.rb
+dummy*.json
+massive*.json
+massive*.txt
+
+# Exclude everything inside rubies/ and .yardoc/ entirely
+rubies/
+.yardoc/
