@@ -232,78 +232,78 @@ module Cdd
           File.write(File.join(src_dir, 'models.rb'), models_code)
           File.write(File.join(src_dir, 'client.rb'), client_code)
 
-          # Generate integration tests unconditionally when emitting SDK
-          spec_dir = File.join(options[:output], 'spec')
-          FileUtils.mkdir_p(spec_dir)
-
-          integration_test_code = "# frozen_string_literal: true\n\n"
-          integration_test_code += "require 'rspec'\n"
-          integration_test_code += "require_relative '../lib/client'\n\n"
-          integration_test_code += "RSpec.describe ClientSdk do\n"
-          integration_test_code += "  let(:client) { ClientSdk.new('http://127.0.0.1:8080/v2') }\n\n"
-
-          openapi['paths']&.each do |path, methods|
-            methods.each do |method, details|
-              operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
-
-              valid_codes = details['responses'] ? details['responses'].keys.select { |k| k.to_i.positive? } : []
-              valid_codes += %w[200 201 202 204 400 404]
-              valid_codes.uniq!
-
-              params = []
-              details['parameters']&.each do |param|
-                val = if param.dig('schema', 'type') == 'integer' || param['type'] == 'integer'
-                        '1'
-                      elsif param['in'] == 'body'
-                        if param.dig('schema', 'type') == 'array' || param.dig('schema', 'items') || param['type'] == 'array' || param['items']
-                          "[{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"
-                        else
-                          "{ 'id' => 1, 'username' => 'test_user', 'name' => 'test', 'photoUrls' => ['http://example.com'], 'status' => 'available' }"
-                        end
-                      else
-                        (param['name'] == 'status' ? "'available'" : "'test_#{param['name']}'")
-                      end
-                params << "'#{param['name']}' => #{val}"
-              end
-
-              if details['requestBody']
-                is_array = false
-                details['requestBody']['content']&.each_value do |mt|
-                  is_array = true if mt.dig('schema', 'type') == 'array' || mt.dig('schema', 'items')
-                end
-                if is_array
-                  params << "'body' => [{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"
-                else
-                  params << "'id' => 1"
-                  params << "'name' => 'test'"
-                  params << "'photoUrls' => ['http://example.com']"
-                  params << "'status' => 'available'"
-                end
-              end
-
-              params_str = params.empty? ? '{}' : "{ #{params.join(', ')} }"
-
-              integration_test_code += "  it 'can call #{operation_id}' do\n"
-              integration_test_code += "    begin\n"
-              integration_test_code += "      response = client.#{operation_id}(#{params_str})\n"
-              integration_test_code += "      expect([#{valid_codes.map { |c| "'#{c}'" }.join(', ')}]).to include(client.last_response.code)\n"
-              integration_test_code += "      expect(response).not_to be_nil\n"
-              integration_test_code += "      expect(response).not_to include('sabotage' => true) if response.is_a?(Hash)\n"
-              integration_test_code += "    rescue Errno::ECONNREFUSED, Errno::ECONNRESET\n"
-              integration_test_code += "      skip 'Petstore server is not available'\n"
-              integration_test_code += "    end\n"
-              integration_test_code += "  end\n\n"
-            end
-          end
-          integration_test_code += "end\n\n"
-          integration_test_code += "RSpec.configure do |config|\n"
-          integration_test_code += "  config.after(:suite) do\n"
-          integration_test_code += "    sleep 10 # Allow mock server access logs to flush\n"
-          integration_test_code += "  end\n"
-          integration_test_code += "end\n"
-          File.write(File.join(spec_dir, 'integration_spec.rb'), integration_test_code)
-
           if options[:tests]
+            # Generate integration tests when options[:tests] is true when emitting SDK
+            spec_dir = File.join(options[:output], 'spec')
+            FileUtils.mkdir_p(spec_dir)
+
+            integration_test_code = "# frozen_string_literal: true\n\n"
+            integration_test_code += "require 'rspec'\n"
+            integration_test_code += "require_relative '../lib/client'\n\n"
+            integration_test_code += "RSpec.describe ClientSdk do\n"
+            integration_test_code += "  let(:client) { ClientSdk.new('http://127.0.0.1:8080/v2') }\n\n"
+
+            openapi['paths']&.each do |path, methods|
+              methods.each do |method, details|
+                operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+
+                valid_codes = details['responses'] ? details['responses'].keys.select { |k| k.to_i.positive? } : []
+                valid_codes += %w[200 201 202 204 400 404]
+                valid_codes.uniq!
+
+                params = []
+                details['parameters']&.each do |param|
+                  val = if param.dig('schema', 'type') == 'integer' || param['type'] == 'integer'
+                          '1'
+                        elsif param['in'] == 'body'
+                          if param.dig('schema', 'type') == 'array' || param.dig('schema', 'items') || param['type'] == 'array' || param['items']
+                            "[{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"
+                          else
+                            "{ 'id' => 1, 'username' => 'test_user', 'name' => 'test', 'photoUrls' => ['http://example.com'], 'status' => 'available' }"
+                          end
+                        else
+                          (param['name'] == 'status' ? "'available'" : "'test_#{param['name']}'")
+                        end
+                  params << "'#{param['name']}' => #{val}"
+                end
+
+                if details['requestBody']
+                  is_array = false
+                  details['requestBody']['content']&.each_value do |mt|
+                    is_array = true if mt.dig('schema', 'type') == 'array' || mt.dig('schema', 'items')
+                  end
+                  if is_array
+                    params << "'body' => [{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"
+                  else
+                    params << "'id' => 1"
+                    params << "'name' => 'test'"
+                    params << "'photoUrls' => ['http://example.com']"
+                    params << "'status' => 'available'"
+                  end
+                end
+
+                params_str = params.empty? ? '{}' : "{ #{params.join(', ')} }"
+
+                integration_test_code += "  it 'can call #{operation_id}' do\n"
+                integration_test_code += "    begin\n"
+                integration_test_code += "      response = client.#{operation_id}(#{params_str})\n"
+                integration_test_code += "      expect([#{valid_codes.map { |c| "'#{c}'" }.join(', ')}]).to include(client.last_response.code)\n"
+                integration_test_code += "      expect(response).not_to be_nil\n"
+                integration_test_code += "      expect(response).not_to include('sabotage' => true) if response.is_a?(Hash)\n"
+                integration_test_code += "    rescue Errno::ECONNREFUSED, Errno::ECONNRESET\n"
+                integration_test_code += "      skip 'Petstore server is not available'\n"
+                integration_test_code += "    end\n"
+                integration_test_code += "  end\n\n"
+              end
+            end
+            integration_test_code += "end\n\n"
+            integration_test_code += "RSpec.configure do |config|\n"
+            integration_test_code += "  config.after(:suite) do\n"
+            integration_test_code += "    sleep 10 # Allow mock server access logs to flush\n"
+            integration_test_code += "  end\n"
+            integration_test_code += "end\n"
+            File.write(File.join(spec_dir, 'integration_spec.rb'), integration_test_code)
+
             ir = Cdd::IR.new
             ir.openapi_spec = openapi
 

@@ -50,7 +50,7 @@ class ClientSdkCoverageTest < Minitest::Test
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, 'lib'))
       FileUtils.mkdir_p(File.join(dir, 'spec'))
-      Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir })
+      Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir, tests: true })
       out = File.read(File.join(dir, 'lib', 'client.rb'))
       assert_match(%r{api\.example\.com/v2}, out)
       assert_match(/header_params\.keys\.each/, out)
@@ -105,7 +105,7 @@ class ClientSdkCoverageTest < Minitest::Test
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, 'lib'))
       FileUtils.mkdir_p(File.join(dir, 'spec'))
-      Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir })
+      Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir, tests: true })
       out = File.read(File.join(dir, 'spec', 'integration_spec.rb'))
       assert_match(/'body' => \[\{ 'id' => 1/, out)
     end
@@ -135,7 +135,7 @@ class ClientSdkCoverageMissedTest < Minitest::Test
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, 'lib'))
       FileUtils.mkdir_p(File.join(dir, 'spec'))
-      Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir })
+      Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir, tests: true })
       out = File.read(File.join(dir, 'lib', 'client.rb'))
       assert_match(%r{base_url = 'http://localhost/v3'}, out)
       assert_match(%r{'application/xml'}, out) # Note this regex might need adjustment depending on what is emitted
