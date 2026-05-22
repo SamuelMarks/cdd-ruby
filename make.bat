@@ -51,7 +51,7 @@ goto :eof
 if "%BIN_DIR%"=="" set BIN_DIR=bin
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 gem build cdd-ruby.gemspec
-move cdd-ruby-0.0.1.gem "%BIN_DIR%\" >nul 2>&1
+move cdd-ruby-*.gem "%BIN_DIR%\" >nul 2>&1
 goto :eof
 
 :test

@@ -34,7 +34,7 @@ build:
 	@BIN_DIR=$${BIN_DIR:-bin} ; \
 	mkdir -p $$BIN_DIR ; \
 	gem build cdd-ruby.gemspec ; \
-	mv cdd-ruby-0.0.1.gem $$BIN_DIR/ || true
+	mv cdd-ruby-*.gem $$BIN_DIR/ || true
 
 test:
 	bundle exec rspec

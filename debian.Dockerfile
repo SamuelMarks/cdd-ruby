@@ -16,11 +16,11 @@ FROM ruby:3.4-slim
 
 WORKDIR /app
 
-COPY --from=builder /app/cdd-ruby-0.0.1.gem /app/
+COPY --from=builder /app/cdd-ruby-*.gem /app/
 COPY --from=builder /app/bin /app/bin
 COPY --from=builder /app/src /app/src
 
-RUN gem install ./cdd-ruby-0.0.1.gem --no-document
+RUN gem install ./cdd-ruby-*.gem --no-document
 
 EXPOSE 8082
 
