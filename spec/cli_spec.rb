@@ -194,6 +194,11 @@ class CliTest < Minitest::Test
     FileUtils.rm_rf('test_sdk_out')
   end
 
+  def test_cli_version
+    output = `ruby -Isrc bin/cdd-ruby --version`.strip
+    assert_equal '0.0.1', output
+  end
+
   def test_cli_to_openapi
     result = Cdd::Parser.parse('dummy.rb')
     File.write('spec.json', result)

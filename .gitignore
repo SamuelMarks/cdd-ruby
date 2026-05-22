@@ -31,22 +31,22 @@ test_*/
 scaffold_test_dir/
 
 # Temporary files created by scripts
-fix_*.rb
-update_*.rb
-replace_*.rb
-print_*.rb
-temp_*.rb
+/fix_*.rb
+/update_*.rb
+/replace_*.rb
+/print_*.rb
+/temp_*.rb
 
 # Common dummy files used in specs
 dummy.json
 dummy_*.json
-dummy.rb
+dummy*.rb
 
 # Output artifacts
-sdk.rb
-sdk_cli.rb
-server.rb
-docs.json
+/sdk.rb
+/sdk_cli.rb
+/server.rb
+/docs.json
 
 # Test / Temporary files
 /rubies/
@@ -171,17 +171,21 @@ tmp/
 temp/
 
 # Random scripts/scratches
-patch*.rb
-test_*.rb
-fix_*.rb
-update_*.rb
-replace_*.rb
-print_*.rb
-dummy*.rb
-dummy*.json
-massive*.json
-massive*.txt
+/patch*.rb
+/test_*.rb
+/fix_*.rb
+/update_*.rb
+/replace_*.rb
+/print_*.rb
+/dummy*.json
+/massive*.json
+/massive*.txt
 
 # Exclude everything inside rubies/ and .yardoc/ entirely
 rubies/
 .yardoc/
+
+# Temporary output and AI scratch files
+err*.txt
+out*.txt
+prompt*.md

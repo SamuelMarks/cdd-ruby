@@ -57,7 +57,7 @@ module Cdd
           test:
             runs-on: ubuntu-latest
             steps:
-              - uses: actions/checkout@v3
+              - uses: actions/checkout@v6
               - uses: ruby/setup-ruby@v1
                 with:
                   ruby-version: '3.4'
