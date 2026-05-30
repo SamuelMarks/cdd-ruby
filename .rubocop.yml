@@ -9,3 +9,12 @@ AllCops:
     - 'docs/**/*'
     - '.yardoc/**/*'
     - 'bin/**/*'
+
+Metrics/ModuleLength:
+  Exclude:
+    - 'src/cli.rb'
+
+Style/Documentation:
+  Exclude:
+    - 'src/cli.rb'
+    - 'spec/**/*'

@@ -1,4 +1,4 @@
-.PHONY: install_base install_deps build_docs build test run help all build_wasm build_docker run_docker
+.PHONY: install_base install_deps build_docs docs build test run help all build_wasm build_docker run_docker
 
 .DEFAULT_GOAL := help
 
@@ -7,6 +7,7 @@ help:
 	@echo "  install_base   Install language runtime and relevant tools"
 	@echo "  install_deps   Install local dependencies"
 	@echo "  build_docs     Build the API docs and put them in the docs directory. Alternative: build_docs DOCS_DIR=docs"
+	@echo "  docs           Build the API docs and symbolically link so that ./docs/html contains the docs"
 	@echo "  build          Build the CLI binary. Alternative: build BIN_DIR=bin"
 	@echo "  test           Run tests locally"
 	@echo "  run            Run the CLI. Usage: make run ARGS=\"--version\""
@@ -29,6 +30,12 @@ install_deps:
 build_docs:
 	@DOCS_DIR=$${DOCS_DIR:-docs} ; \
 	bundle exec yard doc --output-dir $$DOCS_DIR
+
+docs:
+	bundle exec yard doc
+	mkdir -p docs
+	rm -f docs/html
+	cd docs && ln -s ../doc html
 
 build:
 	@BIN_DIR=$${BIN_DIR:-bin} ; \

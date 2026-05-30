@@ -21,9 +21,9 @@ The CLI—at a minimum—has:
 - `cdd-ruby from_openapi to_sdk_cli -i spec.json`
 - `cdd-ruby from_openapi to_sdk -i spec.json`
 - `cdd-ruby from_openapi to_server -i spec.json`
-- `cdd-ruby to_openapi -f path/to/code`
+- `cdd-ruby to_openapi -i <path/to/code>`
 - `cdd-ruby to_docs_json --no-imports --no-wrapping -i spec.json`
-- `cdd-ruby serve_json_rpc --port 8080 --listen 0.0.0.0`
+- `cdd-ruby serve_json_rpc -p 8080 -l 127.0.0.1`
 
 ## SDK Example
 
@@ -79,12 +79,12 @@ The `cdd-ruby` compiler leverages a unified architecture to support various face
 ```text
 Usage: cdd-ruby [command] [options]
 Commands:
-  to_openapi -f <path/to/code> [-o <spec.json>]
+  to_openapi -i <path/to/code> [-o <spec.json>]
   to_docs_json -i <spec.json> [-o <docs.json>] [--no-imports] [--no-wrapping]
   from_openapi to_sdk_cli -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package] [--tests]
   from_openapi to_sdk -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package] [--tests]
   from_openapi to_server -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package] [--tests]
-  serve_json_rpc --port <port> --listen <host>
+  serve_json_rpc [-p|--port <port>] [-l|--listen <address>]
   --help
   --version
 ```

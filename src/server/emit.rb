@@ -54,7 +54,7 @@ module Cdd
             if schema['discriminator']
               ruby_code += "  # Discriminator: #{schema['discriminator']['propertyName']}\n"
               if schema['discriminator']['mapping']
-                ruby_code += "  # Mapping: #{schema['discriminator']['mapping']&.to_json}\n"
+                ruby_code += "  # Mapping: #{schema['discriminator']['mapping'].to_json}\n"
               end
             end
             ruby_code += "  # XML Mapping: #{schema['xml'].to_json}\n" if schema['xml']

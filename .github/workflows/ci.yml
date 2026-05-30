@@ -4,7 +4,6 @@ on:
     branches: [ "main", "master" ]
     tags:
       - 'v*'
-      - 'latest'
   pull_request:
     branches: [ "main", "master" ]
 
@@ -12,7 +11,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
@@ -38,7 +37,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
@@ -52,12 +51,14 @@ jobs:
         run: make build_wasm
       - name: Build CLI Binary
         run: make build
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Create Versioned Release
+        uses: softprops/action-gh-release@v3
         with:
+          make_latest: true
           fail_on_unmatched_files: true
           files: |
             dist/cdd-ruby.wasm
             bin/*.gem
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

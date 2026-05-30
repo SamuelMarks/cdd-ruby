@@ -58,7 +58,7 @@ module Cdd
 
               ruby_code += "  puts '    Discriminator: #{schema['discriminator']['propertyName']}'\n"
               if schema['discriminator']['mapping']
-                ruby_code += "  puts '    Mapping: #{schema['discriminator']['mapping']&.to_json}'\n"
+                ruby_code += "  puts '    Mapping: #{schema['discriminator']['mapping'].to_json}'\n"
               end
             end
           end
@@ -90,7 +90,7 @@ module Cdd
             ruby_code += "when '#{operation_id}'\n"
             ruby_code += "  puts 'Calling #{method.upcase} #{path}'\n"
             ruby_code += "  # External Docs: #{details.dig('externalDocs', 'url')}\n" if details['externalDocs']
-            ruby_code += "  # Tags: #{details['tags']&.join(', ')}\n" if details['tags']
+            ruby_code += "  # Tags: #{details['tags'].join(', ')}\n" if details['tags']
 
             if details['requestBody']
               ruby_code += "  # Body required: #{details['requestBody']['required']}\n"

@@ -7,6 +7,7 @@ if "%1"=="all" goto help
 if "%1"=="install_base" goto install_base
 if "%1"=="install_deps" goto install_deps
 if "%1"=="build_docs" goto build_docs
+if "%1"=="docs" goto docs
 if "%1"=="build" goto build
 if "%1"=="test" goto test
 if "%1"=="run" goto run
@@ -22,6 +23,7 @@ echo Available tasks:
 echo   install_base   Install language runtime and relevant tools
 echo   install_deps   Install local dependencies
 echo   build_docs     Build the API docs and put them in the docs directory. Alternative: set DOCS_DIR=docs ^& make build_docs
+echo   docs           Build the API docs and symbolically link so that .\docs\html contains the docs
 echo   build          Build the CLI binary. Alternative: set BIN_DIR=bin ^& make build
 echo   test           Run tests locally
 echo   run            Run the CLI. Usage: make run ARGS="--version"
@@ -45,6 +47,14 @@ goto :eof
 :build_docs
 if "%DOCS_DIR%"=="" set DOCS_DIR=docs
 bundle exec yard doc --output-dir %DOCS_DIR%
+goto :eof
+
+:docs
+call bundle exec yard doc
+if not exist "docs" mkdir "docs"
+if exist "docs\html" rmdir "docs\html" /s /q
+if exist "docs\html" del /s /q "docs\html"
+mklink /J "docs\html" "%CD%\doc"
 goto :eof
 
 :build

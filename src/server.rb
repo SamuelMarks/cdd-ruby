@@ -53,18 +53,16 @@ module Cdd
       when 'version'
         '0.0.1'
       when 'to_openapi'
-        filepath = params['f'] || params['filepath']
+        filepath = params['input']
         Cdd::Parser.parse(filepath)
       when 'to_docs_json'
-        input = params['i'] || params['input']
+        input = params['input']
         no_imports = params['no_imports'] || false
         no_wrapping = params['no_wrapping'] || false
         Cdd::DocsJson::Emitter.emit(input, no_imports: no_imports, no_wrapping: no_wrapping)
       when 'from_openapi_to_sdk_cli'
         Cdd::Emitter.emit_sdk_cli(params.transform_keys(&:to_sym))
       when 'from_openapi_to_sdk'
-        params['i'] || params['input']
-        params['input_dir']
         Cdd::Emitter.emit_sdk(params.transform_keys(&:to_sym))
       when 'from_openapi_to_server'
         Cdd::Emitter.emit_server(params.transform_keys(&:to_sym))

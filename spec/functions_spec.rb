@@ -77,4 +77,17 @@ class FunctionsTest < Minitest::Test
     assert_equal 'query', op['parameters'][1]['in']
     assert op['requestBody']
   end
+
+  def test_parse_api_client_no_comment
+    code = <<~RUBY
+      class ApiClient
+        def some_method(arg:)
+        end
+      end
+    RUBY
+    ir = Cdd::IR.new
+    tokens = Ripper.lex(code)
+    Cdd::Functions::Parser.parse(tokens, ir)
+    assert_empty(ir.openapi_spec['paths'] || {})
+  end
 end

@@ -12,8 +12,10 @@ class OpenapiMetadataTest < Minitest::Test
       # @api_jsonSchemaDialect https://json-schema.org/draft/2020-12/schema
       # @api_server https://example.com/api Production server
       # @api_server https://staging.example.com/api Staging server
+      # @api_server https://test.example.com/api
       # @api_tag User User operations
       # @api_tag Admin Admin operations
+      # @api_tag System
       # @api_externalDocs https://docs.example.com Full documentation
       # @api_webhook newPet POST
     RUBY
@@ -29,14 +31,18 @@ class OpenapiMetadataTest < Minitest::Test
     assert_equal 'https://json-schema.org/draft/2020-12/schema', ir.openapi_spec['jsonSchemaDialect']
 
     servers = ir.openapi_spec['servers']
-    assert_equal 2, servers.length
+    assert_equal 3, servers.length
     assert_equal 'https://example.com/api', servers[0]['url']
     assert_equal 'Production server', servers[0]['description']
+    assert_equal 'https://test.example.com/api', servers[2]['url']
+    assert_nil servers[2]['description']
 
     tags = ir.openapi_spec['tags']
-    assert_equal 2, tags.length
+    assert_equal 3, tags.length
     assert_equal 'User', tags[0]['name']
     assert_equal 'User operations', tags[0]['description']
+    assert_equal 'System', tags[2]['name']
+    assert_nil tags[2]['description']
 
     ed = ir.openapi_spec['externalDocs']
     assert_equal 'https://docs.example.com', ed['url']
@@ -55,6 +61,16 @@ class OpenapiMetadataTest < Minitest::Test
     assert_match(/# @api_tag User User operations/, emitted)
     assert_match(%r{# @api_externalDocs https://docs.example.com Full documentation}, emitted)
     assert_match(/# @api_webhook newPet POST/, emitted)
+  end
+
+  def test_openapi_external_docs_no_desc
+    code = <<~RUBY
+      # @api_externalDocs https://foo.com
+    RUBY
+    ir = Cdd::IR.new
+    tokens = Ripper.lex(code)
+    Cdd::Openapi::Parser.parse(tokens, ir)
+    assert_nil ir.openapi_spec['externalDocs']['description']
   end
 
   def test_swagger_metadata

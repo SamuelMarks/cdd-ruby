@@ -26,7 +26,7 @@ class ClassesTest < Minitest::Test
 
   def test_class_one_of_any_of
     code = <<~RUBY
-      # @schema_one_of Pet Cat,Dog discriminator:petType mapping:cat:Cat,dog:Dog defaultMapping:Cat
+      # @schema_one_of Pet Cat,Dog discriminator:petType mapping:cat:Cat,dog:Dog defaultMapping:Cat unknown:part
       # @schema_any_of Error NotFound,ServerError
     RUBY
 

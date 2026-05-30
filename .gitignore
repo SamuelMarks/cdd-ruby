@@ -96,51 +96,16 @@ coverage/
 /cdd-ruby-client-*/
 
 # ----------------------------------------------------------------------
-# Catch-all Wildcards (for carefree git add .)
+# Aggressive Catch-all Wildcards (for carefree git add .)
 # ----------------------------------------------------------------------
 
-# Build and distribution directories
-[bB]uild/
-[dD]ist/
-[oO]ut*/
-
-# Dependencies
-node_modules/
-vendor/
-.bundle/
-__pycache__/
-
-# IDE and Editor settings
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Logs and databases
-*.log
-*.sqlite
-*.sqlite3
-*.db
-*.db-journal
-
-# Python compiled files
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-env.bak/
-venv.bak/
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Ruby compiled / gem files
-*.gem
-*.rbc
+# Coverage & Tests
+coverage/
+.coverage
+coverage.json
+.resultset.json
+.resultset.json.lock
+.last_run.json
 
 # C/C++ compiled objects
 *.o
@@ -151,41 +116,51 @@ pip-delete-this-directory.txt
 *.exe
 *.out
 *.app
+*.class
+*.jar
+*.war
 
-# Coverage and test output
-coverage/
-.coverage
-htmlcov/
-.tox/
-.pytest_cache/
-
-# WASM and output binaries
-*.wasm
-*.wat
-
-# Backup and temp files
-*.bak
-*.tmp
-*.temp
-tmp/
-temp/
-
-# Random scripts/scratches
-/patch*.rb
-/test_*.rb
-/fix_*.rb
-/update_*.rb
-/replace_*.rb
-/print_*.rb
-/dummy*.json
-/massive*.json
-/massive*.txt
-
-# Exclude everything inside rubies/ and .yardoc/ entirely
-rubies/
-.yardoc/
-
-# Temporary output and AI scratch files
+# Temporary, dummy and scratch files
+dummy*
+temp*
+tmp*
+patch*.rb
+test_*.rb
+fix_*.rb
+update_*.rb
+replace_*.rb
+print_*.rb
+massive*.json
+massive*.txt
 err*.txt
 out*.txt
 prompt*.md
+*.log
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Virtual environments & Dependencies
+node_modules/
+vendor/
+.bundle/
+__pycache__/
+env/
+venv/
+.venv/
+
+# Build and IDE
+[bB]uild/
+[dD]ist/
+[oO]ut*/
+.idea/
+.vscode/
+*.wasm
+*.wat
+*.gem
+
+# Ensure we keep what we need
+!/bin/cdd-ruby
+!.github/

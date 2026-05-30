@@ -6,7 +6,29 @@ module Cdd
   module Docstrings
     # Parser for docstrings
     class Parser
+      # Extracts key-value pairs and description from rest string
+      # @param rest [String] rest of the string
+      # @return [Array] pairs and new_rest string
+      def self.parse_rest(rest)
+        return [{}, ''] if rest.nil? || rest.strip.empty?
+
+        pairs = {}
+        new_rest = []
+        rest.split(' ').each do |part|
+          if part.start_with?('description:')
+            new_rest << part.sub(/^description:/, '')
+          elsif part.include?(':')
+            k, v = part.split(':', 2)
+            pairs[k] = v
+          else
+            new_rest << part
+          end
+        end
+        [pairs, new_rest.join(' ')]
+      end
+
       # Parses docstrings from tokens and adds to ir
+
       # @param tokens [Array] tokens array
       # @param ir [Cdd::IR] Intermediate Representation
       def self.parse(tokens, ir)
@@ -24,25 +46,13 @@ module Cdd
               var_name = ::Regexp.last_match(2)
               default_val = ::Regexp.last_match(3)
               rest = ::Regexp.last_match(4) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               server = (ir.openapi_spec['servers'] ||= []).find { |s| s['url'] == url }
               if server
                 server['variables'] ||= {}
                 var_obj = { 'default' => default_val }
                 var_obj['enum'] = pairs['enum'].split(',') if pairs['enum']
-                var_obj['description'] = new_rest.join(' ').strip unless new_rest.empty?
+                var_obj['description'] = parsed_rest.strip unless parsed_rest.empty?
                 server['variables'][var_name] = var_obj
               end
             when /#\s*@op_server_var\s+(\S+)\s+(\w+)\s+(\S+)(?:\s+(.*))?/
@@ -69,20 +79,8 @@ module Cdd
               scheme_name = ::Regexp.last_match(1)
               type = ::Regexp.last_match(2)
               rest = ::Regexp.last_match(3) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
-              rest = new_rest.join(' ')
+              pairs, parsed_rest = parse_rest(rest)
+              rest = parsed_rest
               ir.openapi_spec['components'] ||= {}
               ir.openapi_spec['components']['securitySchemes'] ||= {}
               scheme = { 'type' => type }
@@ -91,7 +89,7 @@ module Cdd
               ir.openapi_spec['components']['securitySchemes'][scheme_name] = scheme
             when /#\s*@security\b(?:\s+(\w+))?(?:\s+(.*))?/
               scheme = ::Regexp.last_match(1)
-              scopes = ::Regexp.last_match(2) ? ::Regexp.last_match(2).split(/\s*,\s*/) : []
+              scopes = ::Regexp.last_match(2).to_s.strip.empty? ? [] : ::Regexp.last_match(2).split(/\s*,\s*/)
               current_tags << if scheme
                                 { type: :security, scheme: scheme, scopes: scopes }
                               else
@@ -193,20 +191,8 @@ module Cdd
             when /#\s*@schema\s+(\w+)(?:\s+(.*))?/
               schema_name = ::Regexp.last_match(1)
               rest = ::Regexp.last_match(2) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
-              rest = new_rest.join(' ')
+              pairs, parsed_rest = parse_rest(rest)
+              rest = parsed_rest
               ir.openapi_spec['components'] ||= {}
               ir.openapi_spec['components']['schemas'] ||= {}
               ir.openapi_spec['components']['schemas'][schema_name] ||= { 'type' => 'object', 'properties' => {} }
@@ -217,59 +203,23 @@ module Cdd
               schema_type = ::Regexp.last_match(2)
               loc = ::Regexp.last_match(3)
               rest = ::Regexp.last_match(4) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
-              rest = new_rest.join(' ')
+              pairs, parsed_rest = parse_rest(rest)
+              rest = parsed_rest
               current_tags << { type: :param, name: name, schema_type: schema_type, in: loc, options: pairs,
                                 description: rest.strip }
             when /#\s*@request_body_encoding\s+(\S+)\s+(\S+)(?:\s+(.*))?/
               media_type = ::Regexp.last_match(1)
               property = ::Regexp.last_match(2)
               rest = ::Regexp.last_match(3) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               current_tags << { type: :request_body_encoding, media_type: media_type, property: property, options: pairs,
-                                description: new_rest.join(' ').strip }
+                                description: parsed_rest.strip }
             when /#\s*@request_body\s+\[(\w+)\]\s+(\S+)(?:\s+(.*))?/
               schema_name = ::Regexp.last_match(1)
               media_type = ::Regexp.last_match(2)
               rest = ::Regexp.last_match(3) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
-              rest = new_rest.join(' ')
+              pairs, parsed_rest = parse_rest(rest)
+              rest = parsed_rest
               current_tags << { type: :request_body, schema_name: schema_name, media_type: media_type, options: pairs,
                                 description: rest.strip }
             when /#\s*@response\s+(\d+|default)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
@@ -277,21 +227,9 @@ module Cdd
               schema_name = ::Regexp.last_match(2)
               media_type = ::Regexp.last_match(3)
               rest = ::Regexp.last_match(4) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               current_tags << { type: :response, status: status, schema_name: schema_name, media_type: media_type,
-                                options: pairs, description: new_rest.join(' ').strip }
+                                options: pairs, description: parsed_rest.strip }
             when /#\s*@operationId\s+(.*)/
               current_tags << { type: :operationId, value: ::Regexp.last_match(1).strip }
             when /#\s*@tag\s+(.*)/
@@ -301,67 +239,31 @@ module Cdd
                                 method: ::Regexp.last_match(3).downcase }
             when /#\s*@callback_request_body\s+\[(\w+)\]\s+(\S+)(?:\s+(.*))?/
               current_tags << { type: :callback_request_body, schema_name: ::Regexp.last_match(1), media_type: ::Regexp.last_match(2),
-                                description: ::Regexp.last_match(3)&.strip }
+                                description: (::Regexp.last_match(3) && !::Regexp.last_match(3).strip.empty? ? ::Regexp.last_match(3).strip : nil) }
             when /#\s*@callback_response\s+(\d+|default)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
               status = ::Regexp.last_match(1)
               schema_name = ::Regexp.last_match(2)
               media_type = ::Regexp.last_match(3)
               rest = ::Regexp.last_match(4) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               current_tags << { type: :callback_response, status: status, schema_name: schema_name,
-                                media_type: media_type, options: pairs, description: new_rest.join(' ').strip }
+                                media_type: media_type, options: pairs, description: parsed_rest.strip }
             when /#\s*@response_header\s+(\d+|default)\s+([A-Za-z0-9_-]+)\s+\[(\w+)\](?:\s+(.*))?/
               status = ::Regexp.last_match(1)
               name = ::Regexp.last_match(2)
               schema_type = ::Regexp.last_match(3)
               rest = ::Regexp.last_match(4) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
-              rest = new_rest.join(' ')
+              pairs, parsed_rest = parse_rest(rest)
+              rest = parsed_rest
               current_tags << { type: :response_header, status: status, name: name, schema_type: schema_type, options: pairs,
                                 description: rest.strip }
             when /#\s*@link\s+(\d+|default)\s+(\w+)(?:\s+(.*))?/
               status = ::Regexp.last_match(1)
               name = ::Regexp.last_match(2)
               rest = ::Regexp.last_match(3) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               current_tags << { type: :link, status: status, name: name, options: pairs,
-                                description: new_rest.join(' ').strip }
+                                description: parsed_rest.strip }
             when /#\s*@param_ref\s+(\w+)/
               current_tags << { type: :param_ref, name: ::Regexp.last_match(1).strip }
             when /#\s*@response_ref\s+(\d+|default)\s+(\w+)/
@@ -372,20 +274,8 @@ module Cdd
               schema_type = ::Regexp.last_match(2)
               loc = ::Regexp.last_match(3)
               rest = ::Regexp.last_match(4) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
-              rest = new_rest.join(' ')
+              pairs, parsed_rest = parse_rest(rest)
+              rest = parsed_rest
               p = {
                 'name' => param_name,
                 'in' => loc,
@@ -412,19 +302,7 @@ module Cdd
               schema_name = ::Regexp.last_match(2)
               media_type = ::Regexp.last_match(3)
               rest = ::Regexp.last_match(4) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               rb = {
                 'content' => {
                   media_type => {
@@ -439,7 +317,7 @@ module Cdd
                            (v == 'false' ? false : v)
                          end)
               end
-              rb['description'] = new_rest.join(' ').strip unless new_rest.empty?
+              rb['description'] = parsed_rest.strip unless parsed_rest.empty?
               ir.openapi_spec['components'] ||= {}
               ir.openapi_spec['components']['requestBodies'] ||= {}
               ir.openapi_spec['components']['requestBodies'][rb_name] = rb
@@ -449,19 +327,7 @@ module Cdd
               h_name = ::Regexp.last_match(1)
               schema_type = ::Regexp.last_match(2)
               rest = ::Regexp.last_match(3) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               h = {
                 'schema' => (if %w[string number integer boolean array
                                    object].include?(schema_type.downcase)
@@ -477,7 +343,7 @@ module Cdd
                           (v == 'false' ? false : v)
                         end)
               end
-              h['description'] = new_rest.join(' ').strip unless new_rest.empty?
+              h['description'] = parsed_rest.strip unless parsed_rest.empty?
               ir.openapi_spec['components'] ||= {}
               ir.openapi_spec['components']['headers'] ||= {}
               ir.openapi_spec['components']['headers'][h_name] = h
@@ -487,19 +353,7 @@ module Cdd
             when /#\s*@component_link\s+(\w+)(?:\s+(.*))?/
               l_name = ::Regexp.last_match(1)
               rest = ::Regexp.last_match(2) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               l = {}
               pairs.each do |k, v|
                 if k.include?('.')
@@ -510,7 +364,7 @@ module Cdd
                   l[k] = v
                 end
               end
-              l['description'] = new_rest.join(' ').strip unless new_rest.empty?
+              l['description'] = parsed_rest.strip unless parsed_rest.empty?
               ir.openapi_spec['components'] ||= {}
               ir.openapi_spec['components']['links'] ||= {}
               ir.openapi_spec['components']['links'][l_name] = l
@@ -545,21 +399,9 @@ module Cdd
                 cb_url = ir.openapi_spec['components']['callbacks'][cb_name].keys.last
                 cb_method = ir.openapi_spec['components']['callbacks'][cb_name][cb_url].keys.last
 
-                parts = rest.split(' ')
-                new_rest = []
-                pairs = {}
-                parts.each do |part|
-                  if part.start_with?('description:')
-                    new_rest << part.sub(/^description:/, '')
-                  elsif part.include?(':')
-                    k, v = part.split(':', 2)
-                    pairs[k] = v
-                  else
-                    new_rest << part
-                  end
-                end
+                pairs, parsed_rest = parse_rest(rest)
 
-                resp = { 'description' => new_rest.empty? ? 'Response' : new_rest.join(' ').strip }
+                resp = { 'description' => parsed_rest.empty? ? 'Response' : parsed_rest.strip }
                 if media_type && schema_name
                   resp['content'] =
                     { media_type => { 'schema' => { '$ref' => "#/components/schemas/#{schema_name}" } } }
@@ -592,21 +434,9 @@ module Cdd
               schema_name = ::Regexp.last_match(2)
               media_type = ::Regexp.last_match(3)
               rest = ::Regexp.last_match(4) || ''
-              pairs = {}
-              parts = rest.split(' ')
-              new_rest = []
-              parts.each do |part|
-                if part.start_with?('description:')
-                  new_rest << part.sub(/^description:/, '')
-                elsif part.include?(':')
-                  k, v = part.split(':', 2)
-                  pairs[k] = v
-                else
-                  new_rest << part
-                end
-              end
+              pairs, parsed_rest = parse_rest(rest)
               resp = {
-                'description' => new_rest.empty? ? 'Response' : new_rest.join(' ').strip
+                'description' => parsed_rest.empty? ? 'Response' : parsed_rest.strip
               }
               if media_type && schema_name
                 resp['content'] = {
@@ -644,10 +474,10 @@ module Cdd
               current_tags << { type: :deprecated }
             when /#\s*@external_docs\s+(\S+)(?:\s+(.*))?/
               current_tags << { type: :external_docs, url: ::Regexp.last_match(1).strip,
-                                description: ::Regexp.last_match(2)&.strip }
+                                description: (::Regexp.last_match(2) && !::Regexp.last_match(2).strip.empty? ? ::Regexp.last_match(2).strip : nil) }
             when /#\s*@op_server\s+(\S+)(?:\s+(.*))?/
               current_tags << { type: :op_server, url: ::Regexp.last_match(1).strip,
-                                description: ::Regexp.last_match(2)&.strip }
+                                description: (::Regexp.last_match(2) && !::Regexp.last_match(2).strip.empty? ? ::Regexp.last_match(2).strip : nil) }
             when /#\s*@path_summary\s+(.*)/
               current_tags << { type: :path_summary, value: ::Regexp.last_match(1).strip }
             when /#\s*@path_description\s+(.*)/
@@ -702,22 +532,10 @@ module Cdd
                     servers << server
                   end
                   server['variables'] ||= {}
-                  pairs = {}
-                  parts = tag[:rest].split(' ')
-                  new_rest = []
-                  parts.each do |part|
-                    if part.start_with?('description:')
-                      new_rest << part.sub(/^description:/, '')
-                    elsif part.include?(':')
-                      k, v = part.split(':', 2)
-                      pairs[k] = v
-                    else
-                      new_rest << part
-                    end
-                  end
+                  pairs, parsed_rest = parse_rest(tag[:rest])
                   var_obj = { 'default' => tag[:default_val] }
                   var_obj['enum'] = pairs['enum'].split(',') if pairs['enum']
-                  var_obj['description'] = new_rest.join(' ').strip unless new_rest.empty?
+                  var_obj['description'] = parsed_rest.strip unless parsed_rest.empty?
                   server['variables'][tag[:var_name]] = var_obj
                 when :param_example_ref
                   p = params.find { |param| param['name'] == tag[:param_name] }
@@ -835,7 +653,7 @@ module Cdd
                       }
                     }
                   end
-                  tag[:options]&.each do |k, v|
+                  (tag[:options] || {}).each do |k, v|
                     if v == 'true'
                       v = true
                     elsif v == 'false'
@@ -898,7 +716,7 @@ module Cdd
                         }
                       }
                     end
-                    tag[:options]&.each do |k, v|
+                    (tag[:options] || {}).each do |k, v|
                       if v == 'true'
                         v = true
                       elsif v == 'false'

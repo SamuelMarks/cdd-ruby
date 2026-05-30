@@ -96,10 +96,8 @@ module Cdd
               desc = resp['description'] && resp['description'] != 'Response' ? " description:#{resp['description']}" : ''
               out += "# @component_response #{r_name} [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
             else
-              opts = []
-              opts_str = opts.empty? ? '' : " #{opts.join(' ')}"
               desc = resp['description'] && resp['description'] != 'Response' ? " description:#{resp['description']}" : ''
-              out += "# @component_response #{r_name}#{opts_str}#{desc}\n"
+              out += "# @component_response #{r_name}#{desc}\n"
             end
           end
           out += "\n"
