@@ -61,4 +61,20 @@ jobs:
             bin/*.gem
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update 'latest' tag
+        run: |
+          git tag -f latest
+          git push -f origin latest
+      - name: Create Latest Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          name: latest
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: |
+            dist/cdd-ruby.wasm
+            bin/*.gem
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
