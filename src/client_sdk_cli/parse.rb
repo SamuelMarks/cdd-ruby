@@ -15,10 +15,12 @@ module Cdd
             current_when = true
           elsif token[1] == :on_tstring_content && current_when
             op_id = token[2]
-            ir.openapi_spec['paths'] ||= {}
-            ir.openapi_spec['paths']["/#{op_id}"] ||= {
-              'get' => { 'operationId' => op_id }
-            }
+            if op_id != 'mcp'
+              ir.openapi_spec['paths'] ||= {}
+              ir.openapi_spec['paths']["/#{op_id}"] ||= {
+                'get' => { 'operationId' => op_id }
+              }
+            end
             current_when = nil
           end
         end

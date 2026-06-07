@@ -6,13 +6,23 @@ require 'fileutils'
 require_relative 'cdd'
 require_relative 'server'
 
+# CDD Module for the CLI
 module CDD
+  # The CLI module handles command line parsing and orchestration
   module CLI
     class << self
+      # Helper to get arguments from options or environment variables
+      # @param options [Hash] the parsed options
+      # @param key [Symbol] the option key
+      # @param env_key [String] the fallback environment variable
+      # @param default [String, nil] the fallback default value
+      # @return [String, nil] the value
       def get_arg(options, key, env_key, default = nil)
         options.key?(key) ? options[key] : (ENV[env_key] || default)
       end
 
+      # Prints the CLI help message
+      # @return [void]
       def print_help
         puts <<~HELP
           cdd-ruby CLI
@@ -24,6 +34,7 @@ module CDD
             to_openapi      Generate an OpenAPI specification from source code.
             to_docs_json    Generate JSON documentation with code snippets for an OpenAPI specification.
             serve_json_rpc  Expose CLI interface as a JSON-RPC server.
+            mcp             Start the Model Context Protocol (MCP) server for generator orchestration.
 
           Options:
             --help, -h      Show this help message
@@ -59,6 +70,9 @@ module CDD
         run(['serve_json_rpc'] + args)
       end
 
+      # Runs the CLI loop
+      # @param argv [Array<String>] the command line arguments
+      # @return [Integer] the exit code
       def run(argv)
         if argv.empty? || argv.include?('-h') || argv.include?('--help')
           print_help
@@ -66,7 +80,7 @@ module CDD
         end
 
         if argv.include?('-v') || argv.include?('--version')
-          puts '0.0.1'
+          puts '0.0.2'
           return 0
         end
 
@@ -90,6 +104,107 @@ module CDD
         end
 
         case command
+        when 'mcp'
+          require 'json'
+          loop do
+            line = $stdin.gets
+            break if line.nil?
+            next if line.strip.empty?
+
+            begin
+              req = JSON.parse(line)
+
+              if req['id'].nil?
+                # Notification handling
+                if req['method'] == 'notifications/cancelled'
+                  # Cancelled request
+                end
+                next
+              end
+
+              resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }
+              case req['method']
+              when 'initialize'
+                resp[:result] = { capabilities: { tools: { listChanged: true }, prompts: { listChanged: true }, logging: {}, resources: { subscribe: true, listChanged: true }, experimental: {}, roots: { listChanged: true }, sampling: {} }, serverInfo: { name: 'cdd-ruby-mcp', version: '1.0.0' }, protocolVersion: '2024-11-05' }
+              when 'tools/list'
+                resp[:result] = {
+                  tools: [
+                    { name: 'generate_from_openapi', description: 'Generate code from OpenAPI', inputSchema: { type: 'object', properties: { subcommand: { type: 'string' }, input: { type: 'string' }, output: { type: 'string' } }, required: %w[subcommand input] } },
+                    { name: 'generate_to_openapi', description: 'Extract OpenAPI schema from code', inputSchema: { type: 'object', properties: { input: { type: 'string' }, output: { type: 'string' } }, required: ['input'] } },
+                    { name: 'inspect_schema', description: 'Inspect an OpenAPI JSON schema file', inputSchema: { type: 'object', properties: { filepath: { type: 'string' } }, required: ['filepath'] } }
+                  ]
+                }
+              when 'tools/call'
+                tname = req.dig('params', 'name')
+                targs = req.dig('params', 'arguments') || {}
+
+                if tname == 'inspect_schema'
+                  begin
+                    schema = JSON.parse(File.read(targs['filepath']))
+                    summary = "Schema: #{schema.dig('info', 'title') || 'Unknown'} #{schema.dig('info', 'version') || ''}\n"
+                    summary += "Paths: #{schema['paths']&.keys&.join(', ') || 'None'}\n"
+                    summary += "Components: #{schema.dig('components', 'schemas')&.keys&.join(', ') || 'None'}\n"
+                    resp[:result] = { content: [{ type: 'text', text: summary }] }
+                  rescue StandardError => e
+                    resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32_603, message: "Internal error: #{e.message}" } }
+                    log_msg = { jsonrpc: '2.0', method: 'notifications/message', params: { level: 'error', logger: 'mcp-server', data: e.message } }
+                    $stdout.puts JSON.generate(log_msg)
+                  end
+                elsif %w[generate_from_openapi generate_to_openapi].include?(tname)
+                  require 'stringio'
+                  old_stdout = $stdout
+                  $stdout = StringIO.new
+                  begin
+                    if tname == 'generate_from_openapi'
+                      run(['from_openapi', targs['subcommand'], '-i', targs['input'], '-o', targs['output'] || '.'])
+                    elsif tname == 'generate_to_openapi'
+                      run(['to_openapi', '-i', targs['input'], '-o', targs['output'] || 'spec.json'])
+                    end
+                  ensure
+                    $stdout = old_stdout
+                  end
+                  resp[:result] = { content: [{ type: 'text', text: 'Generated successfully' }] }
+                else
+                  resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32_601, message: 'Method not found' } }
+                end
+              when 'prompts/list'
+                resp[:result] = { prompts: [{ name: 'generate_docs', description: 'Generate standard documentation', arguments: [{ name: 'filepath', description: 'Path to source code', required: true }] }] }
+              when 'prompts/get'
+                pname = req.dig('params', 'name')
+                pargs = req.dig('params', 'arguments') || {}
+                resp[:result] = { description: 'Generate docs prompt', messages: [{ role: 'user', content: { type: 'text', text: "Please generate docs for #{pargs['filepath']}" } }] } if pname == 'generate_docs'
+              when 'resources/list'
+                resp[:result] = { resources: [{ uri: 'mcp://cdd/docs', name: 'CDD Documentation', mimeType: 'text/markdown' }] }
+              when 'resources/read'
+                ruri = req.dig('params', 'uri')
+                resp[:result] = { contents: [{ uri: ruri, mimeType: 'text/markdown', text: '# CDD Docs' }] } if ruri == 'mcp://cdd/docs'
+              when 'resources/templates/list'
+                resp[:result] = { resourceTemplates: [] }
+              when 'roots/list'
+                resp[:result] = { roots: [] }
+              when 'resources/subscribe', 'resources/unsubscribe'
+                resp[:result] = {} # Acknowledge subscription requests
+              when 'logging/setLevel'
+                resp[:result] = {} # Acknowledge logging level change
+              when 'ping'
+                resp[:result] = {}
+              when 'sampling/createMessage'
+                resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
+              when 'completion/complete'
+                resp[:result] = { completion: { values: [], total: 0, hasMore: false } }
+              else
+                resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32_601, message: 'Method not found' } }
+              end
+
+              $stdout.puts JSON.generate(resp)
+              $stdout.flush
+            rescue JSON::ParserError
+              $stdout.puts JSON.generate({ jsonrpc: '2.0', error: { code: -32_700, message: 'Parse error' } })
+              $stdout.flush
+            end
+          end
+          0
+
         when 'to_openapi'
           file = get_arg(options, :i, 'CDD_INPUT')
           out = get_arg(options, :o, 'CDD_OUTPUT', 'spec.json')
@@ -197,7 +312,7 @@ module CDD
           end
 
           port = get_arg(options, :port, 'CDD_PORT', '8080')
-          listen = get_arg(options, :listen, 'CDD_LISTEN', '127.0.0.1')
+          listen = get_arg(options, :listen, 'CDD_LISTEN', '127.0.0.2')
           Cdd::Server.start(listen, port)
           0
         else

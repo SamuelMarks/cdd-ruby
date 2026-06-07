@@ -65,6 +65,9 @@ class ServerBranchTest < Minitest::Test
 
     out = Cdd::ServerGen::Emitter.emit_server(input: file.path)
     assert_match(/Discriminator/, out)
+    assert_match(%r{roots/list}, out)
+    assert_match(%r{resources/templates/list}, out)
+    assert_match(%r{sampling/createMessage}, out)
     file.unlink
   end
 end

@@ -64,6 +64,8 @@ module Cdd
           end
         end
 
+        ruby_code += "  puts '  mcp - Start Model Context Protocol server'\n"
+
         openapi['paths']&.each do |path, methods|
           methods.each do |method, details|
             operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
@@ -83,6 +85,107 @@ module Cdd
         ruby_code += "  print_help\n  exit\nend\n\n"
 
         ruby_code += "command = ARGV.shift\ncase command\n"
+        ruby_code += "when 'mcp'\n"
+        ruby_code += "  require 'json'\n"
+        ruby_code += "  # Starting MCP server on stdio\n"
+        ruby_code += "  loop do\n"
+        ruby_code += "    line = $stdin.gets\n"
+        ruby_code += "    break if line.nil?\n"
+        ruby_code += "    next if line.strip.empty?\n"
+        ruby_code += "    begin\n"
+        ruby_code += "      req = JSON.parse(line)\n"
+        ruby_code += "      \n"
+        ruby_code += "      if req['id'].nil?\n"
+        ruby_code += "        # Notification handling\n"
+        ruby_code += "        if req['method'] == 'notifications/cancelled'\n"
+        ruby_code += "          # Cancelled request\n"
+        ruby_code += "        end\n"
+        ruby_code += "        next\n"
+        ruby_code += "      end\n\n"
+        ruby_code += "      resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }\n"
+        ruby_code += "      if req['method'] == 'initialize'\n"
+        ruby_code += "        resp[:result] = { capabilities: { tools: { listChanged: true }, resources: { subscribe: true, listChanged: true }, prompts: { listChanged: true }, logging: {}, experimental: {}, roots: { listChanged: true }, sampling: {} }, serverInfo: { name: 'sdk-cli-mcp', version: '1.0.0' }, protocolVersion: '2024-11-05', instructions: '' }\n"
+        ruby_code += "      elsif req['method'] == 'ping'\n"
+        ruby_code += "        resp[:result] = {}\n"
+        ruby_code += "      elsif req['method'] == 'logging/setLevel'\n"
+        ruby_code += "        resp[:result] = {}\n"
+        ruby_code += "      elsif req['method'] == 'resources/subscribe'\n"
+        ruby_code += "        resp[:result] = {}\n"
+        ruby_code += "      elsif req['method'] == 'resources/unsubscribe'\n"
+        ruby_code += "        resp[:result] = {}\n"
+        ruby_code += "      elsif req['method'] == 'sampling/createMessage'\n"
+        ruby_code += "        resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }\n"
+        ruby_code += "      elsif req['method'] == 'completion/complete'\n"
+        ruby_code += "        resp[:result] = { completion: { values: [], total: 0, hasMore: false } }\n"
+        ruby_code += "      elsif req['method'] == 'prompts/list'\n"
+        ruby_code += "        cursor = req.dig('params', 'cursor')\n"
+        ruby_code += "        resp[:result] = { prompts: [{ name: 'api_help', description: 'Help for API', arguments: [] }] }\n"
+        ruby_code += "      elsif req['method'] == 'prompts/get'\n"
+        ruby_code += "        name = req.dig('params', 'name')\n"
+        ruby_code += "        if name == 'api_help'\n"
+        ruby_code += "          resp[:result] = { description: 'API Help', messages: [{ role: 'user', content: { type: 'text', text: 'How do I use this API?' } }] }\n"
+        ruby_code += "        else\n"
+        ruby_code += "          resp[:result] = { messages: [] }\n"
+        ruby_code += "        end\n"
+        ruby_code += "      elsif req['method'] == 'resources/list'\n"
+        ruby_code += "        cursor = req.dig('params', 'cursor')\n"
+        ruby_code += "        resp[:result] = { resources: [{ uri: 'mcp://api/docs', name: 'API Documentation', mimeType: 'text/markdown' }] }\n"
+        ruby_code += "      elsif req['method'] == 'resources/templates/list'\n"
+        ruby_code += "        cursor = req.dig('params', 'cursor')\n"
+        ruby_code += "        resp[:result] = { resourceTemplates: [] }\n"
+        ruby_code += "      elsif req['method'] == 'resources/read'\n"
+        ruby_code += "        uri = req.dig('params', 'uri')\n"
+        ruby_code += "        if uri == 'mcp://api/docs'\n"
+        ruby_code += "          resp[:result] = { contents: [{ uri: uri, mimeType: 'text/markdown', text: \"# \#{info['title'] || 'API'} Docs\\n\\n\#{info['description'] || ''}\" }] }\n"
+        ruby_code += "        else\n"
+        ruby_code += "          resp[:result] = { contents: [] }\n"
+        ruby_code += "        end\n"
+        ruby_code += "      elsif req['method'] == 'roots/list'\n"
+        ruby_code += "        resp[:result] = { roots: [] }\n"
+        ruby_code += "      elsif req['method'] == 'tools/list'\n"
+        ruby_code += "        cursor = req.dig('params', 'cursor')\n"
+
+        tools_array = []
+        openapi['paths']&.each do |path, methods|
+          methods.each do |method, details|
+            operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+            tool = {
+              name: operation_id,
+              description: details['summary'] || "Call #{method.upcase} #{path}",
+              inputSchema: {
+                type: 'object',
+                properties: {},
+                required: []
+              }
+            }
+            details['parameters']&.each do |param|
+              tool[:inputSchema][:properties][param['name']] = { type: 'string', description: param['in'] }
+              tool[:inputSchema][:required] << param['name'] if param['required']
+            end
+            tools_array << tool
+          end
+        end
+
+        ruby_code += "        resp[:result] = { tools: #{tools_array.to_json} }\n"
+        ruby_code += "      elsif req['method'] == 'tools/call'\n"
+        ruby_code += "        tool_name = req.dig('params', 'name').to_s\n"
+        ruby_code += "        args = req.dig('params', 'arguments') || {}\n"
+        ruby_code += "        cmd_args = args.map { |k, v| \"--\#{k} '\#{v}'\" }.join(' ')\n"
+        ruby_code += "        out = `ruby \#{__FILE__} \#{tool_name} \#{cmd_args}`\n"
+        ruby_code += "        resp[:result] = { content: [{ type: 'text', text: out }] }\n"
+        ruby_code += "      else\n"
+        ruby_code += "        resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32601, message: 'Method not found' } }\n"
+        ruby_code += "      end\n"
+        ruby_code += "      $stdout.puts JSON.generate(resp)\n"
+        ruby_code += "      $stdout.flush\n"
+        ruby_code += "    rescue JSON::ParserError => e\n"
+        ruby_code += "      # Simulate a logging message on error\n"
+        ruby_code += "      log_msg = { jsonrpc: '2.0', method: 'notifications/message', params: { level: 'error', logger: 'mcp-server', data: e.message } }\n"
+        ruby_code += "      $stdout.puts JSON.generate(log_msg)\n"
+        ruby_code += "      $stdout.puts JSON.generate({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } })\n"
+        ruby_code += "      $stdout.flush\n"
+        ruby_code += "    end\n"
+        ruby_code += "  end\n"
 
         openapi['paths']&.each do |path, methods|
           methods.each do |method, details|

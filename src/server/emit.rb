@@ -86,6 +86,75 @@ module Cdd
           end
         end
 
+        tools_array = []
+        openapi['paths']&.each do |path, methods|
+          methods.each do |method, details|
+            operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+            tool = {
+              name: operation_id,
+              description: details['summary'] || "Call #{method.upcase} #{path}",
+              inputSchema: { type: 'object', properties: {}, required: [] }
+            }
+            details['parameters']&.each do |param|
+              tool[:inputSchema][:properties][param['name']] = { type: 'string', description: param['in'] }
+              tool[:inputSchema][:required] << param['name'] if param['required']
+            end
+            tools_array << tool
+          end
+        end
+
+        ruby_code += "set :server, :thin\n"
+        ruby_code += "set :mcp_connections, []\n"
+        ruby_code += "get '/mcp/sse' do\n"
+        ruby_code += "  content_type 'text/event-stream'\n"
+        ruby_code += "  stream(:keep_open) do |out|\n"
+        ruby_code += "    settings.mcp_connections << out\n"
+        ruby_code += "    out << \"event: endpoint\\ndata: /mcp/message\\n\\n\"\n"
+        ruby_code += "    out.callback { settings.mcp_connections.delete(out) }\n"
+        ruby_code += "  end\n"
+        ruby_code += "end\n\n"
+
+        ruby_code += "post '/mcp/message' do\n"
+        ruby_code += "  begin\n"
+        ruby_code += "    req = JSON.parse(request.body.read)\n"
+        ruby_code += "  rescue JSON::ParserError\n"
+        ruby_code += "    status 202\n"
+        ruby_code += "    resp = { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } }\n"
+        ruby_code += "    settings.mcp_connections.each { |out| out << \"event: message\\ndata: \#{resp.to_json}\\n\\n\" }\n"
+        ruby_code += "    return\n"
+        ruby_code += "  end\n"
+        ruby_code += "  if req['id'].nil?\n"
+        ruby_code += "    if req['method'] == 'notifications/cancelled'\n"
+        ruby_code += "      # Cancelled request\n"
+        ruby_code += "    end\n"
+        ruby_code += "    return\n"
+        ruby_code += "  end\n"
+        ruby_code += "  resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }\n"
+        ruby_code += "  if req['method'] == 'initialize'\n"
+        ruby_code += "    resp[:result] = { capabilities: { tools: { listChanged: true }, logging: {}, experimental: {}, roots: { listChanged: true }, sampling: {} }, serverInfo: { name: 'mcp-server', version: '1.0.0' }, protocolVersion: '2024-11-05', instructions: '' }\n"
+        ruby_code += "  elsif req['method'] == 'ping'\n"
+        ruby_code += "    resp[:result] = {}\n"
+        ruby_code += "  elsif req['method'] == 'logging/setLevel'\n"
+        ruby_code += "    resp[:result] = {}\n"
+        ruby_code += "  elsif req['method'] == 'roots/list'\n"
+        ruby_code += "    resp[:result] = { roots: [] }\n"
+        ruby_code += "  elsif req['method'] == 'resources/templates/list'\n"
+        ruby_code += "    resp[:result] = { resourceTemplates: [] }\n"
+        ruby_code += "  elsif req['method'] == 'sampling/createMessage'\n"
+        ruby_code += "    resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }\n"
+        ruby_code += "  elsif req['method'] == 'completion/complete'\n"
+        ruby_code += "    resp[:result] = { completion: { values: [], total: 0, hasMore: false } }\n"
+        ruby_code += "  elsif req['method'] == 'tools/list'\n"
+        ruby_code += "    resp[:result] = { tools: #{tools_array.to_json} }\n"
+        ruby_code += "  elsif req['method'] == 'tools/call'\n"
+        ruby_code += "    resp[:result] = { content: [{ type: 'text', text: 'Calling tool ' + req.dig('params', 'name').to_s }] }\n"
+        ruby_code += "  else\n"
+        ruby_code += "    resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32601, message: 'Method not found' } }\n"
+        ruby_code += "  end\n"
+        ruby_code += "  settings.mcp_connections.each { |out| out << \"event: message\\ndata: \#{resp.to_json}\\n\\n\" }\n"
+        ruby_code += "  status 202\n"
+        ruby_code += "end\n\n"
+
         FileUtils.mkdir_p(options[:output]) if options[:output]
         if options[:output]
           Cdd::Scaffolding.generate(options, 'server')

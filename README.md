@@ -23,7 +23,7 @@ The CLI—at a minimum—has:
 - `cdd-ruby from_openapi to_server -i spec.json`
 - `cdd-ruby to_openapi -i <path/to/code>`
 - `cdd-ruby to_docs_json --no-imports --no-wrapping -i spec.json`
-- `cdd-ruby serve_json_rpc -p 8080 -l 127.0.0.1`
+- `cdd-ruby serve_json_rpc -p 8080 -l 127.0.0.2`
 
 ## SDK Example
 
@@ -68,6 +68,7 @@ The `cdd-ruby` compiler leverages a unified architecture to support various face
     - **OpenAPI → `Ruby`**: Generate idiomatic native models, network routes, client SDKs, and boilerplate directly from OpenAPI (`.json` / `.yaml`) specifications.
     - **`Ruby` → OpenAPI**: Statically parse existing `Ruby` source code and emit compliant OpenAPI specifications.
 - **AST-Driven & Safe**: Employs static analysis instead of unsafe dynamic execution or reflection, allowing it to safely parse and emit code even for incomplete or un-compilable project states.
+- **Model Context Protocol (MCP)**: First-class support for generating MCP SDKs, clients, and servers from specifications.
 - **Seamless Sync**: Keep your docs, tests, database, clients, and routing in perfect harmony. Update your code, and generate the docs; or update the docs, and generate the code.
 
 **Uncommon Features:**
@@ -85,6 +86,7 @@ Commands:
   from_openapi to_sdk -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package] [--tests]
   from_openapi to_server -i <spec.json> | --input-dir <dir> [-o <target_dir>] [--no-github-actions] [--no-installable-package] [--tests]
   serve_json_rpc [-p|--port <port>] [-l|--listen <address>]
+  mcp
   --help
   --version
 ```

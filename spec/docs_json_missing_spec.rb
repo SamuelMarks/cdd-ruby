@@ -18,7 +18,7 @@ class DocsJsonEmitMissingTest < Minitest::Test
   end
 
   def teardown
-    File.delete(@filepath) if File.exist?(@filepath)
+    FileUtils.rm_f(@filepath)
   end
 
   def test_docs_json_emit

@@ -12,8 +12,8 @@ class CddTest < Minitest::Test
   end
 
   def teardown
-    File.delete('dummy.rb') if File.exist?('dummy.rb')
-    File.delete('dummy.json') if File.exist?('dummy.json')
+    FileUtils.rm_f('dummy.rb')
+    FileUtils.rm_f('dummy.json')
   end
 
   def test_parser
@@ -30,6 +30,55 @@ class CddTest < Minitest::Test
     assert_match(/attr_accessor :name/, result)
     assert_match(%r{get '/hello' do}, result)
   end
+
+  def test_mcp_core_router
+    router = Cdd::McpCoreRouter.new
+    tools = router.get_tools
+    assert_equal 2, tools.length
+    assert_equal 'parse_ruby_to_openapi', tools[0][:name]
+    assert_equal 'emit_openapi_to_ruby', tools[1][:name]
+
+    res_parse = router.execute_tool('parse_ruby_to_openapi', { 'filepath' => 'dummy.rb' })
+    assert res_parse.is_a?(String)
+    assert_match(/"openapi": "3.2.0"/, res_parse)
+
+    res_emit = router.execute_tool('emit_openapi_to_ruby', { 'filepath' => 'dummy.json' })
+    assert res_emit.is_a?(String)
+    assert_match(/class User/, res_emit)
+
+    assert_raises(RuntimeError) { router.execute_tool('unknown_tool', {}) }
+
+    resources = router.get_resources
+    assert_equal 1, resources.length
+    assert_equal 'mcp://cdd/ast', resources[0][:uri]
+
+    roots = router.get_roots
+    assert_equal 0, roots.length
+
+    templates = router.get_resource_templates
+    assert_equal 0, templates.length
+
+    sample = router.sample_message
+    assert_equal 'sampled', sample[:content][:text]
+
+    completion = router.complete_prompt('a', 'b', 'c')
+    assert_equal 0, completion[:completion][:total]
+
+    res_content = router.read_resource('mcp://cdd/ast')
+    assert_equal 'mcp://cdd/ast', res_content[:contents][0][:uri]
+
+    assert_raises(RuntimeError) { router.read_resource('mcp://unknown') }
+
+    assert_nil router.subscribe('uri')
+    assert_nil router.unsubscribe('uri')
+    assert router.ping
+    assert_nil router.set_level('debug')
+    assert_nil router.cancelled('id')
+    assert_nil router.progress('token', 1, 2)
+    assert_equal [], router.get_prompts
+    assert_equal({}, router.get_prompt('name', {}))
+    assert_equal({ completion: { values: [], total: 0, hasMore: false } }, router.complete('n', 'a', 'v'))
+  end
 end
 
 class CddEmitterCliTest < Minitest::Test
@@ -39,9 +88,9 @@ class CddEmitterCliTest < Minitest::Test
   end
 
   def teardown
-    File.delete('dummy.json') if File.exist?('dummy.json')
-    File.delete('sdk_cli.rb') if File.exist?('sdk_cli.rb')
-    File.delete('server.rb') if File.exist?('server.rb')
+    FileUtils.rm_f('dummy.json')
+    FileUtils.rm_f('sdk_cli.rb')
+    FileUtils.rm_f('server.rb')
   end
 
   def test_emit_sdk_cli

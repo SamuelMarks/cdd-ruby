@@ -93,4 +93,140 @@ module Cdd
       Cdd::ClientSdk::Emitter.emit_sdk(options)
     end
   end
+
+  # Native MCP router for Generator SDK / Core
+  class McpCoreRouter
+    # Returns available tools for the generator core
+    # @return [Array<Hash>] list of tools
+    def get_tools
+      [
+        { name: 'parse_ruby_to_openapi', description: 'Parse Ruby file to OpenAPI JSON', inputSchema: { type: 'object', properties: { filepath: { type: 'string' } }, required: ['filepath'] } },
+        { name: 'emit_openapi_to_ruby', description: 'Emit Ruby code from OpenAPI JSON', inputSchema: { type: 'object', properties: { filepath: { type: 'string' } }, required: ['filepath'] } }
+      ]
+    end
+
+    # Executes an internal MCP tool
+    # @param name [String] the tool name
+    # @param args [Hash] the tool arguments
+    # @return [String] the tool result
+    def execute_tool(name, args)
+      if name == 'parse_ruby_to_openapi'
+        Cdd::Parser.parse(args['filepath'])
+      elsif name == 'emit_openapi_to_ruby'
+        Cdd::Emitter.emit(args['filepath'])
+      else
+        raise "Unknown tool: #{name}"
+      end
+    end
+
+    # Gets available resources in the generator
+    # @return [Array<Hash>] list of resources
+    def get_resources
+      [
+        { uri: 'mcp://cdd/ast', name: 'Internal AST Query Resource', mimeType: 'application/json' }
+      ]
+    end
+
+    # Reads an internal resource by URI
+    # @param uri [String] the resource URI
+    # @return [Hash] the resource contents
+    def read_resource(uri)
+      raise "Resource not found: #{uri}" unless uri == 'mcp://cdd/ast'
+
+      { contents: [{ uri: uri, mimeType: 'application/json', text: '{"message":"AST placeholder"}' }] }
+    end
+
+    # Subscribes to a resource
+    # @param uri [String] the resource URI
+    # @return [void]
+    def subscribe(uri)
+      # no-op
+    end
+
+    # Unsubscribes from a resource
+    # @param uri [String] the resource URI
+    # @return [void]
+    def unsubscribe(uri)
+      # no-op
+    end
+
+    # Handles a ping
+    # @return [Boolean] always true
+    def ping
+      true
+    end
+
+    # Gets root directories
+    # @return [Array<Hash>] list of root directories
+    def get_roots
+      []
+    end
+
+    # Gets resource templates
+    # @return [Array<Hash>] list of resource templates
+    def get_resource_templates
+      []
+    end
+
+    # Samples a message
+    # @return [Hash] the sampled message
+    def sample_message
+      { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
+    end
+
+    # Completes a prompt
+    # @param _prompt_name [String] the prompt name
+    # @param _arg_name [String] the argument name
+    # @param _value [String] the current value
+    # @return [Hash] completion response
+    def complete_prompt(_prompt_name, _arg_name, _value)
+      { completion: { values: [], total: 0, hasMore: false } }
+    end
+
+    # Sets the logging level
+    # @param level [String] the log level
+    # @return [void]
+    def set_level(level)
+      # no-op
+    end
+
+    # Handles cancellation
+    # @param req_id [String] the request ID
+    # @return [void]
+    def cancelled(req_id)
+      # no-op
+    end
+
+    # Handles progress
+    # @param token [String] the progress token
+    # @param current [Integer] current progress
+    # @param total [Integer] total progress
+    # @return [void]
+    def progress(token, current, total)
+      # no-op
+    end
+
+    # Gets available prompts
+    # @return [Array<Hash>] list of prompts
+    def get_prompts
+      []
+    end
+
+    # Gets a specific prompt
+    # @param _name [String] prompt name
+    # @param _args [Hash] prompt arguments
+    # @return [Hash] the prompt details
+    def get_prompt(_name, _args)
+      {}
+    end
+
+    # Completes a prompt argument
+    # @param _name [String] prompt name
+    # @param _arg_name [String] argument name
+    # @param _value [String] current value
+    # @return [Hash] completion response
+    def complete(_name, _arg_name, _value)
+      { completion: { values: [], total: 0, hasMore: false } }
+    end
+  end
 end

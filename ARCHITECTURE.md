@@ -2,7 +2,7 @@
 
 <!-- COVERAGE_BADGES_START -->
 [![Test Coverage](https://img.shields.io/badge/coverage-100.0%25-brightgreen.svg)]()
-[![Doc Coverage](https://img.shields.io/badge/docs-94.57%25-green.svg)]()
+[![Doc Coverage](https://img.shields.io/badge/docs-100.0%25-brightgreen.svg)]()
 <!-- COVERAGE_BADGES_END -->
 
 The **cdd-ruby** tool acts as a dedicated compiler and transpiler. Its fundamental architecture follows standard compiler design principles, divided into three distinct phases: **Frontend (Parsing)**, **Intermediate Representation (IR)**, and **Backend (Emitting)**.

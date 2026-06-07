@@ -223,6 +223,106 @@ module Cdd
           end
         end
 
+        client_code += "  def mcp\n"
+        client_code += "    @mcp ||= ClientSdkMcpAdapter.new(self)\n"
+        client_code += "  end\n"
+        client_code += "end\n\n"
+
+        client_code += "class ClientSdkMcpAdapter\n"
+        client_code += "  def initialize(client)\n"
+        client_code += "    @client = client\n"
+        client_code += "  end\n"
+
+        client_code += "  def get_tools\n"
+        tools_array = []
+        openapi['paths']&.each do |path, methods|
+          methods.each do |method, details|
+            operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+            tool = {
+              name: operation_id,
+              description: details['summary'] || "Call #{method.upcase} #{path}",
+              inputSchema: {
+                type: 'object',
+                properties: {},
+                required: []
+              }
+            }
+            details['parameters']&.each do |param|
+              tool[:inputSchema][:properties][param['name']] = { type: 'string', description: param['in'] }
+              tool[:inputSchema][:required] << param['name'] if param['required']
+            end
+            tools_array << tool
+          end
+        end
+        client_code += "    #{tools_array.to_json}\n"
+        client_code += "  end\n"
+
+        client_code += "  def execute_tool(name, args)\n"
+        client_code += "    @client.send(name, args)\n"
+        client_code += "  end\n"
+
+        client_code += "  def get_resources\n"
+        client_code += "    [\n"
+        client_code += "      { uri: 'mcp://docs/api', name: 'API Documentation', mimeType: 'text/markdown' }\n"
+        client_code += "    ]\n"
+        client_code += "  end\n"
+
+        client_code += "  def read_resource(uri)\n"
+        client_code += "    if uri == 'mcp://docs/api'\n"
+        client_code += "      { contents: [{ uri: uri, mimeType: 'text/markdown', text: '# API Docs' }] }\n"
+        client_code += "    end\n"
+        client_code += "  end\n"
+
+        client_code += "  def get_prompts\n"
+        client_code += "    [{ name: 'summarize_api', description: 'Summarize the API wrapper', arguments: [{ name: 'focus', description: 'Focus area', required: false }] }]\n"
+        client_code += "  end\n"
+
+        client_code += "  def get_prompt(name, args = {})\n"
+        client_code += "    if name == 'summarize_api'\n"
+        client_code += "      { description: 'API summary prompt', messages: [{ role: 'user', content: { type: 'text', text: 'Please summarize this API wrapper' } }] }\n"
+        client_code += "    end\n"
+        client_code += "  end\n"
+
+        client_code += "  def handle_logging_level(level)\n"
+        client_code += "    # No-op for generated code\n"
+        client_code += "  end\n"
+
+        client_code += "  def handle_ping\n"
+        client_code += "    true\n"
+        client_code += "  end\n"
+
+        client_code += "  def handle_cancelled(request_id)\n"
+        client_code += "    # No-op for generated code\n"
+        client_code += "  end\n"
+
+        client_code += "  def get_roots\n"
+        client_code += "    []\n"
+        client_code += "  end\n"
+
+        client_code += "  def get_resource_templates\n"
+        client_code += "    []\n"
+        client_code += "  end\n"
+
+        client_code += "  def sample_message\n"
+        client_code += "    { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }\n"
+        client_code += "  end\n"
+
+        client_code += "  def handle_progress(progress_token, progress, total)\n"
+        client_code += "    # No-op for generated code\n"
+        client_code += "  end\n"
+
+        client_code += "  def handle_subscribe(uri)\n"
+        client_code += "    # No-op for generated code\n"
+        client_code += "  end\n"
+
+        client_code += "  def handle_unsubscribe(uri)\n"
+        client_code += "    # No-op for generated code\n"
+        client_code += "  end\n"
+
+        client_code += "  def complete_prompt(prompt_name, arg_name, value)\n"
+        client_code += "    { completion: { values: [], total: 0, hasMore: false } }\n"
+        client_code += "  end\n"
+
         client_code += "end\n"
 
         if options[:output]

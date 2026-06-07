@@ -12,7 +12,7 @@ This guide covers how to publish the `cdd-ruby` gem to rubygems.org and how to h
    ```
 4. Push the generated gem to RubyGems:
    ```bash
-   gem push cdd-ruby-0.0.1.gem
+   gem push cdd-ruby-0.0.2.gem
    ```
 
 ## Building & Hosting Docs

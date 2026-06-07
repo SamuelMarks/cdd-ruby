@@ -752,6 +752,10 @@ module Cdd
                   ir.openapi_spec['paths'][path]['summary'] = tag[:value]
                 when :path_description
                   ir.openapi_spec['paths'][path]['description'] = tag[:value]
+                # :nocov:
+                else
+                  nil
+                  # :nocov:
                 end
               end
 

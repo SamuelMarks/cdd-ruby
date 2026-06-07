@@ -14,6 +14,22 @@ Metrics/ModuleLength:
   Exclude:
     - 'src/cli.rb'
 
+Metrics/ClassLength:
+  Exclude:
+    - 'src/docstrings/parse.rb'
+
+Metrics/MethodLength:
+  Exclude:
+    - 'src/docstrings/parse.rb'
+
+Metrics/BlockLength:
+  Exclude:
+    - 'src/docstrings/parse.rb'
+
+Style/EmptyElse:
+  Exclude:
+    - 'src/docstrings/parse.rb'
+
 Style/Documentation:
   Exclude:
     - 'src/cli.rb'

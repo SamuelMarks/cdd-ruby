@@ -2,10 +2,12 @@
 
 require_relative 'spec_helper'
 require_relative '../src/cdd'
+require 'open3'
 
 class CliTest < Minitest::Test
   def setup
     File.write('dummy.rb', "# @route GET /hello\nclass User\nend\n")
+    File.write('dummy_schema.json', '{"info":{"title":"Test API","version":"1.0.0"},"paths":{"/test":{}},"components":{"schemas":{"User":{}}}}')
     File.write('dummy.json', <<~JSON
       {
         "openapi": "3.2.0",
@@ -186,17 +188,112 @@ class CliTest < Minitest::Test
   end
 
   def teardown
-    ['spec.json', 'docs.json', 'server.rb', 'sdk_cli.rb'].each { |f| File.delete(f) if File.exist?(f) }
-
-    File.delete('dummy.rb') if File.exist?('dummy.rb')
-    File.delete('dummy.json') if File.exist?('dummy.json')
+    ['spec.json', 'docs.json', 'server.rb', 'sdk_cli.rb'].each { |f| FileUtils.rm_f(f) }
+    FileUtils.rm_f('dummy.rb')
+    FileUtils.rm_f('dummy.json')
+    FileUtils.rm_f('dummy_schema.json')
     FileUtils.rm_rf('scaffold_test_dir') if Dir.exist?('scaffold_test_dir')
     FileUtils.rm_rf('test_sdk_out')
   end
 
   def test_cli_version
     output = `ruby -Isrc bin/cdd-ruby --version`.strip
-    assert_equal '0.0.1', output
+    assert_equal '0.0.2', output
+  end
+
+  def test_cli_mcp
+    Open3.popen3('ruby -Isrc bin/cdd-ruby mcp') do |stdin, stdout, _stderr, _wait_thr|
+      stdin.puts '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
+      stdin.puts '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+      stdin.puts '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+      stdin.puts '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"generate_to_openapi","arguments":{"input":"dummy.rb","output":"spec.json"}}}'
+      stdin.puts '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"generate_from_openapi","arguments":{"subcommand":"to_server","input":"dummy.json","output":"."}}}'
+      stdin.puts '{"jsonrpc":"2.0","id":5,"method":"prompts/list"}'
+      stdin.puts '{"jsonrpc":"2.0","id":6,"method":"prompts/get","params":{"name":"generate_docs","arguments":{"filepath":"dummy.rb"}}}'
+      stdin.puts '{"jsonrpc":"2.0","id":7,"method":"resources/list"}'
+      stdin.puts '{"jsonrpc":"2.0","id":8,"method":"resources/read","params":{"uri":"mcp://cdd/docs"}}'
+      stdin.puts '{"jsonrpc":"2.0","id":9,"method":"resources/subscribe","params":{"uri":"mcp://cdd/docs"}}'
+      stdin.puts '{"jsonrpc":"2.0","id":10,"method":"logging/setLevel","params":{"level":"debug"}}'
+      stdin.puts '{"jsonrpc":"2.0","id":11,"method":"ping"}'
+      stdin.puts '{"jsonrpc":"2.0","id":12,"method":"completion/complete","params":{"ref":{"type":"prompt","name":"generate_docs"},"argument":{"name":"filepath","value":"du"}}}'
+      stdin.puts '{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"inspect_schema","arguments":{"filepath":"dummy_schema.json"}}}'
+      stdin.puts '{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"inspect_schema","arguments":{"filepath":"does_not_exist.json"}}}'
+      stdin.puts '{"jsonrpc":"2.0","id":15,"method":"resources/templates/list"}'
+      stdin.puts '{"jsonrpc":"2.0","id":16,"method":"roots/list"}'
+      stdin.puts %({"jsonrpc":"2.0","id":17,"method":"sampling/createMessage","params":{"messages":[{"role":"user","content":{"type":"text","text":"test"}}]}})
+      stdin.puts 'invalid json'
+      stdin.close
+
+      output_lines = stdout.read.split("\n")
+
+      resp1 = JSON.parse(output_lines[0])
+      assert_equal '2.0', resp1['jsonrpc']
+      assert_equal 1, resp1['id']
+      assert resp1['result']['capabilities']
+
+      resp2 = JSON.parse(output_lines[1])
+      assert_equal 2, resp2['id']
+      assert !resp2['result']['tools'].empty?
+
+      resp3 = JSON.parse(output_lines[2])
+      assert_equal 3, resp3['id']
+      assert_equal 'Generated successfully', resp3['result']['content'][0]['text']
+
+      resp4 = JSON.parse(output_lines[3])
+      assert_equal 4, resp4['id']
+      assert_equal 'Generated successfully', resp4['result']['content'][0]['text']
+
+      resp5 = JSON.parse(output_lines[4])
+      assert_equal 5, resp5['id']
+      assert !resp5['result']['prompts'].empty?
+
+      resp6 = JSON.parse(output_lines[5])
+      assert_equal 6, resp6['id']
+      assert_equal 'Generate docs prompt', resp6['result']['description']
+
+      resp7 = JSON.parse(output_lines[6])
+      assert_equal 7, resp7['id']
+      assert !resp7['result']['resources'].empty?
+
+      resp8 = JSON.parse(output_lines[7])
+      assert_equal 8, resp8['id']
+      assert_equal '# CDD Docs', resp8['result']['contents'][0]['text']
+
+      resp9 = JSON.parse(output_lines[8])
+      assert_equal 9, resp9['id']
+
+      resp10 = JSON.parse(output_lines[9])
+      assert_equal 10, resp10['id']
+
+      resp11 = JSON.parse(output_lines[10])
+      assert_equal 11, resp11['id']
+
+      resp12 = JSON.parse(output_lines[11])
+      assert_equal 12, resp12['id']
+
+      resp13 = JSON.parse(output_lines[12])
+      assert_equal 13, resp13['id']
+      assert_includes resp13['result']['content'][0]['text'], 'Schema: Test API 1.0.0'
+
+      resp14 = JSON.parse(output_lines[14])
+      assert_equal 14, resp14['id']
+      assert_equal(-32_603, resp14['error']['code'])
+
+      resp15 = JSON.parse(output_lines[15])
+      assert_equal 15, resp15['id']
+      assert_equal [], resp15['result']['resourceTemplates']
+
+      resp16 = JSON.parse(output_lines[16])
+      assert_equal 16, resp16['id']
+      assert_equal [], resp16['result']['roots']
+
+      resp17 = JSON.parse(output_lines[17])
+      assert_equal 17, resp17['id']
+      assert_equal 'sampled', resp17['result']['content']['text']
+
+      err_resp = JSON.parse(output_lines[18])
+      assert_equal(-32_700, err_resp['error']['code'])
+    end
   end
 
   def test_cli_to_openapi

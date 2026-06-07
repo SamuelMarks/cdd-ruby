@@ -59,7 +59,7 @@ class ModulesTest < Minitest::Test
   def test_openapi_emit
     res = Cdd::Openapi::Emitter.emit(@ir)
     assert_match(/# @api_title Generated API/, res)
-    assert_match(/# @api_version 0.0.1/, res)
+    assert_match(/# @api_version 0.0.2/, res)
   end
 
   def test_routes_parse
