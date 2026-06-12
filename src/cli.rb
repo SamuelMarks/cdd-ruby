@@ -42,8 +42,8 @@ module CDD
 
           Examples:
             cdd-ruby serve_json_rpc [--wasi]
-            cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests]
-            cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests]
+            cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
+            cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
             cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>]
             cdd-ruby to_openapi -i <path/to/code> [-o <spec.json>]
             cdd-ruby to_docs_json [--no-imports] [--no-wrapping] -i <spec.json> [-o <docs.json>]
@@ -98,6 +98,7 @@ module CDD
           when '--no-github-actions' then options[:no_github_actions] = true
           when '--no-installable-package' then options[:no_installable_package] = true
           when '--tests' then options[:tests] = true
+          when '--mcp' then options[:mcp] = true
           when '-p', '--port' then options[:port] = argv.shift
           when '-l', '--listen' then options[:listen] = argv.shift
           end
@@ -265,6 +266,7 @@ module CDD
             when '--no-github-actions' then options[:no_github_actions] = true
             when '--no-installable-package' then options[:no_installable_package] = true
             when '--tests' then options[:tests] = true
+            when '--mcp' then options[:mcp] = true
             end
           end
 
@@ -274,6 +276,7 @@ module CDD
           no_gh = get_arg(options, :no_github_actions, 'CDD_NO_GITHUB_ACTIONS')
           no_pkg = get_arg(options, :no_installable_package, 'CDD_NO_INSTALLABLE_PACKAGE')
           tests = get_arg(options, :tests, 'CDD_TESTS')
+          mcp = get_arg(options, :mcp, 'CDD_MCP')
 
           unless input || input_dir
             puts 'Error: Missing -i <filepath> or --input-dir <dir>'
@@ -286,7 +289,7 @@ module CDD
             output: out,
             no_github_actions: no_gh,
             no_installable_package: no_pkg,
-            tests: tests
+            tests: tests, mcp: mcp
           }
 
           case subcommand
