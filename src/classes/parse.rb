@@ -50,9 +50,18 @@ module Cdd
               ir.openapi_spec['components'] ||= {}
               ir.openapi_spec['components']['schemas'] ||= {}
               ir.openapi_spec['components']['schemas'][name] = schema
+            elsif current_class && comment =~ /#\s*property:\s+(\w+)\s+\((.+)\)/
+              # Check for ActiveRecord property comments like: # property: id (integer)
+              prop = ::Regexp.last_match(1)
+              type = ::Regexp.last_match(2)
+              ir.openapi_spec['components'] ||= {}
+              ir.openapi_spec['components']['schemas'] ||= {}
+              ir.openapi_spec['components']['schemas'][current_class] ||= { 'type' => 'object', 'properties' => {} }
+              ir.openapi_spec['components']['schemas'][current_class]['properties'] ||= {}
+              ir.openapi_spec['components']['schemas'][current_class]['properties'][prop] = { 'type' => type }
             end
           elsif token[1] == :on_kw && token[2] == 'class'
-            name_token = tokens[i + 1..].find { |t| t[1] == :on_const }
+            name_token = tokens[(i + 1)..].find { |t| t[1] == :on_const }
             if name_token
               name = name_token[2]
               ir.classes << name
@@ -67,7 +76,7 @@ module Cdd
               parent = nil
               while j < tokens.size && tokens[j][1] != :on_nl && tokens[j][1] != :on_kw
                 if tokens[j][1] == :on_op && tokens[j][2] == '<'
-                  parent_token = tokens[j + 1..].find { |t| t[1] == :on_const }
+                  parent_token = tokens[(j + 1)..].find { |t| t[1] == :on_const }
                   parent = parent_token[2] if parent_token
                   break
                 end
@@ -94,6 +103,13 @@ module Cdd
               j += 1
             end
           end
+        end
+
+        # Clean up internal scaffolding classes that aren't domain models
+        return unless ir.openapi_spec['components'] && ir.openapi_spec['components']['schemas']
+
+        ir.openapi_spec['components']['schemas'].reject! do |k, _v|
+          k == 'CliParser' || k == 'Factory' || k == 'DatabaseConnection' || k.end_with?('Dao')
         end
       end
     end

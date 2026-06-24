@@ -125,7 +125,7 @@ dummy*
 temp*
 tmp*
 patch*.rb
-test_*.rb
+/test_*.rb
 fix_*.rb
 update_*.rb
 replace_*.rb

@@ -11,7 +11,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
@@ -21,8 +21,16 @@ jobs:
           gem install bundler
           bundle install
           gem install ruby_wasm
-      - name: Run tests
+      - name: Run unit tests
         run: bundle exec rspec
+      - name: Run E2E Test (Swagger 2.0 SDK vs Docker)
+        run: ruby scripts/test_petstore_swagger_2.rb
+      - name: Run E2E Test (OpenAPI 3.0 SDK vs Docker)
+        run: ruby scripts/test_petstore_openapi_3.rb
+      - name: Run E2E Test (Swagger 2.0 Generated Server vs SDK)
+        run: ruby scripts/test_generated_server_swagger_2.rb
+      - name: Run E2E Test (OpenAPI 3.0 Generated Server vs SDK)
+        run: ruby scripts/test_generated_server_openapi_3.rb
       - name: Update coverage shields
         run: ruby scripts/update_coverage.rb
       - name: Build WASM
@@ -37,7 +45,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'

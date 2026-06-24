@@ -16,7 +16,7 @@ module Cdd
 
         tokens.each_with_index do |token, i|
           if token[1] == :on_kw && token[2] == 'class'
-            name_token = tokens[i + 1..].find { |t| t[1] == :on_const }
+            name_token = tokens[(i + 1)..].find { |t| t[1] == :on_const }
             in_api_client = true if name_token && name_token[2] == 'ApiClient'
           elsif token[1] == :on_kw && token[2] == 'end' && in_api_client
             # Simplified scoping

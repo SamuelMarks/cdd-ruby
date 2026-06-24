@@ -18,27 +18,33 @@ module Cdd
   # The Parser class reads Ruby files and extracts AST for generating OpenAPI.
   class Parser
     # Parses a given file into a Cdd::AST (internal representation).
-    # @param filepath [String] the file to parse
+    # @param filepaths [String, Array<String>] the files to parse
     # @return [String] the OpenAPI representation in JSON
-    def self.parse(filepath)
-      code = File.read(filepath)
+    def self.parse(filepaths)
       ir = Cdd::IR.new
-      tokens = Ripper.lex(code)
+      paths = filepaths.is_a?(Array) ? filepaths : [filepaths]
 
-      # Modularity: Pass tokens through the parsers
-      # Each parser extracts relevant context and mutates/populates the IR
-      Cdd::Classes::Parser.parse(tokens, ir)
-      Cdd::Functions::Parser.parse(tokens, ir)
-      Cdd::Docstrings::Parser.parse(tokens, ir)
-      Cdd::Routes::Parser.parse(tokens, ir)
-      Cdd::Openapi::Parser.parse(tokens, ir)
-      Cdd::Mocks::Parser.parse(tokens, ir)
-      Cdd::Tests::Parser.parse(tokens, ir)
+      paths.each do |filepath|
+        next unless File.exist?(filepath)
 
-      # Also parse generated files (bidirectional syncing)
-      Cdd::ServerGen::Parser.parse(tokens, ir)
-      Cdd::ClientSdk::Parser.parse(tokens, ir)
-      Cdd::ClientSdkCli::Parser.parse(tokens, ir)
+        code = File.read(filepath)
+        tokens = Ripper.lex(code)
+
+        # Modularity: Pass tokens through the parsers
+        # Each parser extracts relevant context and mutates/populates the IR
+        Cdd::Classes::Parser.parse(tokens, ir)
+        Cdd::Functions::Parser.parse(tokens, ir)
+        Cdd::Docstrings::Parser.parse(tokens, ir)
+        Cdd::Routes::Parser.parse(tokens, ir)
+        Cdd::Openapi::Parser.parse(tokens, ir)
+        Cdd::Mocks::Parser.parse(tokens, ir)
+        Cdd::Tests::Parser.parse(tokens, ir)
+
+        # Also parse generated server files (bidirectional syncing)
+        Cdd::ServerGen::Parser.parse(tokens, ir)
+        Cdd::ClientSdk::Parser.parse(tokens, ir)
+        Cdd::ClientSdkCli::Parser.parse(tokens, ir)
+      end
 
       JSON.pretty_generate(ir.openapi_spec)
     end
@@ -152,9 +158,11 @@ module Cdd
 
     # Handles a ping
     # @return [Boolean] always true
+    # rubocop:disable Naming/PredicateMethod
     def ping
       true
     end
+    # rubocop:enable Naming/PredicateMethod
 
     # Gets root directories
     # @return [Array<Hash>] list of root directories

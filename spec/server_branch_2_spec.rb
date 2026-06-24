@@ -51,8 +51,11 @@ class ServerBranchTest2 < Minitest::Test
     file.write(openapi.to_json)
     file.close
 
-    out = Cdd::ServerGen::Emitter.emit_server(input: file.path)
-    refute_nil out
+    out_dir = 'test_server_emit2_out'
+    Cdd::ServerGen::Emitter.emit_server(input: file.path, output: out_dir)
+    assert File.exist?(File.join(out_dir, 'server.rb'))
+    FileUtils.rm_rf(out_dir)
+
     file.unlink
   end
 end

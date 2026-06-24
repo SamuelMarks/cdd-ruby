@@ -12,7 +12,7 @@ module Cdd
       @routes = []
       @openapi_spec = {
         'openapi' => '3.2.0',
-        'info' => { 'title' => 'Generated API', 'version' => '0.0.2' },
+        'info' => { 'title' => 'Generated API', 'version' => '0.0.3' },
         'paths' => {},
         'components' => { 'schemas' => {} }
       }

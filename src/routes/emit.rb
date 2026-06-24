@@ -158,8 +158,7 @@ module Cdd
         paths = ir.openapi_spec['paths'] || {}
         webhooks = ir.openapi_spec['webhooks'] || {}
 
-        all_ops = []
-        paths.each { |p, data| all_ops << { type: 'route', path: p, data: data } }
+        all_ops = paths.map { |p, data| { type: 'route', path: p, data: data } }
         webhooks.each { |w, data| all_ops << { type: 'webhook', path: w, data: data } }
 
         all_ops.each do |op_entry|

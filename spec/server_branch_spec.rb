@@ -63,11 +63,18 @@ class ServerBranchTest < Minitest::Test
     file.write(openapi.to_json)
     file.close
 
-    out = Cdd::ServerGen::Emitter.emit_server(input: file.path)
-    assert_match(/Discriminator/, out)
-    assert_match(%r{roots/list}, out)
-    assert_match(%r{resources/templates/list}, out)
-    assert_match(%r{sampling/createMessage}, out)
+    out_dir = 'test_server_emit_out'
+    Cdd::ServerGen::Emitter.emit_server(input: file.path, output: out_dir)
+
+    models_out = File.read(File.join(out_dir, 'models', 'myobj.rb'))
+    mcp_out = File.read(File.join(out_dir, 'routes', 'mcp_routes.rb'))
+
+    assert_match(/Discriminator/, models_out)
+    assert_match(%r{roots/list}, mcp_out)
+    assert_match(%r{resources/templates/list}, mcp_out)
+    assert_match(%r{sampling/createMessage}, mcp_out)
+
+    FileUtils.rm_rf(out_dir)
     file.unlink
   end
 end

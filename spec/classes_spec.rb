@@ -50,4 +50,21 @@ class ClassesTest < Minitest::Test
     assert_equal 2, error_schema['anyOf'].size
     assert_equal '#/components/schemas/NotFound', error_schema['anyOf'][0]['$ref']
   end
+
+  def test_parse_activerecord_class
+    code = <<~RUBY
+      class Post < ActiveRecord::Base
+        # property: title (string)
+        # property: views (integer)
+      end
+    RUBY
+    tokens = Ripper.lex(code)
+    ir = Cdd::IR.new
+    Cdd::Classes::Parser.parse(tokens, ir)
+
+    assert_equal ['Post'], ir.classes
+    assert ir.openapi_spec['components']['schemas']['Post']
+    assert_equal 'string', ir.openapi_spec['components']['schemas']['Post']['properties']['title']['type']
+    assert_equal 'integer', ir.openapi_spec['components']['schemas']['Post']['properties']['views']['type']
+  end
 end

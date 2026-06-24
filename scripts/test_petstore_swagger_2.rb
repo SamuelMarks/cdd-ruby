@@ -28,7 +28,7 @@ system("docker run --rm -d -p #{port}:8080 --name #{jvm_container} openapitools/
 
 jvm_ready = false
 base_path = '/v2'
-30.times do
+60.times do
   begin
     res = Net::HTTP.get_response(URI("http://localhost:#{port}#{base_path}/pet/findByStatus?status=available"))
     if res.is_a?(Net::HTTPSuccess) || res.code == '404'
@@ -51,7 +51,7 @@ unless jvm_ready
   base_path = '/api'
 
   non_jvm_ready = false
-  30.times do
+  60.times do
     begin
       res = Net::HTTP.get_response(URI("http://localhost:#{port}#{base_path}/pet/findByStatus?status=available"))
       if res.is_a?(Net::HTTPSuccess)

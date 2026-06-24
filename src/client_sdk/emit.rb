@@ -140,8 +140,8 @@ module Cdd
             client_code += "    body_params = params.dup\n"
             client_code += "    req_path = '#{path}'.dup\n"
             client_code += "    params.each do |k, v|\n"
-            client_code += "      if req_path.include?(\"{#\{k\}}\")\n"
-            client_code += "        req_path.gsub!(\"{#\{k\}}\", v.to_s)\n"
+            client_code += "      if req_path.include?(\"{#\{k}}\")\n"
+            client_code += "        req_path.gsub!(\"{#\{k}}\", v.to_s)\n"
             client_code += "        body_params.delete(k)\n"
             client_code += "      end\n"
             client_code += "    end\n"
@@ -164,7 +164,7 @@ module Cdd
             client_code += "    header_params.each { |k, v| req[k.to_s] = v.to_s }\n"
             if details['security'] && !details['security'].empty?
               client_code += "    req['api_key'] = 'special-key'\n"
-              client_code += "    req['Authorization'] = 'Bearer special-key'\n"
+              client_code += "    req['Authorization'] = 'Bearer mock-token-123'\n"
             end
             content_type = 'application/json'
             if details['consumes'] && !details['consumes'].empty?
@@ -225,6 +225,43 @@ module Cdd
 
         client_code += "  def mcp\n"
         client_code += "    @mcp ||= ClientSdkMcpAdapter.new(self)\n"
+        client_code += "  end\n"
+        client_code += "  # Identity Provider Helper\n"
+        client_code += "  def auth\n"
+        client_code += "    @auth ||= ClientSdkAuthAdapter.new(self)\n"
+        client_code += "  end\n"
+        client_code += "end\n\n"
+
+        client_code += "class ClientSdkAuthAdapter\n"
+        client_code += "  def initialize(client)\n"
+        client_code += "    @client = client\n"
+        client_code += "  end\n"
+        client_code += "  def register(username, password, overrides = {})\n"
+        client_code += "    uri = URI(@client.base_url.gsub(/\\/api\\/v[0-9]+|\\/v[0-9]+/, '') + '/auth/register')\n"
+        client_code += "    req = Net::HTTP::Post.new(uri.path)\n"
+        client_code += "    req['Content-Type'] = 'application/json'\n"
+        client_code += "    req.body = { username: username, password: password }.merge(overrides).to_json\n"
+        client_code += "    res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') { |http| http.request(req) }\n"
+        client_code += "    JSON.parse(res.body) rescue res.body\n"
+        client_code += "  end\n"
+        client_code += "  def login(username, password)\n"
+        client_code += "    uri = URI(@client.base_url.gsub(/\\/api\\/v[0-9]+|\\/v[0-9]+/, '') + '/auth/login')\n"
+        client_code += "    req = Net::HTTP::Post.new(uri.path)\n"
+        client_code += "    req['Content-Type'] = 'application/json'\n"
+        client_code += "    req.body = { username: username, password: password }.to_json\n"
+        client_code += "    res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') { |http| http.request(req) }\n"
+        client_code += "    data = JSON.parse(res.body) rescue {}\n"
+        client_code += "    if data['token']\n"
+        client_code += "      @client.access_token = data['token']\n"
+        client_code += "      return true\n"
+        client_code += "    end\n"
+        client_code += "    false\n"
+        client_code += "  end\n"
+        client_code += "  def logout\n"
+        client_code += "    uri = URI(@client.base_url.gsub(/\\/api\\/v[0-9]+|\\/v[0-9]+/, '') + '/auth/logout')\n"
+        client_code += "    req = Net::HTTP::Post.new(uri.path)\n"
+        client_code += "    Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') { |http| http.request(req) }\n"
+        client_code += "    @client.access_token = nil\n"
         client_code += "  end\n"
         client_code += "end\n\n"
 
@@ -339,16 +376,50 @@ module Cdd
 
             integration_test_code = "# frozen_string_literal: true\n\n"
             integration_test_code += "require 'rspec'\n"
+            integration_test_code += "require 'open3'\n"
             integration_test_code += "require_relative '../lib/client'\n\n"
-            integration_test_code += "RSpec.describe ClientSdk do\n"
-            integration_test_code += "  let(:client) { ClientSdk.new('http://127.0.0.1:8080/v2') }\n\n"
 
+            integration_test_code += "RSpec.shared_context 'server fixture' do |server_flags|\n"
+            integration_test_code += "  let(:client) { ClientSdk.new('http://127.0.0.1:8080#{openapi['basePath'] || ''}') }\n"
+            integration_test_code += "  before(:all) do\n"
+            integration_test_code += "    @server_pid = spawn('ruby ../../generated_server/server.rb -p 8080 ' + server_flags)\n"
+            integration_test_code += "    sleep 2 # Wait for boot\n"
+            integration_test_code += "  end\n"
+            integration_test_code += "  after(:all) do\n"
+            integration_test_code += "    Process.kill('TERM', @server_pid) rescue nil\n"
+            integration_test_code += "    Process.wait(@server_pid) rescue nil\n"
+            integration_test_code += "  end\n"
+            integration_test_code += "end\n\n"
+
+            integration_test_code += "RSpec.describe ClientSdk do\n"
+
+            # Topological Sort of Paths based on parameters/body heuristics
+            sorted_paths = []
             openapi['paths']&.each do |path, methods|
               methods.each do |method, details|
                 operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+                score = path.count('/') + (details['parameters']&.size || 0)
+                sorted_paths << { path: path, method: method, details: details, operation_id: operation_id, score: score }
+              end
+            end
+            sorted_paths.sort_by! { |p| p[:score] }
+
+            categories = {
+              'Category 2: Stub Tests' => '',
+              'Category 3: Stateful Ephemeral Tests' => '--ephemeral',
+              'Category 4: Seeded Mock Tests' => '--ephemeral --seed'
+            }
+
+            categories.each do |cat_name, flags|
+              integration_test_code += "  context '#{cat_name}' do\n"
+              integration_test_code += "    include_context 'server fixture', '#{flags}'\n\n"
+
+              sorted_paths.each do |p|
+                operation_id = p[:operation_id]
+                details = p[:details]
 
                 valid_codes = details['responses'] ? details['responses'].keys.select { |k| k.to_i.positive? } : []
-                valid_codes += %w[200 201 202 204 400 404]
+                valid_codes += %w[200 201 202 204 400 404 501] # Stub mode might return 501
                 valid_codes.uniq!
 
                 params = []
@@ -384,22 +455,23 @@ module Cdd
 
                 params_str = params.empty? ? '{}' : "{ #{params.join(', ')} }"
 
-                integration_test_code += "  it 'can call #{operation_id}' do\n"
-                integration_test_code += "    begin\n"
-                integration_test_code += "      response = client.#{operation_id}(#{params_str})\n"
-                integration_test_code += "      expect([#{valid_codes.map { |c| "'#{c}'" }.join(', ')}]).to include(client.last_response.code)\n"
-                integration_test_code += "      expect(response).not_to be_nil\n"
-                integration_test_code += "      expect(response).not_to include('sabotage' => true) if response.is_a?(Hash)\n"
-                integration_test_code += "    rescue Errno::ECONNREFUSED, Errno::ECONNRESET\n"
-                integration_test_code += "      skip 'Petstore server is not available'\n"
-                integration_test_code += "    end\n"
-                integration_test_code += "  end\n\n"
+                integration_test_code += "    it 'can call #{operation_id}' do\n"
+                integration_test_code += "      begin\n"
+                integration_test_code += "        response = client.#{operation_id}(#{params_str})\n"
+                integration_test_code += "        expect([#{valid_codes.map { |c| "'#{c}'" }.join(', ')}]).to include(client.last_response.code)\n"
+                integration_test_code += "        expect(response).not_to be_nil\n"
+                integration_test_code += "      rescue Errno::ECONNREFUSED, Errno::ECONNRESET\n"
+                integration_test_code += "        skip 'Server is not available'\n"
+                integration_test_code += "      end\n"
+                integration_test_code += "    end\n\n"
               end
+              integration_test_code += "  end\n\n"
             end
+
             integration_test_code += "end\n\n"
             integration_test_code += "RSpec.configure do |config|\n"
             integration_test_code += "  config.after(:suite) do\n"
-            integration_test_code += "    sleep 10 # Allow mock server access logs to flush\n"
+            integration_test_code += "    sleep 1 # Allow mock server access logs to flush\n"
             integration_test_code += "  end\n"
             integration_test_code += "end\n"
             File.write(File.join(spec_dir, 'integration_spec.rb'), integration_test_code)

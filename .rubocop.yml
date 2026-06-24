@@ -1,6 +1,7 @@
 inherit_from: .rubocop_todo.yml
 
 AllCops:
+  NewCops: enable
   Exclude:
     - 'build/**/*'
     - 'coverage/**/*'
@@ -9,6 +10,8 @@ AllCops:
     - 'docs/**/*'
     - '.yardoc/**/*'
     - 'bin/**/*'
+    - 'dummy_server/**/*'
+    - 'dummy_tests_output.rb'
 
 Metrics/ModuleLength:
   Exclude:

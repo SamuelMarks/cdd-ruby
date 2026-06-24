@@ -14,7 +14,7 @@ module Cdd
 
         pairs = {}
         new_rest = []
-        rest.split(' ').each do |part|
+        rest.split.each do |part|
           if part.start_with?('description:')
             new_rest << part.sub(/^description:/, '')
           elsif part.include?(':')

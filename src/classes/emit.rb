@@ -81,8 +81,7 @@ module Cdd
             desc = schema['description'] ? " #{schema['description']}" : ''
             out += "# @schema #{name}#{opts_str}#{desc}\n"
             if schema['xml']
-              xml_opts = []
-              schema['xml'].each { |xk, xv| xml_opts << "#{xk}:#{xv}" }
+              xml_opts = schema['xml'].map { |xk, xv| "#{xk}:#{xv}" }
               out += "# @schema_xml #{name} #{xml_opts.join(' ')}\n"
             end
 

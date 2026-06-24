@@ -183,12 +183,8 @@ module CDD
                 resp[:result] = { resourceTemplates: [] }
               when 'roots/list'
                 resp[:result] = { roots: [] }
-              when 'resources/subscribe', 'resources/unsubscribe'
-                resp[:result] = {} # Acknowledge subscription requests
-              when 'logging/setLevel'
-                resp[:result] = {} # Acknowledge logging level change
-              when 'ping'
-                resp[:result] = {}
+              when 'resources/subscribe', 'resources/unsubscribe', 'logging/setLevel', 'ping'
+                resp[:result] = {} # Acknowledge requests
               when 'sampling/createMessage'
                 resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
               when 'completion/complete'
@@ -206,6 +202,28 @@ module CDD
           end
           0
 
+        when 'sync'
+          while argv.any? && argv[0].start_with?('-')
+            arg = argv.shift
+            case arg
+            when '-i', '--input' then options[:i] = argv.shift
+            when '--truth' then options[:truth] = argv.shift
+            end
+          end
+
+          input = get_arg(options, :i, 'CDD_INPUT')
+          truth = get_arg(options, :truth, 'CDD_TRUTH')
+
+          if input.nil? || truth.nil?
+            puts 'Error: Missing -i <filepath> or --truth <class|activerecord|function>'
+            return 1
+          end
+
+          require_relative 'sync'
+          Cdd::Sync.sync(input, truth)
+          puts 'Synchronization complete.'
+          0
+
         when 'to_openapi'
           file = get_arg(options, :i, 'CDD_INPUT')
           out = get_arg(options, :o, 'CDD_OUTPUT', 'spec.json')
@@ -214,17 +232,15 @@ module CDD
             puts 'Error: Missing -i <filepath> or --input <filepath>'
             return 1
           end
+          target_files = if File.directory?(file)
+                           Dir.glob(File.join(file, '**', '*.rb')).reject do |f|
+                             f.include?('/spec/') || f.include?('/tests/') || f.include?('/vendor/') || f.include?('/.bundle/') || f.end_with?('_spec.rb') || f.end_with?('_test.rb')
+                           end
+                         else
+                           [file]
+                         end
 
-          if File.directory?(file)
-            if File.exist?(File.join(file, 'lib', 'client.rb'))
-              file = File.join(file, 'lib', 'client.rb')
-            else
-              files = Dir.glob(File.join(file, '**', '*.rb'))
-              file = files.first if files.any?
-            end
-          end
-
-          result = Cdd::Parser.parse(file)
+          result = Cdd::Parser.parse(target_files)
 
           if out
             FileUtils.mkdir_p(File.dirname(out))
@@ -267,6 +283,8 @@ module CDD
             when '--no-installable-package' then options[:no_installable_package] = true
             when '--tests' then options[:tests] = true
             when '--mcp' then options[:mcp] = true
+            when '--with-ephemeral' then options[:with_ephemeral] = true
+            when '--with-seed' then options[:with_seed] = true
             end
           end
 
@@ -277,6 +295,8 @@ module CDD
           no_pkg = get_arg(options, :no_installable_package, 'CDD_NO_INSTALLABLE_PACKAGE')
           tests = get_arg(options, :tests, 'CDD_TESTS')
           mcp = get_arg(options, :mcp, 'CDD_MCP')
+          with_eph = get_arg(options, :with_ephemeral, 'CDD_WITH_EPHEMERAL')
+          with_seed = get_arg(options, :with_seed, 'CDD_WITH_SEED')
 
           unless input || input_dir
             puts 'Error: Missing -i <filepath> or --input-dir <dir>'
@@ -289,7 +309,10 @@ module CDD
             output: out,
             no_github_actions: no_gh,
             no_installable_package: no_pkg,
-            tests: tests, mcp: mcp
+            tests: tests,
+            mcp: mcp,
+            with_ephemeral: with_eph,
+            with_seed: with_seed
           }
 
           case subcommand

@@ -223,6 +223,60 @@ module Cdd
           File.write(File.join(options[:output], 'sdk_cli.rb'), ruby_code)
 
           if options[:tests]
+            spec_dir = File.join(options[:output], 'spec')
+            FileUtils.mkdir_p(spec_dir)
+
+            integration_test_code = "# frozen_string_literal: true\n\n"
+            integration_test_code += "require 'rspec'\n"
+            integration_test_code += "require 'open3'\n\n"
+
+            integration_test_code += "RSpec.shared_context 'server fixture' do |server_flags|\n"
+            integration_test_code += "  before(:all) do\n"
+            integration_test_code += "    @server_pid = spawn('ruby ../../generated_server/server.rb -p 8080 ' + server_flags)\n"
+            integration_test_code += "    sleep 2 # Wait for boot\n"
+            integration_test_code += "  end\n"
+            integration_test_code += "  after(:all) do\n"
+            integration_test_code += "    Process.kill('TERM', @server_pid) rescue nil\n"
+            integration_test_code += "    Process.wait(@server_pid) rescue nil\n"
+            integration_test_code += "  end\n"
+            integration_test_code += "end\n\n"
+
+            integration_test_code += "RSpec.describe 'Client CLI' do\n"
+
+            # Topological Sort of Paths
+            sorted_paths = []
+            openapi['paths']&.each do |path, methods|
+              methods.each do |method, details|
+                operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+                score = path.count('/') + (details['parameters']&.size || 0)
+                sorted_paths << { operation_id: operation_id, score: score }
+              end
+            end
+            sorted_paths.sort_by! { |p| p[:score] }
+
+            categories = {
+              'Category 2: Stub Tests' => '',
+              'Category 3: Stateful Ephemeral Tests' => '--ephemeral',
+              'Category 4: Seeded Mock Tests' => '--ephemeral --seed'
+            }
+
+            categories.each do |cat_name, flags|
+              integration_test_code += "  context '#{cat_name}' do\n"
+              integration_test_code += "    include_context 'server fixture', '#{flags}'\n\n"
+
+              sorted_paths.each do |p|
+                operation_id = p[:operation_id]
+                integration_test_code += "    it 'can call #{operation_id}' do\n"
+                integration_test_code += "      out, status = Open3.capture2e('ruby', '../sdk_cli.rb', '#{operation_id}')\n"
+                integration_test_code += "      expect(out).to include('Calling')\n"
+                integration_test_code += "    end\n\n"
+              end
+              integration_test_code += "  end\n\n"
+            end
+
+            integration_test_code += "end\n\n"
+            File.write(File.join(spec_dir, 'integration_spec.rb'), integration_test_code)
+
             ir = Cdd::IR.new
             ir.openapi_spec = openapi
 

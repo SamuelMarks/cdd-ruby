@@ -40,15 +40,27 @@ repos:
         language: system
         pass_filenames: false
 
-      - id: petstore-swagger-2
-        name: Petstore Swagger 2.0 Test
+      - id: test-petstore-swagger-2
+        name: E2E Test SDK (Swagger 2.0) against Docker
         entry: ruby scripts/test_petstore_swagger_2.rb
         language: system
         pass_filenames: false
 
-      - id: petstore-openapi-3
-        name: Petstore OpenAPI 3.2.0 Test
+      - id: test-petstore-openapi-3
+        name: E2E Test SDK (OpenAPI 3.0) against Docker
         entry: ruby scripts/test_petstore_openapi_3.rb
+        language: system
+        pass_filenames: false
+
+      - id: test-generated-server-swagger-2
+        name: E2E Test Generated Server (Swagger 2.0) natively
+        entry: ruby scripts/test_generated_server_swagger_2.rb
+        language: system
+        pass_filenames: false
+
+      - id: test-generated-server-openapi-3
+        name: E2E Test Generated Server (OpenAPI 3.0) natively
+        entry: ruby scripts/test_generated_server_openapi_3.rb
         language: system
         pass_filenames: false
 

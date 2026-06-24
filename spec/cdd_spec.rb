@@ -106,13 +106,16 @@ class CddEmitterCliTest < Minitest::Test
   end
 
   def test_emit_server
-    res = Cdd::Emitter.emit_server(input: 'dummy.json', output: '.')
-    assert_match(%r{get '/hello/:id' do}, res)
-    assert File.exist?('server.rb')
+    out_dir = 'test_cdd_spec_server_out'
+    Cdd::Emitter.emit_server(input: 'dummy.json', output: out_dir)
+    assert File.exist?(File.join(out_dir, 'server.rb'))
+    routes_out = File.read(File.join(out_dir, 'routes', 'general_routes.rb'))
+    assert_match(%r{get '/hello/:id' do}, routes_out)
 
     File.write('dummy_no_paths.json', '{"openapi":"3.2.0"}')
-    res2 = Cdd::Emitter.emit_server(input: 'dummy_no_paths.json')
+    res2 = Cdd::Emitter.emit_server(input: 'dummy_no_paths.json', output: out_dir)
     assert_match(/require 'sinatra'/, res2)
     File.delete('dummy_no_paths.json')
+    FileUtils.rm_rf(out_dir)
   end
 end

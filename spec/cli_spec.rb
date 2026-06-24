@@ -192,8 +192,10 @@ class CliTest < Minitest::Test
     FileUtils.rm_f('dummy.rb')
     FileUtils.rm_f('dummy.json')
     FileUtils.rm_f('dummy_schema.json')
-    FileUtils.rm_rf('scaffold_test_dir') if Dir.exist?('scaffold_test_dir')
+    FileUtils.rm_rf('scaffold_test_dir')
     FileUtils.rm_rf('test_sdk_out')
+    FileUtils.rm_rf('test_cli_mcp_server_out')
+    FileUtils.rm_rf('test_server_out_cli')
   end
 
   def test_cli_version
@@ -207,7 +209,7 @@ class CliTest < Minitest::Test
       stdin.puts '{"jsonrpc":"2.0","method":"notifications/initialized"}'
       stdin.puts '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
       stdin.puts '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"generate_to_openapi","arguments":{"input":"dummy.rb","output":"spec.json"}}}'
-      stdin.puts '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"generate_from_openapi","arguments":{"subcommand":"to_server","input":"dummy.json","output":"."}}}'
+      stdin.puts '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"generate_from_openapi","arguments":{"subcommand":"to_server","input":"dummy.json","output":"test_cli_mcp_server_out"}}}'
       stdin.puts '{"jsonrpc":"2.0","id":5,"method":"prompts/list"}'
       stdin.puts '{"jsonrpc":"2.0","id":6,"method":"prompts/get","params":{"name":"generate_docs","arguments":{"filepath":"dummy.rb"}}}'
       stdin.puts '{"jsonrpc":"2.0","id":7,"method":"resources/list"}'
@@ -304,9 +306,10 @@ class CliTest < Minitest::Test
   end
 
   def test_cli_from_openapi
-    Cdd::Emitter.emit_server(input: 'dummy.json', output: '.', no_installable_package: true, no_github_actions: true)
-    output = File.read('server.rb')
+    Cdd::Emitter.emit_server(input: 'dummy.json', output: 'test_server_out_cli', no_installable_package: true, no_github_actions: true)
+    output = File.read('test_server_out_cli/routes/user_routes.rb')
     assert_match(%r{get '/users/:\w+' do}, output)
+    FileUtils.rm_rf('test_server_out_cli')
   end
 
   def test_cli_from_openapi_sdk
@@ -370,17 +373,46 @@ class CliTest < Minitest::Test
 
     # Client SDK CLI parser
     ir_cli = Cdd::IR.new
-    code_cli = "case command\nwhen 'my_op'\nputs 'hi'\nend"
+    code_cli = <<~RUBY
+      case other
+      end
+      case command
+      when 'mcp'
+        puts 'mcp'
+      when 'my_op'
+        puts 'Calling POST /my_op/path'
+      when 'other_op'
+        puts 'Calling GET /other'
+      end
+    RUBY
     tokens_cli = Ripper.lex(code_cli)
     Cdd::ClientSdkCli::Parser.parse(tokens_cli, ir_cli)
-    assert ir_cli.openapi_spec['paths']['/my_op']
+    assert ir_cli.openapi_spec['paths']['/my_op/path']['post']
+    assert ir_cli.openapi_spec['paths']['/other']['get']
 
     # Client SDK parser
     ir_sdk = Cdd::IR.new
-    code_sdk = "def my_method\nend"
+    code_sdk = <<~RUBY
+      class OtherClass
+        def initialize
+        end
+      end
+      class ClientSdk
+        def initialize
+        end
+        def authorize_oauth2
+        end
+        def handle_webhook_evt
+        end
+        def my_method
+          req_path = '/users'.dup
+          req = Net::HTTP::Post.new(uri)
+        end
+      end
+    RUBY
     tokens_sdk = Ripper.lex(code_sdk)
     Cdd::ClientSdk::Parser.parse(tokens_sdk, ir_sdk)
-    assert ir_sdk.openapi_spec['paths']['/my_method']
+    assert ir_sdk.openapi_spec['paths']['/users']['post']
   end
 
   def test_supported_keys

@@ -39,7 +39,9 @@ module Cdd
         end
       end
 
-      trap 'INT' do server.shutdown end
+      trap 'INT' do
+        server.shutdown
+      end
       puts "JSON-RPC server listening on #{listen}:#{port}"
       server.start
     end
