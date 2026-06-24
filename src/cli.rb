@@ -80,7 +80,7 @@ module CDD
         end
 
         if argv.include?('-v') || argv.include?('--version')
-          puts '0.0.2'
+          puts '0.0.3'
           return 0
         end
 

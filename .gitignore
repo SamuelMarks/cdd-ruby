@@ -164,3 +164,4 @@ venv/
 # Ensure we keep what we need
 !/bin/cdd-ruby
 !.github/
+script_*.rb

@@ -19,7 +19,7 @@ Dir.chdir(project_root) do
     exit 1
   end
 
-  unless system("bundle exec ruby bin/cdd-ruby from_openapi to_server -i \"#{petstore_json}\" -o \"#{server_dir}\" --with-ephemeral")
+  unless system("bundle exec ruby bin/cdd-ruby from_openapi to_server -i \"#{petstore_json}\" -o \"#{server_dir}\" --with-ephemeral --tests")
     puts 'Failed to generate Server for Swagger 2.0'
     exit 1
   end
@@ -29,6 +29,12 @@ end
 Dir.chdir(server_dir) do
   unless system('bundle install')
     puts 'Failed to install server dependencies'
+    exit 1
+  end
+
+  puts 'Running generated server unit tests...'
+  unless system("EPHEMERAL_DB=true bundle exec ruby -e 'Dir.glob(\"tests/**/*_test.rb\").each { |f| require_relative f }'")
+    puts 'Failed to run server unit tests for Swagger 2.0'
     exit 1
   end
 end

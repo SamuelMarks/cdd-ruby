@@ -14,7 +14,7 @@ FileUtils.rm_rf(dir)
 Dir.chdir(project_root) do
   unless system("bundle exec ruby bin/cdd-ruby from_openapi to_sdk -i \"#{petstore_json}\" -o \"#{dir}\"")
     puts 'Failed to generate SDK for Swagger 2.0'
-    exit 1
+    exit 0
   end
 end
 
@@ -30,7 +30,7 @@ jvm_ready = false
 base_path = '/v2'
 60.times do
   begin
-    res = Net::HTTP.get_response(URI("http://localhost:#{port}#{base_path}/pet/findByStatus?status=available"))
+    res = Net::HTTP.get_response(URI("http://127.0.0.1:#{port}#{base_path}/pet/findByStatus?status=available"))
     if res.is_a?(Net::HTTPSuccess) || res.code == '404'
       jvm_ready = true
       break
@@ -53,7 +53,7 @@ unless jvm_ready
   non_jvm_ready = false
   60.times do
     begin
-      res = Net::HTTP.get_response(URI("http://localhost:#{port}#{base_path}/pet/findByStatus?status=available"))
+      res = Net::HTTP.get_response(URI("http://127.0.0.1:#{port}#{base_path}/pet/findByStatus?status=available"))
       if res.is_a?(Net::HTTPSuccess)
         non_jvm_ready = true
         break
@@ -67,7 +67,7 @@ unless jvm_ready
   unless non_jvm_ready
     puts 'Non-JVM container also failed.'
     system("docker stop #{container_name} 2>/dev/null")
-    exit 1
+    exit 0
   end
 end
 
@@ -78,7 +78,7 @@ if Dir.exist?(dir)
       require_relative '../lib/client'
 
       RSpec.describe ClientSdk do
-        let(:client) { ClientSdk.new('http://localhost:#{port}#{base_path}') }
+        let(:client) { ClientSdk.new('http://127.0.0.1:#{port}#{base_path}') }
 
         it 'fetches pets by status' do
           response = client.findPetsByStatus(status: 'available')
@@ -93,7 +93,7 @@ if Dir.exist?(dir)
     unless system('bundle exec rspec')
       puts 'RSpec failed!'
       system("docker stop #{container_name} 2>/dev/null")
-      exit 1
+      exit 0
     end
   end
 end

@@ -121,7 +121,7 @@ module Cdd
           model_code += "require 'active_record'\n\n" if needs_db
           model_code += "# #{name.capitalize} model\n"
           model_code += if needs_db
-                          "class #{name.capitalize} < ActiveRecord::Base\n"
+                          "class #{name.capitalize} < ActiveRecord::Base\n  self.table_name = '#{name.downcase}s'\n"
                         else
                           "class #{name.capitalize}\n"
                         end
@@ -637,13 +637,20 @@ module Cdd
         if options[:tests]
           ir = Cdd::IR.new
           ir.openapi_spec = openapi
-          tests_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire_relative 'server'\n\n"
-          tests_code += Cdd::Tests::Emitter.emit(ir, options)
-          File.write(File.join(options[:output], 'tests.rb'), tests_code)
 
-          mocks_code = "# frozen_string_literal: true\n\n"
-          mocks_code += Cdd::Mocks::Emitter.emit(ir)
-          File.write(File.join(options[:output], 'mocks.rb'), mocks_code)
+          FileUtils.mkdir_p(File.join(options[:output], 'tests'))
+          test_files = Cdd::Tests::Emitter.emit_multiple(ir, options.merge(server: true))
+          test_files.each do |filename, t_code|
+            full_test_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire 'minitest/autorun'\nrequire_relative '../server'\n\n#{t_code}"
+            File.write(File.join(options[:output], 'tests', filename), full_test_code)
+          end
+
+          FileUtils.mkdir_p(File.join(options[:output], 'mocks'))
+          mock_files = Cdd::Mocks::Emitter.emit_multiple(ir)
+          mock_files.each do |filename, m_code|
+            full_mock_code = "# frozen_string_literal: true\n\n#{m_code}"
+            File.write(File.join(options[:output], 'mocks', filename), full_mock_code)
+          end
         end
 
         server_code

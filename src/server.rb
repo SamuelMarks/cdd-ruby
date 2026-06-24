@@ -53,7 +53,7 @@ module Cdd
     def self.handle_rpc(method, params)
       case method
       when 'version'
-        '0.0.2'
+        '0.0.3'
       when 'to_openapi'
         filepath = params['input']
         Cdd::Parser.parse(filepath)

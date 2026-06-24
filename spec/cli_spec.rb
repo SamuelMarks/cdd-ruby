@@ -200,7 +200,7 @@ class CliTest < Minitest::Test
 
   def test_cli_version
     output = `ruby -Isrc bin/cdd-ruby --version`.strip
-    assert_equal '0.0.2', output
+    assert_equal '0.0.3', output
   end
 
   def test_cli_mcp
@@ -355,8 +355,9 @@ class CliTest < Minitest::Test
     # test for server with composable tests and mocks
     Cdd::Emitter.emit_server(input: 'dummy.json', output: out_dir, tests: true)
     assert File.exist?("#{out_dir}/server.rb")
-    assert File.exist?("#{out_dir}/tests.rb")
-    assert File.exist?("#{out_dir}/mocks.rb")
+    assert File.exist?("#{out_dir}/tests/cli_parser_test.rb")
+    assert File.exist?("#{out_dir}/tests/cors_and_validation_test.rb")
+    assert Dir.exist?("#{out_dir}/mocks")
 
     # test for cli with composable tests and mocks
     Cdd::Emitter.emit_sdk_cli(input: 'dummy.json', output: out_dir, tests: true)

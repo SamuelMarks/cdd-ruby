@@ -34,6 +34,8 @@ module Cdd
             gemspec += "  spec.add_dependency 'webrick', '~> 1.8'\n"
             gemspec += "  spec.add_dependency 'puma', '~> 6.4'\n"
             gemspec += "  spec.add_dependency 'rackup', '~> 2.1'\n"
+            gemspec += "  spec.add_development_dependency 'minitest', '~> 5.0'\n"
+            gemspec += "  spec.add_development_dependency 'rack-test', '~> 2.1'\n"
             if options[:with_ephemeral] || options[:with_seed]
               gemspec += "  spec.add_dependency 'activerecord', '~> 8.0'\n"
               gemspec += "  spec.add_dependency 'sqlite3', '~> 2.0'\n"
@@ -58,6 +60,8 @@ module Cdd
             gemfile += "gem 'webrick'\n"
             gemfile += "gem 'puma'\n"
             gemfile += "gem 'rackup'\n"
+            gemfile += "gem 'minitest', group: :test\n"
+            gemfile += "gem 'rack-test', group: :test\n"
             if options[:with_ephemeral] || options[:with_seed]
               gemfile += "gem 'activerecord'\n"
               gemfile += "gem 'sqlite3'\n"
