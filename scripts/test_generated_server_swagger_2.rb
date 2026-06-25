@@ -8,7 +8,7 @@ require 'uri'
 sdk_dir = File.expand_path('../../cdd-ruby-client-v2-generated-server', __dir__)
 server_dir = File.expand_path('../../cdd-ruby-server-v2-generated', __dir__)
 project_root = File.expand_path('..', __dir__)
-petstore_json = File.expand_path('../../petstore.json', __dir__)
+petstore_json = File.expand_path('../spec/fixtures/petstore.json', __dir__)
 
 FileUtils.rm_rf(sdk_dir)
 FileUtils.rm_rf(server_dir)

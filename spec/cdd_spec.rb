@@ -22,6 +22,11 @@ class CddTest < Minitest::Test
     assert_equal '3.2.0', json['openapi']
     assert_equal 'OK', json['paths']['/hello']['get']['responses']['200']['description']
     assert_equal 'object', json['components']['schemas']['User']['type']
+
+    # Test array of filepaths including a missing one
+    result_missing = Cdd::Parser.parse(['dummy.rb', 'does_not_exist.rb'])
+    json_missing = JSON.parse(result_missing)
+    assert_equal '3.2.0', json_missing['openapi']
   end
 
   def test_emitter

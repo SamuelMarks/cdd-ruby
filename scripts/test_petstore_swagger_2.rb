@@ -7,7 +7,7 @@ require 'uri'
 
 dir = File.expand_path('../../cdd-ruby-client-v2', __dir__)
 project_root = File.expand_path('..', __dir__)
-petstore_json = File.expand_path('../../petstore.json', __dir__)
+petstore_json = File.expand_path('../spec/fixtures/petstore.json', __dir__)
 
 FileUtils.rm_rf(dir)
 
