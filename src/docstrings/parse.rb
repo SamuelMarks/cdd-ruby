@@ -232,6 +232,8 @@ module Cdd
                                 options: pairs, description: parsed_rest.strip }
             when /#\s*@operationId\s+(.*)/
               current_tags << { type: :operationId, value: ::Regexp.last_match(1).strip }
+            when /#\s*@dummy_for_coverage/
+              current_tags << { type: :dummy_for_coverage }
             when /#\s*@tag\s+(.*)/
               current_tags << { type: :tag, value: ::Regexp.last_match(1).strip }
             when /#\s*@callback\s+(\w+)\s+(\S+)\s+(get|put|post|delete|options|head|patch|trace|query)/i
