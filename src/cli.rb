@@ -99,6 +99,9 @@ module CDD
           when '--no-installable-package' then options[:no_installable_package] = true
           when '--tests' then options[:tests] = true
           when '--mcp' then options[:mcp] = true
+          when '--truth' then options[:truth] = argv.shift
+          when '--with-ephemeral' then options[:with_ephemeral] = true
+          when '--with-seed' then options[:with_seed] = true
           when '-p', '--port' then options[:port] = argv.shift
           when '-l', '--listen' then options[:listen] = argv.shift
           end
@@ -203,13 +206,6 @@ module CDD
           0
 
         when 'sync'
-          while argv.any? && argv[0].start_with?('-')
-            arg = argv.shift
-            case arg
-            when '-i', '--input' then options[:i] = argv.shift
-            when '--truth' then options[:truth] = argv.shift
-            end
-          end
 
           input = get_arg(options, :i, 'CDD_INPUT')
           truth = get_arg(options, :truth, 'CDD_TRUTH')
@@ -242,11 +238,11 @@ module CDD
 
           result = Cdd::Parser.parse(target_files)
 
-          if out
+          if out == '-'
+            puts result
+          else
             FileUtils.mkdir_p(File.dirname(out))
             File.write(out, result)
-          else
-            puts result
           end
           0
 
@@ -262,11 +258,11 @@ module CDD
           end
 
           result = Cdd::DocsJson::Emitter.emit(input, no_imports: no_imports, no_wrapping: no_wrapping)
-          if out
+          if out == '-'
+            puts result
+          else
             FileUtils.mkdir_p(File.dirname(out))
             File.write(out, result)
-          else
-            puts result
           end
           0
 
@@ -329,13 +325,6 @@ module CDD
           0
 
         when 'serve_json_rpc'
-          while argv.any? && argv[0].start_with?('-')
-            arg = argv.shift
-            case arg
-            when '-p', '--port' then options[:port] = argv.shift
-            when '-l', '--listen' then options[:listen] = argv.shift
-            end
-          end
 
           port = get_arg(options, :port, 'CDD_PORT', '8080')
           listen = get_arg(options, :listen, 'CDD_LISTEN', '127.0.0.2')

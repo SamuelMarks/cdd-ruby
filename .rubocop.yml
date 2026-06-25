@@ -12,6 +12,8 @@ AllCops:
     - 'bin/**/*'
     - 'dummy_server/**/*'
     - 'dummy_tests_output.rb'
+    - 'test_*_out/**/*'
+    - 'test_*_out_cli/**/*'
 
 Metrics/ModuleLength:
   Exclude:

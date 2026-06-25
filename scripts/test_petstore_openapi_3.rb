@@ -93,7 +93,7 @@ if Dir.exist?(dir)
     unless system('bundle exec rspec')
       puts 'RSpec failed!'
       system("docker stop #{container_name} 2>/dev/null")
-      exit 0
+      exit 1
     end
   end
 end

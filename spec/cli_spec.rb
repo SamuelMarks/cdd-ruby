@@ -2,6 +2,7 @@
 
 require_relative 'spec_helper'
 require_relative '../src/cdd'
+require_relative '../src/cli'
 require 'open3'
 
 class CliTest < Minitest::Test
@@ -201,6 +202,51 @@ class CliTest < Minitest::Test
   def test_cli_version
     output = `ruby -Isrc bin/cdd-ruby --version`.strip
     assert_equal '0.0.3', output
+    assert_equal 0, CDD::CLI.run(['--version'])
+  end
+
+  def test_cli_helpers
+    # Test print_help
+    assert_equal 0, CDD::CLI.run(['--help'])
+
+    # These helpers shell out to run internally
+    assert_equal 1, CDD::CLI.generate_from_openapi(['to_sdk'])
+    assert_equal 1, CDD::CLI.generate_to_openapi([])
+    assert_equal 1, CDD::CLI.generate_docs_json([])
+
+    # We can mock Cdd::Server.start to test serve_json_rpc
+    original_start = Cdd::Server.method(:start)
+    begin
+      Cdd::Server.singleton_class.define_method(:start) { |_l, _p| nil }
+      assert_equal 0, CDD::CLI.serve_json_rpc(['-p', '1234', '-l', '0.0.0.0'])
+    ensure
+      Cdd::Server.singleton_class.define_method(:start, original_start)
+    end
+  end
+
+  def test_cli_run_edge_cases
+    # Test unknown command
+    assert_equal 1, CDD::CLI.run(['unknown_cmd'])
+
+    # Test missing arguments for to_openapi
+    assert_equal 1, CDD::CLI.run(['to_openapi'])
+
+    # Test missing arguments for to_docs_json
+    assert_equal 1, CDD::CLI.run(['to_docs_json'])
+
+    # Test missing arguments for from_openapi
+    assert_equal 1, CDD::CLI.run(%w[from_openapi to_sdk])
+
+    # Test unknown from_openapi subcommand
+    assert_equal 1, CDD::CLI.run(['from_openapi', 'unknown_subcmd', '-i', 'dummy.json'])
+
+    # Test missing arguments for sync
+    assert_equal 1, CDD::CLI.run(['sync'])
+
+    # Test get_arg with env
+    ENV['CDD_TEST_ENV'] = 'val'
+    assert_equal 'val', CDD::CLI.get_arg({}, :none, 'CDD_TEST_ENV')
+    ENV.delete('CDD_TEST_ENV')
   end
 
   def test_cli_mcp
