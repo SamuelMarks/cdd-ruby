@@ -24,15 +24,15 @@ jobs:
       - name: Run unit tests
         run: bundle exec rspec
       - name: Run E2E Test (Swagger 2.0 SDK vs Docker)
-        run: ruby scripts/test_petstore_swagger_2.rb
+        run: python3 scripts/test_petstore_swagger_2.py
       - name: Run E2E Test (OpenAPI 3.0 SDK vs Docker)
-        run: ruby scripts/test_petstore_openapi_3.rb
+        run: python3 scripts/test_petstore_openapi_3.py
       - name: Run E2E Test (Swagger 2.0 Generated Server vs SDK)
-        run: ruby scripts/test_generated_server_swagger_2.rb
+        run: python3 scripts/test_generated_server_swagger_2.py
       - name: Run E2E Test (OpenAPI 3.0 Generated Server vs SDK)
-        run: ruby scripts/test_generated_server_openapi_3.rb
+        run: python3 scripts/test_generated_server_openapi_3.py
       - name: Update coverage shields
-        run: ruby scripts/update_coverage.rb
+        run: python3 scripts/update_coverage.py
       - name: Build WASM
         run: make build_wasm
       - name: Build CLI Binary

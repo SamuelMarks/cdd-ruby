@@ -24,7 +24,7 @@ repos:
 
       - id: build
         name: Build
-        entry: ruby scripts/build.rb
+        entry: python3 scripts/build.py
         language: system
         pass_filenames: false
 
@@ -36,36 +36,36 @@ repos:
 
       - id: update-badges
         name: Update Badges
-        entry: ruby scripts/update_coverage.rb
+        entry: python3 scripts/update_coverage.py
         language: system
         pass_filenames: false
 
       - id: test-petstore-swagger-2
         name: E2E Test SDK (Swagger 2.0) against Docker
-        entry: ruby scripts/test_petstore_swagger_2.rb
+        entry: python3 scripts/test_petstore_swagger_2.py
         language: system
         pass_filenames: false
 
       - id: test-petstore-openapi-3
         name: E2E Test SDK (OpenAPI 3.0) against Docker
-        entry: ruby scripts/test_petstore_openapi_3.rb
+        entry: python3 scripts/test_petstore_openapi_3.py
         language: system
         pass_filenames: false
 
       - id: test-generated-server-swagger-2
         name: E2E Test Generated Server (Swagger 2.0) natively
-        entry: ruby scripts/test_generated_server_swagger_2.rb
+        entry: python3 scripts/test_generated_server_swagger_2.py
         language: system
         pass_filenames: false
 
       - id: test-generated-server-openapi-3
         name: E2E Test Generated Server (OpenAPI 3.0) natively
-        entry: ruby scripts/test_generated_server_openapi_3.rb
+        entry: python3 scripts/test_generated_server_openapi_3.py
         language: system
         pass_filenames: false
 
       - id: build-wasm
         name: Build WASM
-        entry: ruby scripts/build_wasm.rb
+        entry: python3 scripts/build_wasm.py
         language: system
         pass_filenames: false

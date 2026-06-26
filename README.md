@@ -5,8 +5,8 @@ cdd-ruby
 [![interactive WASM web demo](https://img.shields.io/badge/interactive-WASM_web_demo-blue.svg)](https://offscale.io/wasm_web_demo)
 [![CI](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-ruby/actions)
 <!-- COVERAGE_BADGES_START -->
-[![Test Coverage](https://img.shields.io/badge/coverage-100.0%25-brightgreen.svg)]()
-[![Doc Coverage](https://img.shields.io/badge/docs-100.0%25-brightgreen.svg)]()
+[![Test Coverage](https://img.shields.io/badge/coverage-100.00%25-brightgreen.svg)]()
+[![Doc Coverage](https://img.shields.io/badge/docs-100.00%25-brightgreen.svg)]()
 <!-- COVERAGE_BADGES_END -->
 
 **Compiler Driven Development (CDD)** is a development approach designed to eradicate the disconnect between: API specifications; server implementations; client SDKs; and command-line tooling.
