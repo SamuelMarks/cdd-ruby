@@ -2,6 +2,10 @@
 
 require 'json'
 
+# Extracts specific string literals and symbols from Ruby source files.
+#
+# @param files [Array<String>] The list of file paths to parse.
+# @return [Array<String>] The extracted keys.
 def extract_keys(files)
   keys = Set.new
   files.each do |f|

@@ -120,40 +120,95 @@ A true ecosystem requires standardized tooling. Once a developer learns the CDD 
 
 ### Core Subcommands
 
-#### `from_openapi to_sdk_cli`
-Generate a client SDK and a corresponding command-line interface (CLI) from an OpenAPI specification.
-- `--input, -i <spec>`: Path to the OpenAPI specification file.
+#### `from_openapi`
 
-#### `from_openapi to_sdk`
-Generate a client SDK from an OpenAPI specification.
-- `--input, -i <spec>`: Path to the OpenAPI specification file.
+```text
+cdd-ruby from_openapi - Generate code from an OpenAPI specification.
+Usage:
+  cdd-ruby from_openapi [target] [options]
 
-#### `from_openapi to_server`
-Generate server boilerplate, models, and routing logic from an OpenAPI specification.
-- `--input, -i <spec>`: Path to the OpenAPI specification file.
+Targets:
+  to_sdk_cli    Generate a client SDK and a corresponding CLI.
+  to_sdk        Generate a client SDK.
+  to_server     Generate server boilerplate, models, and routing logic.
+
+Options:
+  -i, --input <spec>             Path to the OpenAPI specification file
+  -o, --output <dir>             Destination path for generation (default: current directory)
+  --input-dir <dir>              Directory of input specifications
+  --no-github-actions            Disable GitHub Actions workflow generation
+  --no-installable-package       Disable installable package generation
+  --tests                        Generate RSpec test scaffolding
+  --mcp                          Include Model Context Protocol support
+  --with-ephemeral               Enable ephemeral code generation
+  --with-seed                    Include seed data in generation
+  -h, --help                     Show this help message
+```
 
 #### `to_openapi`
-Parse the existing codebase and extract an authoritative OpenAPI specification.
-- `--input, -i <path>` (or `-f <path>`): Path to the source code directory or file to parse.
+
+```text
+cdd-ruby to_openapi - Generate an OpenAPI specification from source code.
+Usage:
+  cdd-ruby to_openapi -i <path/to/code> [-o <spec.json>]
+
+Options:
+  -i, --input <path>             Path to the source code directory or file to parse
+  -o, --output <path>            Destination path for the generated OpenAPI spec (default: spec.json)
+  -h, --help                     Show this help message
+```
 
 #### `to_docs_json`
-Convert an OpenAPI specification into a localized, documentation-optimized JSON format.
-- `--input, -i <spec>`: Path to the OpenAPI specification file.
-- `--no-imports`: Disable import statements in the generated documentation.
-- `--no-wrapping`: Disable line wrapping in the generated documentation.
+
+```text
+cdd-ruby to_docs_json - Generate JSON documentation with code snippets for an OpenAPI specification.
+Usage:
+  cdd-ruby to_docs_json [options] -i <spec.json> [-o <docs.json>]
+
+Options:
+  -i, --input <spec>             Path to the OpenAPI specification file
+  -o, --output <path>            Destination path for the generated JSON docs (default: docs.json)
+  --no-imports                   Disable import statements in the generated documentation
+  --no-wrapping                  Disable line wrapping in the generated documentation
+  -h, --help                     Show this help message
+```
 
 #### `serve_json_rpc`
-Launch a JSON-RPC server for editor and tool integrations.
-- `--port <port>` (or `-p`): Port to listen on (e.g., `8080`).
-- `--listen <address>` (or `-l`): Address to bind to (e.g., `0.0.0.0`).
+
+```text
+cdd-ruby serve_json_rpc - Expose CLI interface as a JSON-RPC server.
+Usage:
+  cdd-ruby serve_json_rpc [options]
+
+Options:
+  -p, --port <port>              Port to listen on (default: 8080)
+  -l, --listen <address>         Address to bind to (default: 127.0.0.2)
+  -h, --help                     Show this help message
+```
 
 #### `mcp`
-Run the Model Context Protocol server via stdio.
+
+```text
+cdd-ruby mcp - Run the generator as an MCP server over stdio.
+Usage:
+  cdd-ruby mcp [options]
+
+Options:
+  -h, --help                     Show this help message
+```
 
 #### `sync`
-Synchronize an OpenAPI specification with source code.
-- `--input, -i <filepath>`: Path to the input file.
-- `--truth <class|activerecord|function>`: The source of truth for the synchronization.
+
+```text
+cdd-ruby sync - Synchronize an OpenAPI specification with source code.
+Usage:
+  cdd-ruby sync [options] -i <filepath> --truth <class|activerecord|function>
+
+Options:
+  -i, --input <filepath>         Path to the input file
+  --truth <type>                 The source of truth for the synchronization (class, activerecord, function)
+  -h, --help                     Show this help message
+```
 
 ### Detail Features Beyond Common Subset
 
@@ -165,18 +220,21 @@ Usage:
   cdd-ruby [subcommand] [options]
 
 Subcommands:
-  from_openapi    Generate code from an OpenAPI specification.
-  to_openapi      Generate an OpenAPI specification from source code.
-  to_docs_json    Generate JSON documentation with code snippets for an OpenAPI specification.
-  serve_json_rpc  Expose CLI interface as a JSON-RPC server.
-  mcp             Start the Model Context Protocol (MCP) server for generator orchestration.
+  from_openapi                   Generate code from an OpenAPI specification.
+  to_openapi                     Generate an OpenAPI specification from source code.
+  to_docs_json                   Generate JSON documentation with code snippets for an OpenAPI specification.
+  serve_json_rpc                 Expose CLI interface as a JSON-RPC server.
+  mcp                            Run the generator as an MCP server over stdio.
+  sync                           Synchronize an OpenAPI specification with source code.
 
 Options:
-  --help, -h      Show this help message
-  --version, -v   Show version information
+  -h, --help                     Show this help message
+  -v, --version                  Show version information
+  -p, --port <port>              Port for the JSON-RPC server
+  -l, --listen <address>         Host/IP to listen on for the JSON-RPC server
 
 Examples:
-  cdd-ruby serve_json_rpc [--wasi]
+  cdd-ruby serve_json_rpc [--wasi] [-p <port>] [-l <listen>]
   cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
   cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
   cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>]

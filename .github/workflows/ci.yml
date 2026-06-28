@@ -10,6 +10,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      swagger-petstore:
+        image: swaggerapi/petstore
+        ports:
+          - 8080:8080
+      openapi-petstore:
+        image: openapitools/openapi-petstore:latest
+        ports:
+          - 8081:8080
     steps:
       - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1

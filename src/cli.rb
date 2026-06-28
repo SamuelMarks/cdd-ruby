@@ -8,6 +8,50 @@ require_relative 'server'
 
 # CDD Module for the CLI
 module CDD
+  # Typed configuration for programmatic SDK invocation
+  class Config
+    attr_accessor :subcommand, :input, :output, :input_dir, :no_imports, :no_wrapping,
+                  :no_github_actions, :no_installable_package, :tests, :mcp, :truth,
+                  :with_ephemeral, :with_seed, :port, :listen
+
+    # Initializes the configuration
+    # @param opts [Hash] configuration options
+    def initialize(opts = {})
+      opts.each { |k, v| send("#{k}=", v) if respond_to?("#{k}=") }
+    end
+
+    # Converts the configuration to an array of arguments
+    # @return [Array<String>] command line arguments
+    def to_a
+      args = []
+      args << subcommand.to_s if subcommand
+      args << '-i' << input.to_s if input
+      args << '-o' << output.to_s if output
+      args << '-d' << input_dir.to_s if input_dir
+      args << '--no-imports' if no_imports
+      args << '--no-wrapping' if no_wrapping
+      args << '--no-github-actions' if no_github_actions
+      args << '--no-installable-package' if no_installable_package
+      args << '--tests' if tests
+      args << '--mcp' if mcp
+      if truth
+        args << '--truth'
+        args << truth.to_s
+      end
+      args << '--with-ephemeral' if with_ephemeral
+      args << '--with-seed' if with_seed
+      if port
+        args << '-p'
+        args << port.to_s
+      end
+      if listen
+        args << '-l'
+        args << listen.to_s
+      end
+      args
+    end
+  end
+
   # The CLI module handles command line parsing and orchestration
   module CLI
     class << self
@@ -30,18 +74,21 @@ module CDD
             cdd-ruby [subcommand] [options]
 
           Subcommands:
-            from_openapi    Generate code from an OpenAPI specification.
-            to_openapi      Generate an OpenAPI specification from source code.
-            to_docs_json    Generate JSON documentation with code snippets for an OpenAPI specification.
-            serve_json_rpc  Expose CLI interface as a JSON-RPC server.
-            mcp             Start the Model Context Protocol (MCP) server for generator orchestration.
+            from_openapi                   Generate code from an OpenAPI specification.
+            to_openapi                     Generate an OpenAPI specification from source code.
+            to_docs_json                   Generate JSON documentation with code snippets for an OpenAPI specification.
+            serve_json_rpc                 Expose CLI interface as a JSON-RPC server.
+            mcp                            Run the generator as an MCP server over stdio.
+            sync                           Synchronize an OpenAPI specification with source code.
 
           Options:
-            --help, -h      Show this help message
-            --version, -v   Show version information
+            -h, --help                     Show this help message
+            -v, --version                  Show version information
+            -p, --port <port>              Port for the JSON-RPC server
+            -l, --listen <address>         Host/IP to listen on for the JSON-RPC server
 
           Examples:
-            cdd-ruby serve_json_rpc [--wasi]
+            cdd-ruby serve_json_rpc [--wasi] [-p <port>] [-l <listen>]
             cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
             cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
             cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>]
@@ -50,23 +97,137 @@ module CDD
         HELP
       end
 
+      # Prints help for from_openapi
+      # @return [void]
+      def print_from_openapi_help
+        puts <<~HELP
+          cdd-ruby from_openapi - Generate code from an OpenAPI specification.
+          Usage:
+            cdd-ruby from_openapi [target] [options]
+
+          Targets:
+            to_sdk_cli    Generate a client SDK and a corresponding CLI.
+            to_sdk        Generate a client SDK.
+            to_server     Generate server boilerplate, models, and routing logic.
+
+          Options:
+            -i, --input <spec>             Path to the OpenAPI specification file
+            -o, --output <dir>             Destination path for generation (default: current directory)
+            -d, --input-dir <dir>          Directory of input specifications
+            --no-github-actions            Disable GitHub Actions workflow generation
+            --no-installable-package       Disable installable package generation
+            --tests                        Generate RSpec test scaffolding
+            --mcp                          Include Model Context Protocol support
+            --with-ephemeral               Enable ephemeral code generation
+            --with-seed                    Include seed data in generation
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for to_openapi
+      # @return [void]
+      def print_to_openapi_help
+        puts <<~HELP
+          cdd-ruby to_openapi - Generate an OpenAPI specification from source code.
+          Usage:
+            cdd-ruby to_openapi -i <path/to/code> [-o <spec.json>]
+
+          Options:
+            -i, --input <path>             Path to the source code directory or file to parse
+            -o, --output <path>            Destination path for the generated OpenAPI spec (default: spec.json)
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for to_docs_json
+      # @return [void]
+      def print_to_docs_json_help
+        puts <<~HELP
+          cdd-ruby to_docs_json - Generate JSON documentation with code snippets for an OpenAPI specification.
+          Usage:
+            cdd-ruby to_docs_json [options] -i <spec.json> [-o <docs.json>]
+
+          Options:
+            -i, --input <spec>             Path to the OpenAPI specification file
+            -o, --output <path>            Destination path for the generated JSON docs (default: docs.json)
+            --no-imports                   Disable import statements in the generated documentation
+            --no-wrapping                  Disable line wrapping in the generated documentation
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for serve_json_rpc
+      # @return [void]
+      def print_serve_json_rpc_help
+        puts <<~HELP
+          cdd-ruby serve_json_rpc - Expose CLI interface as a JSON-RPC server.
+          Usage:
+            cdd-ruby serve_json_rpc [options]
+
+          Options:
+            -p, --port <port>              Port to listen on (default: 8080)
+            -l, --listen <address>         Address to bind to (default: 127.0.0.2)
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for mcp
+      # @return [void]
+      def print_mcp_help
+        puts <<~HELP
+          cdd-ruby mcp - Run the generator as an MCP server over stdio.
+          Usage:
+            cdd-ruby mcp [options]
+
+          Options:
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for sync
+      # @return [void]
+      def print_sync_help
+        puts <<~HELP
+          cdd-ruby sync - Synchronize an OpenAPI specification with source code.
+          Usage:
+            cdd-ruby sync [options] -i <filepath> --truth <class|activerecord|function>
+
+          Options:
+            -i, --input <filepath>         Path to the input file
+            --truth <type>                 The source of truth for the synchronization (class, activerecord, function)
+            -h, --help                     Show this help message
+        HELP
+      end
+
       # Generate code from an OpenAPI specification.
-      def generate_from_openapi(args)
+      # @param config [CDD::Config, Array<String>] programmatic configuration or raw arguments
+      # @return [Integer] the exit code
+      def generate_from_openapi(config)
+        args = config.is_a?(CDD::Config) ? config.to_a : config
         run(['from_openapi'] + args)
       end
 
       # Generate an OpenAPI specification from source code.
-      def generate_to_openapi(args)
+      # @param config [CDD::Config, Array<String>] programmatic configuration or raw arguments
+      # @return [Integer] the exit code
+      def generate_to_openapi(config)
+        args = config.is_a?(CDD::Config) ? config.to_a : config
         run(['to_openapi'] + args)
       end
 
       # Generate JSON documentation with code snippets for an OpenAPI specification.
-      def generate_docs_json(args)
+      # @param config [CDD::Config, Array<String>] programmatic configuration or raw arguments
+      # @return [Integer] the exit code
+      def generate_docs_json(config)
+        args = config.is_a?(CDD::Config) ? config.to_a : config
         run(['to_docs_json'] + args)
       end
 
       # Expose CLI interface as a JSON-RPC server.
-      def serve_json_rpc(args)
+      # @param config [CDD::Config, Array<String>] programmatic configuration or raw arguments
+      # @return [Integer] the exit code
+      def serve_json_rpc(config)
+        args = config.is_a?(CDD::Config) ? config.to_a : config
         run(['serve_json_rpc'] + args)
       end
 
@@ -74,7 +235,7 @@ module CDD
       # @param argv [Array<String>] the command line arguments
       # @return [Integer] the exit code
       def run(argv)
-        if argv.empty? || argv.include?('-h') || argv.include?('--help')
+        if argv.empty? || argv == ['-h'] || argv == ['--help']
           print_help
           return 0
         end
@@ -85,6 +246,27 @@ module CDD
         end
 
         command = argv.shift
+
+        if argv.include?('-h') || argv.include?('--help')
+          case command
+          when 'from_openapi'
+            print_from_openapi_help
+          when 'to_openapi'
+            print_to_openapi_help
+          when 'to_docs_json'
+            print_to_docs_json_help
+          when 'serve_json_rpc'
+            print_serve_json_rpc_help
+          when 'mcp'
+            print_mcp_help
+          when 'sync'
+            print_sync_help
+          else
+            print_help
+          end
+          return 0
+        end
+
         options = {}
 
         while argv.any? && argv[0].start_with?('-')
@@ -92,7 +274,7 @@ module CDD
           case arg
           when '-i', '--input' then options[:i] = argv.shift
           when '-o', '--output' then options[:o] = argv.shift
-          when '--input-dir' then options[:input_dir] = argv.shift
+          when '-d', '--input-dir' then options[:input_dir] = argv.shift
           when '--no-imports' then options[:no_imports] = true
           when '--no-wrapping' then options[:no_wrapping] = true
           when '--no-github-actions' then options[:no_github_actions] = true
@@ -272,9 +454,9 @@ module CDD
           while argv.any? && argv[0].start_with?('-')
             arg = argv.shift
             case arg
-            when '-i' then options[:i] = argv.shift
-            when '-o' then options[:o] = argv.shift
-            when '--input-dir' then options[:input_dir] = argv.shift
+            when '-i', '--input' then options[:i] = argv.shift
+            when '-o', '--output' then options[:o] = argv.shift
+            when '-d', '--input-dir' then options[:input_dir] = argv.shift
             when '--no-github-actions' then options[:no_github_actions] = true
             when '--no-installable-package' then options[:no_installable_package] = true
             when '--tests' then options[:tests] = true
@@ -295,7 +477,7 @@ module CDD
           with_seed = get_arg(options, :with_seed, 'CDD_WITH_SEED')
 
           unless input || input_dir
-            puts 'Error: Missing -i <filepath> or --input-dir <dir>'
+            puts 'Error: Missing -i <filepath> or -d <dir> or --input-dir <dir>'
             return 1
           end
 

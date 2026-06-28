@@ -161,7 +161,7 @@ This document provides a granular, step-by-step checklist to implement an orthog
 - [x] **100% Test Coverage:** Write end-to-end tests validating the full lifecycle: registering a new user via the Auth Server, exchanging credentials for a token, and successfully accessing a protected resource on the main API using that token.
 
 ### Webhooks & Callbacks Support
-- [ ] If the OpenAPI spec defines `callbacks` or `webhooks`, implement an administrative "trigger" API (e.g., `POST /_mock/trigger-webhook/{webhook_name}`).
-- [ ] Implement an HTTP client within the mock server capable of dispatching these outgoing webhook payloads to a registered target URL.
-- [ ] **100% Doc Coverage:** Document the administrative trigger endpoints in the generated `README.md`.
-- [ ] **100% Test Coverage:** Write an isolated test that spins up a dummy receiver, calls the administrative trigger, and verifies the mock server successfully dispatches the correct webhook payload.
+- [x] If the OpenAPI spec defines `callbacks` or `webhooks`, implement an administrative "trigger" API (e.g., `POST /_mock/trigger-webhook/{webhook_name}`).
+- [x] Implement an HTTP client within the mock server capable of dispatching these outgoing webhook payloads to a registered target URL.
+- [x] **100% Doc Coverage:** Document the administrative trigger endpoints in the generated `README.md`.
+- [x] **100% Test Coverage:** Write an isolated test that spins up a dummy receiver, calls the administrative trigger, and verifies the mock server successfully dispatches the correct webhook payload.

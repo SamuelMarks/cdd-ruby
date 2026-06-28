@@ -205,20 +205,61 @@ class CliTest < Minitest::Test
     assert_equal 0, CDD::CLI.run(['--version'])
   end
 
+  def test_config_to_a
+    config = CDD::Config.new(
+      subcommand: 'to_sdk',
+      input: 'in.json',
+      output: 'out_dir',
+      input_dir: 'in_dir',
+      no_imports: true,
+      no_wrapping: true,
+      no_github_actions: true,
+      no_installable_package: true,
+      tests: true,
+      mcp: true,
+      truth: 'class',
+      with_ephemeral: true,
+      with_seed: true,
+      port: 8080,
+      listen: '127.0.0.1'
+    )
+    expected_args = [
+      'to_sdk', '-i', 'in.json', '-o', 'out_dir', '-d', 'in_dir',
+      '--no-imports', '--no-wrapping', '--no-github-actions',
+      '--no-installable-package', '--tests', '--mcp',
+      '--truth', 'class', '--with-ephemeral', '--with-seed',
+      '-p', '8080', '-l', '127.0.0.1'
+    ]
+    assert_equal expected_args, config.to_a
+  end
+
   def test_cli_helpers
     # Test print_help
     assert_equal 0, CDD::CLI.run(['--help'])
+    assert_equal 0, CDD::CLI.run(['from_openapi', '--help'])
+    assert_equal 0, CDD::CLI.run(['to_openapi', '--help'])
+    assert_equal 0, CDD::CLI.run(['to_docs_json', '--help'])
+    assert_equal 0, CDD::CLI.run(['serve_json_rpc', '--help'])
+    assert_equal 0, CDD::CLI.run(['mcp', '--help'])
+    assert_equal 0, CDD::CLI.run(['sync', '--help'])
 
-    # These helpers shell out to run internally
-    assert_equal 1, CDD::CLI.generate_from_openapi(['to_sdk'])
-    assert_equal 1, CDD::CLI.generate_to_openapi([])
-    assert_equal 1, CDD::CLI.generate_docs_json([])
+    # Test unknown subcommand help prints global help
+    assert_equal 0, CDD::CLI.run(['unknown_command', '--help'])
+
+    # These helpers shell out to run internally using Config objects
+    config_from = CDD::Config.new(subcommand: 'to_sdk')
+    assert_equal 1, CDD::CLI.generate_from_openapi(config_from)
+    config_to = CDD::Config.new
+    assert_equal 1, CDD::CLI.generate_to_openapi(config_to)
+    config_docs = CDD::Config.new
+    assert_equal 1, CDD::CLI.generate_docs_json(config_docs)
 
     # We can mock Cdd::Server.start to test serve_json_rpc
     original_start = Cdd::Server.method(:start)
     begin
       Cdd::Server.singleton_class.define_method(:start) { |_l, _p| nil }
-      assert_equal 0, CDD::CLI.serve_json_rpc(['-p', '1234', '-l', '0.0.0.0'])
+      config_rpc = CDD::Config.new(port: '1234', listen: '0.0.0.0')
+      assert_equal 0, CDD::CLI.serve_json_rpc(config_rpc)
     ensure
       Cdd::Server.singleton_class.define_method(:start, original_start)
     end
