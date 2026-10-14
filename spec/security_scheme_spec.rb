@@ -22,7 +22,7 @@ class SecuritySchemeTest < Minitest::Test
     assert_match(/@security_scheme api_key apiKey in:header name:X-API-KEY An API key scheme/, out)
   end
 
-  def test_security_scheme_edge
+  def test_security_scheme_without_description
     code = <<~RUBY
       # @security_scheme bare_scheme http scheme:bearer
     RUBY

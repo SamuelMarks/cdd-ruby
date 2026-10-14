@@ -6,7 +6,8 @@ Gem::Specification.new do |spec|
   spec.authors       = ['CDD Developer']
   spec.email         = ['developer@example.com']
   spec.summary       = 'Compiler Driven Development for Ruby <-> OpenAPI 3.2.0'
-  spec.description   = 'AST-based bidirectional compiler to convert Ruby code to OpenAPI specs and vice versa using only the Ruby standard library.'
+  spec.description   = 'AST-based bidirectional compiler to convert Ruby code to OpenAPI specs and vice versa ' \
+                       'using only the Ruby standard library.'
   spec.homepage      = 'https://github.com/offscale/cdd-ruby'
   spec.license       = 'Apache-2.0'
 

@@ -2,38 +2,44 @@
 
 require_relative 'spec_helper'
 require_relative '../src/server'
+require 'tmpdir'
 
 class ServerTest < Minitest::Test
   def setup
-    File.write('dummy_server_test.rb', "# @route GET /hello\nclass User\nend\n")
-    File.write('dummy_server_test.json', '{"openapi":"3.2.0","info":{"title":"API","version":"1.0.0"},"paths":{}}')
+    @tmp_dir = Dir.mktmpdir
+    @rb_path = File.join(@tmp_dir, 'server_sample.rb')
+    @json_path = File.join(@tmp_dir, 'server_sample.json')
+    File.write(@rb_path, "# @route GET /hello
+class User
+end
+")
+    File.write(@json_path, '{"openapi":"3.2.0","info":{"title":"API","version":"1.0.0"},"paths":{}}')
   end
 
   def teardown
-    FileUtils.rm_f('dummy_server_test.rb')
-    FileUtils.rm_f('dummy_server_test.json')
+    FileUtils.rm_rf(@tmp_dir)
   end
 
   def test_handle_rpc
     assert_equal '0.0.3', Cdd::Server.handle_rpc('version', {})
 
-    res = Cdd::Server.handle_rpc('to_openapi', { 'input' => 'dummy_server_test.rb' })
+    res = Cdd::Server.handle_rpc('to_openapi', { 'input' => @rb_path })
     assert_match(/openapi/, res)
 
-    res2 = Cdd::Server.handle_rpc('to_docs_json', { 'input' => 'dummy_server_test.json' })
+    res2 = Cdd::Server.handle_rpc('to_docs_json', { 'input' => @json_path })
     assert_match(/\{\}/, res2)
 
-    Cdd::Server.handle_rpc('from_openapi_to_sdk_cli', { 'input' => 'dummy_server_test.json', 'output' => 'tmp_out_cli' })
-    assert File.exist?('tmp_out_cli/sdk_cli.rb')
-    FileUtils.rm_rf('tmp_out_cli')
+    out_cli = File.join(@tmp_dir, 'cli')
+    Cdd::Server.handle_rpc('from_openapi_to_sdk_cli', { 'input' => @json_path, 'output' => out_cli })
+    assert File.exist?(File.join(out_cli, 'sdk_cli.rb'))
 
-    Cdd::Server.handle_rpc('from_openapi_to_sdk', { 'input' => 'dummy_server_test.json', 'output' => 'tmp_out_sdk' })
-    assert File.exist?('tmp_out_sdk/lib/client.rb')
-    FileUtils.rm_rf('tmp_out_sdk')
+    out_sdk = File.join(@tmp_dir, 'sdk')
+    Cdd::Server.handle_rpc('from_openapi_to_sdk', { 'input' => @json_path, 'output' => out_sdk })
+    assert File.exist?(File.join(out_sdk, 'lib', 'client.rb'))
 
-    Cdd::Server.handle_rpc('from_openapi_to_server', { 'input' => 'dummy_server_test.json', 'output' => 'tmp_out_server' })
-    assert File.exist?('tmp_out_server/server.rb')
-    FileUtils.rm_rf('tmp_out_server')
+    out_server = File.join(@tmp_dir, 'server')
+    Cdd::Server.handle_rpc('from_openapi_to_server', { 'input' => @json_path, 'output' => out_server })
+    assert File.exist?(File.join(out_server, 'server.rb'))
 
     assert_raises(StandardError) do
       Cdd::Server.handle_rpc('unknown_method', {})
@@ -65,10 +71,17 @@ class ServerTest < Minitest::Test
     res2 = http.request(req)
     assert_equal '400', res2.code
 
-    # Test error in JSON-RPC
+    # Test error in JSON-RPC (unknown method -> Cdd::RpcError)
     req.body = { jsonrpc: '2.0', method: 'unknown', id: 1 }.to_json
     res3 = http.request(req)
     assert_equal '500', res3.code
+    assert_equal(-32_601, JSON.parse(res3.body)['code'])
+
+    # Test malformed JSON body (-> StandardError / JSON::ParserError)
+    req.body = '{invalid_json'
+    res_malformed = http.request(req)
+    assert_equal '500', res_malformed.code
+    assert_equal(-32_700, JSON.parse(res_malformed.body)['code'])
 
     # Test GET method
     req_get = Net::HTTP::Get.new(uri.request_uri)

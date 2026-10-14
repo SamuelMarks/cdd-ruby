@@ -11,6 +11,8 @@ class AdvancedClassesTest < Minitest::Test
       class Pet; end
       # @schema_one_of Animal Bird, Fish discriminator:animalType
       class Animal; end
+      # @schema CustomKeySchema justkey:justvalue
+      class CustomKeySchema; end
     RUBY
     ir = Cdd::IR.new
     tokens = Ripper.lex(code)
@@ -30,6 +32,9 @@ class AdvancedClassesTest < Minitest::Test
     animal = ir.openapi_spec.dig('components', 'schemas', 'Animal')
     assert_equal 'animalType', animal['discriminator']['propertyName']
     assert_nil animal['discriminator']['mapping']
+
+    sc = ir.openapi_spec.dig('components', 'schemas', 'CustomKeySchema')
+    assert_equal 'justvalue', sc['justkey']
 
     out = Cdd::Classes::Emitter.emit(ir)
     assert_match(/@schema User required:true additionalProperties:false User description goes here/, out)

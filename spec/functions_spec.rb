@@ -40,6 +40,32 @@ class FunctionsTest < Minitest::Test
     assert_match(/def createPost\(body: nil\)/, out)
   end
 
+  def test_emit_api_client_skip_refs_and_meta
+    ir = Cdd::IR.new
+    ir.openapi_spec['paths'] = {
+      '/skipped' => {
+        '$ref' => '#/paths/other'
+      },
+      '/meta' => {
+        'summary' => 'Path summary',
+        'description' => 'Path description',
+        'servers' => [],
+        'parameters' => [],
+        'get' => {
+          'operationId' => 'getMeta',
+          'parameters' => [
+            { '$ref' => '#/components/parameters/MyParam' }
+          ]
+        }
+      }
+    }
+
+    out = Cdd::Functions::Emitter.emit(ir)
+    refute_match(/skipped/, out)
+    assert_match(/def getMeta
+/, out)
+  end
+
   def test_parse_api_client
     code = <<~RUBY
       class ApiClient
@@ -76,6 +102,33 @@ class FunctionsTest < Minitest::Test
     assert_equal 'filter', op['parameters'][1]['name']
     assert_equal 'query', op['parameters'][1]['in']
     assert op['requestBody']
+  end
+
+  def test_parse_api_client_existing_params_and_missing_op
+    code = <<~RUBY
+      class ApiClient
+        # @api_client GET /users/{id}
+        def get_user(id:)
+        end
+
+        # @api_client GET /missing
+        def get_missing(id:)
+        end
+      end
+    RUBY
+    ir = Cdd::IR.new
+    ir.openapi_spec['paths'] = {
+      '/users/{id}' => {
+        'get' => {
+          'parameters' => [{ 'name' => 'id', 'in' => 'path' }]
+        }
+      },
+      '/missing' => {}
+    }
+
+    tokens = Ripper.lex(code)
+    Cdd::Functions::Parser.parse(tokens, ir)
+    assert_equal 1, ir.openapi_spec['paths']['/users/{id}']['get']['parameters'].size
   end
 
   def test_parse_api_client_no_comment

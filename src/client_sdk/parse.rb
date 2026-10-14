@@ -1,73 +1,81 @@
 # frozen_string_literal: true
 
+# Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
-  # Client SDK module
+  # Client SDK generation and parsing module.
   module ClientSdk
-    # SDK Parser
+    # Parser for extracting OpenAPI paths and operationIds from generated ClientSdk code.
     class Parser
-      # Parses SDK
-      # @param tokens [Array] tokens
-      # @param ir [Object] IR
+      # Internal SDK helper method names that do not correspond to OpenAPI endpoints.
+      INTERNAL_SDK_METHODS = %w[initialize authorize_oauth2 mcp auth].freeze
+
+      # HTTP verbs recognized on `Net::HTTP::<Verb>` constants.
+      NET_HTTP_CONSTS = %w[Get Post Put Delete Patch Options Head Trace].freeze
+
+      # Parses `ClientSdk` method definitions from Ripper tokens and populates the IR.
+      #
+      # @param tokens [Array<Array>] Ripper lexed token array
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
       def self.parse(tokens, ir)
         current_class_name = nil
         current_def = false
         op_id = nil
 
-        tokens.each_with_index do |token, i|
+        tokens.each_with_index do |token, idx|
           if token[1] == :on_kw && token[2] == 'class'
-            next_const = tokens[(i + 1)..(i + 5)].find { |t| t[1] == :on_const }
-            current_class_name = next_const[2] if next_const
-          elsif token[1] == :on_kw && token[2] == 'def'
-            if current_class_name == 'ClientSdk'
-              next_ident = tokens[(i + 1)..(i + 5)].find { |t| %i[on_ident on_kw].include?(t[1]) }
-              if next_ident
-                op_id = next_ident[2]
-                current_def = true
-
-                # Pre-populate defaults (fallback if not explicitly found in body)
-                unless %w[initialize authorize_oauth2 mcp auth].include?(op_id) || op_id.start_with?('handle_webhook_')
-                  ir.openapi_spec['paths'] ||= {}
-                  ir.openapi_spec['paths']["/#{op_id}"] ||= { 'get' => { 'operationId' => op_id } }
-                end
-              end
-            end
+            next_const = tokens[(idx + 1)..(idx + 5)].find { |t| t[1] == :on_const }
+            current_class_name = next_const[2]
+          elsif token[1] == :on_kw && token[2] == 'def' && current_class_name == 'ClientSdk'
+            op_id, current_def = handle_sdk_def(tokens, idx, ir)
           elsif token[1] == :on_ident && token[2] == 'req_path' && current_def
-            # Look for `req_path = '/foo/bar'.dup`
-            if tokens[i + 2] && tokens[i + 2][2] == '='
-              tstring = tokens[(i + 3)..(i + 10)].find { |t| t[1] == :on_tstring_content }
-              if tstring && op_id
-                http_method = 'get'
-                tokens[i..(i + 50)].each do |t|
-                  break if t[1] == :on_kw && t[2] == 'def'
-
-                  if t[1] == :on_const && %w[Get Post Put Delete Patch Options Head Trace].include?(t[2])
-                    http_method = t[2].downcase
-                    break
-                  end
-                end
-
-                path_str = tstring[2]
-
-                ir.openapi_spec['paths'] ||= {}
-                # Remove the fallback path
-                ir.openapi_spec['paths'].delete("/#{op_id}")
-
-                ir.openapi_spec['paths'][path_str] ||= {}
-                ir.openapi_spec['paths'][path_str][http_method] = { 'operationId' => op_id }
-
-                current_def = false
-                op_id = nil
-              end
-            end
+            current_def, op_id = handle_req_path(tokens, idx, op_id, ir)
           end
         end
       end
 
-      # Supported keys
-      # @return [Array]
-      def self._supported_keys
-        %w[jsonSchemaDialect termsOfService contact license name url email identifier
-           variables enum default description schemas responses parameters examples requestBodies headers securitySchemes links callbacks pathItems mediaTypes summary get put post delete options head patch trace query additionalOperations operationId requestBody deprecated security in required allowEmptyValue example style explode allowReserved schema content itemSchema encoding prefixEncoding itemEncoding contentType 200 expression dataValue serializedValue externalValue value operationRef server parent kind discriminator xml propertyName mapping defaultMapping nodeType namespace prefix attribute wrapped type scheme bearerFormat flows openIdConnectUrl oauth2MetadataUrl implicit password clientCredentials authorizationCode deviceAuthorization authorizationUrl deviceAuthorizationUrl tokenUrl refreshUrl scopes]
+      # Handles a `def` token inside `ClientSdk` and registers a default fallback operation.
+      #
+      # @param tokens [Array<Array>] Ripper token stream
+      # @param idx [Integer] index of `def` token
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [Array(String, Boolean)] `[op_id, current_def]`
+      def self.handle_sdk_def(tokens, idx, ir)
+        next_ident = tokens[(idx + 1)..(idx + 5)].find { |t| %i[on_ident on_kw].include?(t[1]) }
+        op_id = next_ident[2]
+        unless INTERNAL_SDK_METHODS.include?(op_id) || op_id.start_with?('handle_webhook_')
+          ir.openapi_spec['paths'] ||= {}
+          ir.openapi_spec['paths']["/#{op_id}"] ||= { 'get' => { 'operationId' => op_id } }
+        end
+        [op_id, true]
+      end
+
+      # Extracts the `req_path` string literal and HTTP method constant inside an SDK method body.
+      #
+      # @param tokens [Array<Array>] Ripper token stream
+      # @param idx [Integer] index of `req_path` token
+      # @param op_id [String] current operation ID
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [Array(Boolean, nil)] `[false, nil]` once resolved
+      def self.handle_req_path(tokens, idx, op_id, ir)
+        tstring = tokens[(idx + 3)..(idx + 10)].find { |t| t[1] == :on_tstring_content }
+        http_method = detect_net_http_method(tokens[(idx + 1)..])
+        path_str = tstring[2]
+
+        ir.openapi_spec['paths'] ||= {}
+        ir.openapi_spec['paths'].delete("/#{op_id}")
+        ir.openapi_spec['paths'][path_str] ||= {}
+        ir.openapi_spec['paths'][path_str][http_method] = { 'operationId' => op_id }
+        [false, nil]
+      end
+
+      # Scans forward until the next `def` to find a `Net::HTTP::<Method>` constant.
+      #
+      # @param slice [Array<Array>] subsequent Ripper tokens
+      # @return [String] lowercase HTTP method name (default `'get'`)
+      def self.detect_net_http_method(slice)
+        found = slice.find { |tok| tok[1] == :on_const && NET_HTTP_CONSTS.include?(tok[2]) }
+        found[2].downcase
       end
     end
   end

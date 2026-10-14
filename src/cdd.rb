@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
+# Entry point for the Cdd Ruby compiler, parser, emitter, and MCP core router.
 require 'json'
 require 'fileutils'
 require 'ripper'
 
+require_relative 'error'
 require_relative 'ir'
+require_relative 'token_scanner'
 require_relative 'scaffolding'
 
 %w[functions classes docstrings routes tests mocks openapi docs_json server client_sdk
@@ -13,7 +16,7 @@ require_relative 'scaffolding'
   require_relative "#{component}/emit"
 end
 
-# Documentation for Cdd
+# Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
   # The Parser class reads Ruby files and extracts AST for generating OpenAPI.
   class Parser
@@ -59,11 +62,12 @@ module Cdd
     def self.emit(filepath, original_ruby_filepath = nil)
       openapi = JSON.parse(File.read(filepath))
       ir = Cdd::IR.new
-      ir.openapi_spec = openapi
 
       if original_ruby_filepath && File.exist?(original_ruby_filepath)
-        # Attempt an in-place edit where we reconstruct the ruby AST and merge
-        # This is the "editing bidirectional syncing" requirement.
+        existing_spec = JSON.parse(Cdd::Parser.parse(original_ruby_filepath))
+        ir.openapi_spec = merge_openapi_specs(existing_spec, openapi)
+      else
+        ir.openapi_spec = openapi
       end
 
       # Reverse: generate Ruby code using Emitters
@@ -78,6 +82,22 @@ module Cdd
       ruby_code += Cdd::Mocks::Emitter.emit(ir)
 
       ruby_code
+    end
+
+    # Deep-merges two OpenAPI specifications, giving precedence to target_spec.
+    # @param base_spec [Hash] the existing OpenAPI hash parsed from Ruby code
+    # @param target_spec [Hash] the incoming OpenAPI hash from JSON
+    # @return [Hash] the merged OpenAPI specification
+    def self.merge_openapi_specs(base_spec, target_spec)
+      merged = base_spec.dup
+      target_spec.each do |key, val|
+        merged[key] = if merged[key].is_a?(Hash) && val.is_a?(Hash)
+                        merge_openapi_specs(merged[key], val)
+                      else
+                        val
+                      end
+      end
+      merged
     end
 
     # Emits an SDK CLI from an OpenAPI definition
@@ -95,6 +115,8 @@ module Cdd
     end
 
     # Emits an SDK from an OpenAPI definition
+    # @param options [Hash] CLI options containing input/output paths
+    # @return [String] the generated SDK source code
     def self.emit_sdk(options)
       Cdd::ClientSdk::Emitter.emit_sdk(options)
     end
@@ -102,12 +124,20 @@ module Cdd
 
   # Native MCP router for Generator SDK / Core
   class McpCoreRouter
-    # Returns available tools for the generator core
+    # Gets available tools in the generator
     # @return [Array<Hash>] list of tools
     def get_tools
       [
-        { name: 'parse_ruby_to_openapi', description: 'Parse Ruby file to OpenAPI JSON', inputSchema: { type: 'object', properties: { filepath: { type: 'string' } }, required: ['filepath'] } },
-        { name: 'emit_openapi_to_ruby', description: 'Emit Ruby code from OpenAPI JSON', inputSchema: { type: 'object', properties: { filepath: { type: 'string' } }, required: ['filepath'] } }
+        {
+          name: 'parse_ruby_to_openapi',
+          description: 'Parse Ruby source code to OpenAPI JSON',
+          inputSchema: { type: 'object', properties: { filepath: { type: 'string' } }, required: ['filepath'] }
+        },
+        {
+          name: 'emit_openapi_to_ruby',
+          description: 'Emit Ruby source code from OpenAPI JSON',
+          inputSchema: { type: 'object', properties: { filepath: { type: 'string' } }, required: ['filepath'] }
+        }
       ]
     end
 
@@ -115,13 +145,14 @@ module Cdd
     # @param name [String] the tool name
     # @param args [Hash] the tool arguments
     # @return [String] the tool result
+    # @raise [Cdd::McpError] when an unknown tool name is provided
     def execute_tool(name, args)
       if name == 'parse_ruby_to_openapi'
         Cdd::Parser.parse(args['filepath'])
       elsif name == 'emit_openapi_to_ruby'
         Cdd::Emitter.emit(args['filepath'])
       else
-        raise "Unknown tool: #{name}"
+        raise Cdd::McpError, "Unknown tool: #{name}"
       end
     end
 
@@ -136,8 +167,9 @@ module Cdd
     # Reads an internal resource by URI
     # @param uri [String] the resource URI
     # @return [Hash] the resource contents
+    # @raise [Cdd::McpError] when the requested URI is not found
     def read_resource(uri)
-      raise "Resource not found: #{uri}" unless uri == 'mcp://cdd/ast'
+      raise Cdd::McpError, "Resource not found: #{uri}" unless uri == 'mcp://cdd/ast'
 
       { contents: [{ uri: uri, mimeType: 'application/json', text: '{"message":"AST placeholder"}' }] }
     end
@@ -158,11 +190,9 @@ module Cdd
 
     # Handles a ping
     # @return [Boolean] always true
-    # rubocop:disable Naming/PredicateMethod
     def ping
       true
     end
-    # rubocop:enable Naming/PredicateMethod
 
     # Gets root directories
     # @return [Array<Hash>] list of root directories
@@ -238,3 +268,6 @@ module Cdd
     end
   end
 end
+
+# Backwards-compatible uppercase alias for Cdd module.
+CDD = Cdd

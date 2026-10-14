@@ -59,6 +59,7 @@ GEM
       ast (~> 2.4.1)
       racc
     pg (1.6.3)
+    pg (1.6.3-arm64-darwin)
     pg (1.6.3-x86_64-linux)
     prism (1.9.0)
     psych (5.3.1)
@@ -140,6 +141,7 @@ GEM
 
 PLATFORMS
   arm64-darwin-24
+  arm64-darwin-27
   x86_64-linux
 
 DEPENDENCIES
@@ -178,6 +180,7 @@ CHECKSUMS
   parallel (2.1.0) sha256=b35258865c2e31134c5ecb708beaaf6772adf9d5efae28e93e99260877b09356
   parser (3.3.11.1) sha256=d17ace7aabe3e72c3cc94043714be27cc6f852f104d81aa284c2281aecc65d54
   pg (1.6.3) sha256=1388d0563e13d2758c1089e35e973a3249e955c659592d10e5b77c468f628a99
+  pg (1.6.3-arm64-darwin) sha256=7240330b572e6355d7c75a7de535edb5dfcbd6295d9c7777df4d9dddfb8c0e5f
   pg (1.6.3-x86_64-linux) sha256=5d9e188c8f7a0295d162b7b88a768d8452a899977d44f3274d1946d67920ae8d
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
   psych (5.3.1) sha256=eb7a57cef10c9d70173ff74e739d843ac3b2c019a003de48447b2963d81b1974

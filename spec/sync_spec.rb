@@ -4,11 +4,11 @@ require_relative 'spec_helper'
 require_relative '../src/sync'
 require 'fileutils'
 require 'json'
+require 'tmpdir'
 
 class SyncTest < Minitest::Test
   def setup
-    @out_dir = 'sync_unit_test'
-    FileUtils.mkdir_p(@out_dir)
+    @out_dir = Dir.mktmpdir
     @json_path = File.join(@out_dir, 'spec.json')
     File.write(@json_path, { openapi: '3.0.0', components: { schemas: {} }, paths: {} }.to_json)
   end

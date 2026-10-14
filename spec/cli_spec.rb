@@ -4,12 +4,22 @@ require_relative 'spec_helper'
 require_relative '../src/cdd'
 require_relative '../src/cli'
 require 'open3'
+require 'stringio'
+require 'tmpdir'
 
 class CliTest < Minitest::Test
   def setup
-    File.write('dummy.rb', "# @route GET /hello\nclass User\nend\n")
-    File.write('dummy_schema.json', '{"info":{"title":"Test API","version":"1.0.0"},"paths":{"/test":{}},"components":{"schemas":{"User":{}}}}')
-    File.write('dummy.json', <<~JSON
+    @tmp_dir = Dir.mktmpdir
+    @rb_path = File.join(@tmp_dir, 'sample.rb')
+    @schema_path = File.join(@tmp_dir, 'sample_schema.json')
+    @json_path = File.join(@tmp_dir, 'sample.json')
+
+    File.write(@rb_path, "# @route GET /hello
+class User
+end
+")
+    File.write(@schema_path, '{"info":{"title":"Test API","version":"1.0.0"},"paths":{"/test":{}},"components":{"schemas":{"User":{}}}}')
+    File.write(@json_path, <<~JSON
       {
         "openapi": "3.2.0",
         "info": {
@@ -189,14 +199,7 @@ class CliTest < Minitest::Test
   end
 
   def teardown
-    ['spec.json', 'docs.json', 'server.rb', 'sdk_cli.rb'].each { |f| FileUtils.rm_f(f) }
-    FileUtils.rm_f('dummy.rb')
-    FileUtils.rm_f('dummy.json')
-    FileUtils.rm_f('dummy_schema.json')
-    FileUtils.rm_rf('scaffold_test_dir')
-    FileUtils.rm_rf('test_sdk_out')
-    FileUtils.rm_rf('test_cli_mcp_server_out')
-    FileUtils.rm_rf('test_server_out_cli')
+    FileUtils.rm_rf(@tmp_dir)
   end
 
   def test_cli_version
@@ -234,7 +237,6 @@ class CliTest < Minitest::Test
   end
 
   def test_cli_helpers
-    # Test print_help
     assert_equal 0, CDD::CLI.run(['--help'])
     assert_equal 0, CDD::CLI.run(['from_openapi', '--help'])
     assert_equal 0, CDD::CLI.run(['to_openapi', '--help'])
@@ -242,11 +244,8 @@ class CliTest < Minitest::Test
     assert_equal 0, CDD::CLI.run(['serve_json_rpc', '--help'])
     assert_equal 0, CDD::CLI.run(['mcp', '--help'])
     assert_equal 0, CDD::CLI.run(['sync', '--help'])
-
-    # Test unknown subcommand help prints global help
     assert_equal 0, CDD::CLI.run(['unknown_command', '--help'])
 
-    # These helpers shell out to run internally using Config objects
     config_from = CDD::Config.new(subcommand: 'to_sdk')
     assert_equal 1, CDD::CLI.generate_from_openapi(config_from)
     config_to = CDD::Config.new
@@ -254,7 +253,6 @@ class CliTest < Minitest::Test
     config_docs = CDD::Config.new
     assert_equal 1, CDD::CLI.generate_docs_json(config_docs)
 
-    # We can mock Cdd::Server.start to test serve_json_rpc
     original_start = Cdd::Server.method(:start)
     begin
       Cdd::Server.singleton_class.define_method(:start) { |_l, _p| nil }
@@ -265,47 +263,37 @@ class CliTest < Minitest::Test
     end
   end
 
-  def test_cli_run_edge_cases
-    # Test unknown command
+  def test_cli_invalid_commands_and_env_args
     assert_equal 1, CDD::CLI.run(['unknown_cmd'])
-
-    # Test missing arguments for to_openapi
     assert_equal 1, CDD::CLI.run(['to_openapi'])
-
-    # Test missing arguments for to_docs_json
     assert_equal 1, CDD::CLI.run(['to_docs_json'])
-
-    # Test missing arguments for from_openapi
     assert_equal 1, CDD::CLI.run(%w[from_openapi to_sdk])
-
-    # Test unknown from_openapi subcommand
-    assert_equal 1, CDD::CLI.run(['from_openapi', 'unknown_subcmd', '-i', 'dummy.json'])
-
-    # Test missing arguments for sync
+    assert_equal 1, CDD::CLI.run(['from_openapi', 'unknown_subcmd', '-i', @json_path])
     assert_equal 1, CDD::CLI.run(['sync'])
 
-    # Test get_arg with env
     ENV['CDD_TEST_ENV'] = 'val'
     assert_equal 'val', CDD::CLI.get_arg({}, :none, 'CDD_TEST_ENV')
     ENV.delete('CDD_TEST_ENV')
   end
 
   def test_cli_mcp
+    out_spec = File.join(@tmp_dir, 'spec.json')
+    out_server = File.join(@tmp_dir, 'mcp_server_out')
     Open3.popen3('ruby -Isrc bin/cdd-ruby mcp') do |stdin, stdout, _stderr, _wait_thr|
       stdin.puts '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
       stdin.puts '{"jsonrpc":"2.0","method":"notifications/initialized"}'
       stdin.puts '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-      stdin.puts '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"generate_to_openapi","arguments":{"input":"dummy.rb","output":"spec.json"}}}'
-      stdin.puts '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"generate_from_openapi","arguments":{"subcommand":"to_server","input":"dummy.json","output":"test_cli_mcp_server_out"}}}'
+      stdin.puts(%({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"generate_to_openapi","arguments":{"input":"#{@rb_path}","output":"#{out_spec}"}}}))
+      stdin.puts(%({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"generate_from_openapi","arguments":{"subcommand":"to_server","input":"#{@json_path}","output":"#{out_server}"}}}))
       stdin.puts '{"jsonrpc":"2.0","id":5,"method":"prompts/list"}'
-      stdin.puts '{"jsonrpc":"2.0","id":6,"method":"prompts/get","params":{"name":"generate_docs","arguments":{"filepath":"dummy.rb"}}}'
+      stdin.puts(%({"jsonrpc":"2.0","id":6,"method":"prompts/get","params":{"name":"generate_docs","arguments":{"filepath":"#{@rb_path}"}}}))
       stdin.puts '{"jsonrpc":"2.0","id":7,"method":"resources/list"}'
       stdin.puts '{"jsonrpc":"2.0","id":8,"method":"resources/read","params":{"uri":"mcp://cdd/docs"}}'
       stdin.puts '{"jsonrpc":"2.0","id":9,"method":"resources/subscribe","params":{"uri":"mcp://cdd/docs"}}'
       stdin.puts '{"jsonrpc":"2.0","id":10,"method":"logging/setLevel","params":{"level":"debug"}}'
       stdin.puts '{"jsonrpc":"2.0","id":11,"method":"ping"}'
       stdin.puts '{"jsonrpc":"2.0","id":12,"method":"completion/complete","params":{"ref":{"type":"prompt","name":"generate_docs"},"argument":{"name":"filepath","value":"du"}}}'
-      stdin.puts '{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"inspect_schema","arguments":{"filepath":"dummy_schema.json"}}}'
+      stdin.puts(%({"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"inspect_schema","arguments":{"filepath":"#{@schema_path}"}}}))
       stdin.puts '{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"inspect_schema","arguments":{"filepath":"does_not_exist.json"}}}'
       stdin.puts '{"jsonrpc":"2.0","id":15,"method":"resources/templates/list"}'
       stdin.puts '{"jsonrpc":"2.0","id":16,"method":"roots/list"}'
@@ -313,7 +301,7 @@ class CliTest < Minitest::Test
       stdin.puts 'invalid json'
       stdin.close
 
-      output_lines = stdout.read.split("\n")
+      output_lines = stdout.read.lines.map(&:chomp)
 
       resp1 = JSON.parse(output_lines[0])
       assert_equal '2.0', resp1['jsonrpc']
@@ -386,38 +374,39 @@ class CliTest < Minitest::Test
   end
 
   def test_cli_to_openapi
-    result = Cdd::Parser.parse('dummy.rb')
-    File.write('spec.json', result)
+    result = Cdd::Parser.parse(@rb_path)
+    File.write(File.join(@tmp_dir, 'spec.json'), result)
     json = JSON.parse(result)
     assert_equal '3.2.0', json['openapi']
   end
 
   def test_cli_from_openapi
-    Cdd::Emitter.emit_server(input: 'dummy.json', output: 'test_server_out_cli', no_installable_package: true, no_github_actions: true)
-    output = File.read('test_server_out_cli/routes/user_routes.rb')
+    out_dir = File.join(@tmp_dir, 'server_out')
+    Cdd::Emitter.emit_server(input: @json_path, output: out_dir, no_installable_package: true, no_github_actions: true)
+    output = File.read(File.join(out_dir, 'routes', 'user_routes.rb'))
     assert_match(%r{get '/users/:\w+' do}, output)
-    FileUtils.rm_rf('test_server_out_cli')
   end
 
   def test_cli_from_openapi_sdk
-    Cdd::Emitter.emit_sdk(input: 'dummy.json', output: 'test_sdk_out', no_installable_package: true,
+    out_dir = File.join(@tmp_dir, 'sdk_out')
+    Cdd::Emitter.emit_sdk(input: @json_path, output: out_dir, no_installable_package: true,
                           no_github_actions: true)
-    output = File.read('test_sdk_out/lib/client.rb')
+    output = File.read(File.join(out_dir, 'lib', 'client.rb'))
     assert_match(/def getUser/, output)
-    models_output = File.read('test_sdk_out/lib/models.rb')
+    models_output = File.read(File.join(out_dir, 'lib', 'models.rb'))
     assert_match(/module Types/, models_output)
   end
 
   def test_cli_from_openapi_sdk_cli
-    Cdd::Emitter.emit_sdk_cli(input: 'dummy.json', output: '.', no_installable_package: true, no_github_actions: true)
-    output = File.read('sdk_cli.rb')
+    Cdd::Emitter.emit_sdk_cli(input: @json_path, output: @tmp_dir, no_installable_package: true, no_github_actions: true)
+    output = File.read(File.join(@tmp_dir, 'sdk_cli.rb'))
     assert_match(/Auto-generated SDK CLI/, output)
     assert_match(/getUser/, output)
   end
 
   def test_cli_to_docs_json
-    result = Cdd::DocsJson::Emitter.emit('dummy.json', no_imports: false, no_wrapping: false)
-    File.write('docs.json', result)
+    result = Cdd::DocsJson::Emitter.emit(@json_path, no_imports: false, no_wrapping: false)
+    File.write(File.join(@tmp_dir, 'docs.json'), result)
     json = JSON.parse(result)
 
     assert json.key?('endpoints')
@@ -429,8 +418,8 @@ class CliTest < Minitest::Test
   end
 
   def test_cli_scaffolding
-    out_dir = 'scaffold_test_dir'
-    Cdd::Emitter.emit_sdk(input: 'dummy.json', output: out_dir, tests: true)
+    out_dir = File.join(@tmp_dir, 'scaffold_test_dir')
+    Cdd::Emitter.emit_sdk(input: @json_path, output: out_dir, tests: true)
     assert File.exist?("#{out_dir}/lib/client.rb")
     assert File.exist?("#{out_dir}/lib/models.rb")
     assert File.exist?("#{out_dir}/lib/tests.rb")
@@ -439,27 +428,24 @@ class CliTest < Minitest::Test
     assert File.exist?("#{out_dir}/Gemfile")
     assert File.exist?("#{out_dir}/.github/workflows/ci.yml")
 
-    # test for server with composable tests and mocks
-    Cdd::Emitter.emit_server(input: 'dummy.json', output: out_dir, tests: true)
+    Cdd::Emitter.emit_server(input: @json_path, output: out_dir, tests: true)
     assert File.exist?("#{out_dir}/server.rb")
     assert File.exist?("#{out_dir}/tests/cli_parser_test.rb")
     assert File.exist?("#{out_dir}/tests/cors_and_validation_test.rb")
     assert Dir.exist?("#{out_dir}/mocks")
 
-    # test for cli with composable tests and mocks
-    Cdd::Emitter.emit_sdk_cli(input: 'dummy.json', output: out_dir, tests: true)
+    Cdd::Emitter.emit_sdk_cli(input: @json_path, output: out_dir, tests: true)
     assert File.exist?("#{out_dir}/sdk_cli.rb")
   end
 
-  def test_parsers_for_coverage
-    # Server parser
+  def test_server_and_sdk_parsers
     ir_server = Cdd::IR.new
-    code_server = "get '/foo/:id' do\nend"
+    code_server = "get '/foo/:id' do
+end"
     tokens_server = Ripper.lex(code_server)
     Cdd::ServerGen::Parser.parse(tokens_server, ir_server)
     assert ir_server.openapi_spec['paths']['/foo/{id}']
 
-    # Client SDK CLI parser
     ir_cli = Cdd::IR.new
     code_cli = <<~RUBY
       case other
@@ -478,7 +464,6 @@ class CliTest < Minitest::Test
     assert ir_cli.openapi_spec['paths']['/my_op/path']['post']
     assert ir_cli.openapi_spec['paths']['/other']['get']
 
-    # Client SDK parser
     ir_sdk = Cdd::IR.new
     code_sdk = <<~RUBY
       class OtherClass
@@ -502,13 +487,160 @@ class CliTest < Minitest::Test
     Cdd::ClientSdk::Parser.parse(tokens_sdk, ir_sdk)
     assert ir_sdk.openapi_spec['paths']['/users']['post']
   end
+end
 
-  def test_supported_keys
-    assert Cdd::ServerGen::Emitter._supported_keys.any?
-    assert Cdd::ServerGen::Parser._supported_keys.any?
-    assert Cdd::ClientSdk::Emitter._supported_keys.any?
-    assert Cdd::ClientSdk::Parser._supported_keys.any?
-    assert Cdd::ClientSdkCli::Emitter._supported_keys.any?
-    assert Cdd::ClientSdkCli::Parser._supported_keys.any?
+class CliSubcommandsTest < Minitest::Test
+  def setup
+    @tmp_dir = Dir.mktmpdir
+    @rb_path = File.join(@tmp_dir, 'cli_sample.rb')
+    @json_path = File.join(@tmp_dir, 'cli_sample.json')
+    @src_dir = File.join(@tmp_dir, 'src_dir')
+    @out_dir = File.join(@tmp_dir, 'out')
+
+    File.write(@rb_path, "# @route GET /hello
+class User
+end
+")
+    File.write(@json_path, '{"openapi":"3.2.0","info":{"title":"API","version":"1.0.0"},"paths":{}}')
+    FileUtils.mkdir_p(@src_dir)
+    File.write(File.join(@src_dir, 'model.rb'), "class A
+end
+")
+  end
+
+  def teardown
+    FileUtils.rm_rf(@tmp_dir)
+  end
+
+  def capture_stdout
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    yield
+    $stdout.string
+  ensure
+    $stdout = old_stdout
+  end
+
+  def test_cli_options_parsing
+    out_json = File.join(@out_dir, 'out.json')
+    capture_stdout do
+      CDD::CLI.run(['to_openapi', '-i', @rb_path, '-o', out_json, '--no-imports', '--no-wrapping', '--no-github-actions', '--no-installable-package', '--tests', '--mcp', '-p', '1234', '-l', '127.0.0.1', '--input-dir', @src_dir, '--with-ephemeral', '--with-seed'])
+    end
+    assert File.exist?(out_json)
+  end
+
+  def test_cli_to_openapi_dir
+    out_json = File.join(@out_dir, 'out2.json')
+    capture_stdout do
+      CDD::CLI.run(['to_openapi', '-i', @src_dir, '-o', out_json])
+    end
+    assert File.exist?(out_json)
+  end
+
+  def test_cli_to_openapi_default_out
+    Dir.chdir(@tmp_dir) do
+      capture_stdout do
+        CDD::CLI.run(['to_openapi', '-i', @rb_path])
+      end
+      assert File.exist?(File.join(@tmp_dir, 'spec.json'))
+    end
+  end
+
+  def test_cli_to_openapi_stdout
+    out = capture_stdout do
+      CDD::CLI.run(['to_openapi', '-i', @rb_path, '-o', '-'])
+    end
+    assert_match(/openapi/, out)
+  end
+
+  def test_cli_sync_options
+    out = capture_stdout do
+      CDD::CLI.run(['sync', '-i', @json_path, '--truth', 'class'])
+    end
+    assert_includes out, 'Synchronization complete.'
+  end
+
+  def test_cli_to_docs_json_options
+    out_docs = File.join(@out_dir, 'docs.json')
+    capture_stdout do
+      CDD::CLI.run(['to_docs_json', '-i', @json_path, '-o', out_docs])
+    end
+    assert File.exist?(out_docs)
+  end
+
+  def test_cli_to_docs_json_default_out
+    Dir.chdir(@tmp_dir) do
+      capture_stdout do
+        CDD::CLI.run(['to_docs_json', '-i', @json_path])
+      end
+      assert File.exist?(File.join(@tmp_dir, 'docs.json'))
+    end
+  end
+
+  def test_cli_to_docs_json_stdout
+    out = capture_stdout do
+      CDD::CLI.run(['to_docs_json', '-i', @json_path, '-o', '-'])
+    end
+    assert_match(/\{\}/, out)
+  end
+
+  def test_cli_from_openapi_options
+    capture_stdout do
+      CDD::CLI.run(['from_openapi', 'to_sdk_cli', '-i', @json_path, '-o', @out_dir, '--no-github-actions', '--no-installable-package', '--tests', '--mcp', '--with-ephemeral', '--with-seed'])
+      CDD::CLI.run(['from_openapi', 'to_sdk', '-i', @json_path, '--input-dir', @src_dir, '-o', File.join(@out_dir, 'sdk')])
+      CDD::CLI.run(['from_openapi', 'to_server', '-i', @json_path, '-o', File.join(@out_dir, 'server')])
+    end
+    assert File.exist?(File.join(@out_dir, 'sdk_cli.rb'))
+    assert File.exist?(File.join(@out_dir, 'sdk', 'lib', 'client.rb'))
+    assert File.exist?(File.join(@out_dir, 'server', 'server.rb'))
+  end
+
+  def test_cli_serve_json_rpc_options
+    original_start = Cdd::Server.method(:start)
+    begin
+      Cdd::Server.singleton_class.define_method(:start) { |_l, _p| nil }
+      res = CDD::CLI.run(['serve_json_rpc', '-p', '4321', '-l', '127.0.0.1'])
+      assert_equal 0, res
+    ensure
+      Cdd::Server.singleton_class.define_method(:start, original_start)
+    end
+  end
+
+  def test_cli_mcp_in_process
+    old_stdin = $stdin
+    req1 = { jsonrpc: '2.0', id: 1, method: 'initialize' }.to_json
+    req2 = { jsonrpc: '2.0', id: 2, method: 'tools/list' }.to_json
+    req3 = { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'inspect_schema', arguments: { filepath: @json_path } } }.to_json
+    req4 = { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'inspect_schema', arguments: { filepath: 'not_exist.json' } } }.to_json
+    req5 = { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'generate_from_openapi', arguments: { subcommand: 'to_sdk_cli', input: @json_path, output: File.join(@out_dir, 'mcp1') } } }.to_json
+    req6 = { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'generate_to_openapi', arguments: { input: @rb_path, output: File.join(@out_dir, 'mcp2.json') } } }.to_json
+    req7 = { jsonrpc: '2.0', id: 7, method: 'prompts/list' }.to_json
+    req8 = { jsonrpc: '2.0', id: 8, method: 'prompts/get', params: { name: 'generate_docs', arguments: { filepath: @rb_path } } }.to_json
+    req9 = { jsonrpc: '2.0', id: 9, method: 'resources/list' }.to_json
+    req10 = { jsonrpc: '2.0', id: 10, method: 'resources/read', params: { uri: 'mcp://cdd/docs' } }.to_json
+    req11 = { jsonrpc: '2.0', id: 11, method: 'resources/templates/list' }.to_json
+    req12 = { jsonrpc: '2.0', id: 12, method: 'roots/list' }.to_json
+    req13 = { jsonrpc: '2.0', id: 13, method: 'ping' }.to_json
+    req14 = { jsonrpc: '2.0', id: 14, method: 'sampling/createMessage' }.to_json
+    req15 = { jsonrpc: '2.0', id: 15, method: 'completion/complete' }.to_json
+    req16 = { jsonrpc: '2.0', id: 16, method: 'unknown' }.to_json
+    req17 = { method: 'notifications/cancelled' }.to_json
+    req18 = 'invalid json'
+    req19 = { jsonrpc: '2.0', id: 19, method: 'tools/call', params: { name: 'unknown_tool' } }.to_json
+
+    reqs = [req1, req2, req3, req4, req5, req6, req7, req8, req9, req10, req11, req12, req13, req14, req15, req16, req17, req18, req19]
+    io = StringIO.new
+    reqs.each { |r| io.puts(r) }
+    io.rewind
+    $stdin = io
+
+    out = capture_stdout do
+      CDD::CLI.run(['mcp'])
+    end
+    assert_includes out, '"name":"cdd-ruby-mcp"'
+    assert_includes out, '"code":-32601'
+    assert_includes out, '"code":-32700'
+  ensure
+    $stdin = old_stdin
   end
 end

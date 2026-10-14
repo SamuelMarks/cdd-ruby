@@ -8,6 +8,10 @@ import urllib.request
 import urllib.error
 import random
 
+for ruby_bin in ('/opt/homebrew/opt/ruby/bin', '/usr/local/opt/ruby/bin'):
+    if os.path.isdir(ruby_bin):
+        os.environ['PATH'] = f"{ruby_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+
 scripts_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(scripts_dir, '..'))
 sdk_dir = os.path.abspath(os.path.join(project_root, '..', 'cdd-ruby-client-v3-generated-server'))

@@ -1,8 +1,9 @@
-inherit_from: .rubocop_todo.yml
-
 AllCops:
   NewCops: enable
+  SuggestExtensions: false
+  UseCache: false
   Exclude:
+    - 'vendor/**/*'
     - 'build/**/*'
     - 'coverage/**/*'
     - 'dist/**/*'
@@ -15,27 +16,82 @@ AllCops:
     - 'test_*_out/**/*'
     - 'test_*_out_cli/**/*'
 
-Metrics/ModuleLength:
+Layout/LineLength:
+  Max: 120
+  AllowHeredoc: true
   Exclude:
-    - 'src/cli.rb'
-
-Metrics/ClassLength:
-  Exclude:
-    - 'src/docstrings/parse.rb'
+    - 'spec/**/*'
 
 Metrics/MethodLength:
+  Max: 35
+  CountAsOne: ['array', 'hash', 'heredoc', 'method_call']
   Exclude:
-    - 'src/docstrings/parse.rb'
+    - 'spec/**/*'
+
+Metrics/ClassLength:
+  Max: 530
+  CountAsOne: ['array', 'hash', 'heredoc', 'method_call']
+  Exclude:
+    - 'spec/**/*'
+
+Metrics/ModuleLength:
+  Max: 350
+  CountAsOne: ['array', 'hash', 'heredoc', 'method_call']
+  Exclude:
+    - 'spec/**/*'
 
 Metrics/BlockLength:
+  Max: 35
+  CountAsOne: ['array', 'hash', 'heredoc', 'method_call']
   Exclude:
-    - 'src/docstrings/parse.rb'
+    - 'spec/**/*'
 
-Style/EmptyElse:
+Metrics/AbcSize:
+  Max: 45
   Exclude:
-    - 'src/docstrings/parse.rb'
+    - 'spec/**/*'
+
+Metrics/CyclomaticComplexity:
+  Max: 15
+  Exclude:
+    - 'spec/**/*'
+
+Metrics/PerceivedComplexity:
+  Max: 16
+  Exclude:
+    - 'spec/**/*'
+
+Metrics/BlockNesting:
+  Max: 3
+  Exclude:
+    - 'spec/**/*'
+
+Naming/MethodParameterName:
+  AllowedNames:
+    - id
+    - io
+    - ip
+    - ir
+    - op
+    - rb
+    - ex
+    - ed
+    - k
+    - v
+    - p
+    - r
+    - s
+    - t
+    - i
+    - j
+
+Naming/AccessorMethodName:
+  Enabled: false
+
+Naming/PredicateMethod:
+  AllowedMethods:
+    - ping
 
 Style/Documentation:
   Exclude:
-    - 'src/cli.rb'
     - 'spec/**/*'

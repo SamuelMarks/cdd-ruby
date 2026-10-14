@@ -10,14 +10,14 @@ repos:
     hooks:
       - id: auto-format
         name: Auto Format
-        entry: bundle exec rubocop -A
+        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/usr/local/opt/ruby/bin:$PATH"; exec bundle exec rubocop -A'
         language: system
         types: [ruby]
         pass_filenames: false
 
       - id: lint
         name: Lint
-        entry: bundle exec rubocop
+        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/usr/local/opt/ruby/bin:$PATH"; exec bundle exec rubocop'
         language: system
         types: [ruby]
         pass_filenames: false
@@ -30,7 +30,7 @@ repos:
 
       - id: test
         name: Test
-        entry: bundle exec rspec
+        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/usr/local/opt/ruby/bin:$PATH"; exec bundle exec rspec'
         language: system
         pass_filenames: false
 
@@ -66,6 +66,6 @@ repos:
 
       - id: build-wasm
         name: Build WASM
-        entry: python3 scripts/build_wasm.py
+        entry: scripts/run_slow.sh python3 scripts/build_wasm.py
         language: system
         pass_filenames: false

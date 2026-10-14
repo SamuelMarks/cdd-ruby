@@ -60,4 +60,32 @@ class OperationMetadataResponseTest < Minitest::Test
     assert_equal true, resp['true_val']
     assert_equal false, resp['false_val']
   end
+
+  def test_response_default_description_with_boolean_options
+    code = <<~RUBY
+      # @response 400 badRequest:true
+      # @route GET /response2
+      def get_response
+      end
+    RUBY
+    ir = Cdd::IR.new
+    tokens = Ripper.lex(code)
+    Cdd::Docstrings::Parser.parse(tokens, ir)
+
+    resp = ir.openapi_spec['paths']['/response2']['get']['responses']['400']
+    assert_equal 'Response', resp['description']
+    assert_equal true, resp['badRequest']
+
+    code2 = <<~RUBY
+      # @response 404 badRequest:false
+      # @route GET /response3
+      def get_response
+      end
+    RUBY
+    ir2 = Cdd::IR.new
+    Cdd::Docstrings::Parser.parse(Ripper.lex(code2), ir2)
+
+    resp2 = ir2.openapi_spec['paths']['/response3']['get']['responses']['404']
+    assert_equal false, resp2['badRequest']
+  end
 end

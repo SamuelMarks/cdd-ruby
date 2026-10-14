@@ -54,23 +54,23 @@ class BidirectionalTest < Minitest::Test
     assert_equal 'string', schema['properties']['email']['type']
   end
 
-  def test_infer_schema_edge_cases
+  def test_infer_schema_empty_array_and_null
     code = <<~RUBY
-      # @mock [Edge] ex
+      # @mock [SampleModel] ex
       # { "empty_array": [], "null_val": null }
     RUBY
     ir = Cdd::IR.new
     tokens = Ripper.lex(code)
     Cdd::Mocks::Parser.parse(tokens, ir)
 
-    schema = ir.openapi_spec['components']['schemas']['Edge']
+    schema = ir.openapi_spec['components']['schemas']['SampleModel']
     assert_equal 'object', schema['type']
     assert_equal 'array', schema['properties']['empty_array']['type']
     assert_equal({}, schema['properties']['empty_array']['items'])
     assert_equal({}, schema['properties']['null_val'])
   end
 
-  def test_float_coverage
+  def test_infer_schema_float_number
     code = <<~RUBY
       # @mock [FloatTest] flt
       # { "val": 3.14 }

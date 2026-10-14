@@ -4,8 +4,16 @@ import subprocess
 import re
 import sys
 
+for ruby_bin in ('/opt/homebrew/opt/ruby/bin', '/usr/local/opt/ruby/bin'):
+    if os.path.isdir(ruby_bin):
+        os.environ['PATH'] = f"{ruby_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+
 # Run tests and capture output
-output = subprocess.run(['bundle', 'exec', 'rspec'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
+res = subprocess.run(['bundle', 'exec', 'rspec'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+if res.returncode != 0:
+    print(res.stdout)
+    sys.exit(res.returncode)
+output = res.stdout
 
 test_cov = 0.0
 match = re.search(r'LOC\s+\(([\d.]+)%\)\s+covered', output)
@@ -13,7 +21,10 @@ if match:
     test_cov = float(match.group(1))
 
 # Get Doc Coverage
-doc_cov_str = subprocess.run(['bundle', 'exec', 'yard', 'stats', 'src/**/*.rb'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout
+doc_res = subprocess.run(['bundle', 'exec', 'yard', 'stats', 'src/**/*.rb'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+if doc_res.returncode != 0:
+    sys.exit(doc_res.returncode)
+doc_cov_str = doc_res.stdout
 doc_cov = 0.0
 match = re.search(r'([\d.]+)\s*%', doc_cov_str)
 if match:

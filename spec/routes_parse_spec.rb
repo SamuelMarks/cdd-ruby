@@ -5,7 +5,7 @@ require_relative '../src/routes/parse'
 require 'ripper'
 require 'json'
 
-class RoutesBranch19Test < Minitest::Test
+class RoutesParseTest < Minitest::Test
   def test_route_with_parens
     code = <<~RUBY
       get('/test/with/parens') do
@@ -36,5 +36,19 @@ class RoutesBranch19Test < Minitest::Test
     assert_equal 2, params.size
     assert_equal 'user_id', params[0]['name']
     assert_equal 'post_id', params[1]['name']
+  end
+
+  def test_routes_parse_non_string_and_empty_literals
+    code = <<~RUBY
+      # No string literal follows method
+      get 123
+
+      # Beg token but no content
+      get ""
+    RUBY
+    ir = Cdd::IR.new
+    tokens = Ripper.lex(code)
+    Cdd::Routes::Parser.parse(tokens, ir)
+    assert_empty ir.openapi_spec['paths']
   end
 end

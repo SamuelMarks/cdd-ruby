@@ -1,68 +1,86 @@
 # frozen_string_literal: true
 
+# Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
-  # Client SDK CLI module
+  # Client SDK CLI generation and parsing module.
   module ClientSdkCli
-    # CLI Parser
+    # Parser for extracting OpenAPI paths and operationIds from generated CLI scripts.
     class Parser
-      # Parses CLI
-      # @param tokens [Array] tokens
-      # @param ir [Object] IR
+      # Parses CLI `case command` branches from Ripper tokens and populates the IR.
+      #
+      # @param tokens [Array<Array>] Ripper lexed token array
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
       def self.parse(tokens, ir)
-        in_cli_case_statement = false
-        case_nesting = 0
-        current_when = false
-        op_id = nil
-
-        tokens.each_with_index do |token, i|
-          if token[1] == :on_kw && token[2] == 'case'
-            case_nesting += 1
-            next_ident = tokens[(i + 1)..(i + 5)].find { |t| t[1] == :on_ident }
-            in_cli_case_statement = true if next_ident && next_ident[2] == 'command'
-          elsif token[1] == :on_kw && token[2] == 'end'
-            if case_nesting.positive?
-              in_cli_case_statement = false if in_cli_case_statement && case_nesting == 1
-              case_nesting -= 1
-            end
-          elsif token[1] == :on_kw && token[2] == 'when'
-            current_when = true if in_cli_case_statement
-          elsif token[1] == :on_tstring_content && current_when
-            op_id = token[2]
-
-            if op_id != 'mcp'
-              http_method = 'get'
-              path_str = "/#{op_id}"
-
-              # Lookahead for `puts 'Calling METHOD /path'`
-              tokens[i..(i + 20)].each_with_index do |t, _j|
-                break if t[1] == :on_kw && t[2] == 'when'
-
-                next unless t[1] == :on_tstring_content && t[2].start_with?('Calling ')
-
-                # e.g., "Calling GET /users"
-                parts = t[2].split
-                if parts.length >= 3
-                  http_method = parts[1].downcase
-                  path_str = parts[2]
-                end
-                break
-              end
-
-              ir.openapi_spec['paths'] ||= {}
-              ir.openapi_spec['paths'][path_str] ||= {}
-              ir.openapi_spec['paths'][path_str][http_method] = { 'operationId' => op_id }
-            end
-            current_when = false
-            op_id = nil
-          end
+        state = { in_cli_case: false, nesting: 0, in_when: false }
+        tokens.each_with_index do |token, idx|
+          step_cli_token(tokens, token, idx, state, ir)
         end
       end
 
-      # Supported keys
-      # @return [Array]
-      def self._supported_keys
-        %w[jsonSchemaDialect termsOfService contact license name url email identifier
-           variables enum default description schemas responses parameters examples requestBodies headers securitySchemes links callbacks pathItems mediaTypes summary get put post delete options head patch trace query additionalOperations operationId requestBody deprecated security in required allowEmptyValue example style explode allowReserved schema content itemSchema encoding prefixEncoding itemEncoding contentType 200 expression dataValue serializedValue externalValue value operationRef server parent kind discriminator xml propertyName mapping defaultMapping nodeType namespace prefix attribute wrapped type scheme bearerFormat flows openIdConnectUrl oauth2MetadataUrl implicit password clientCredentials authorizationCode deviceAuthorization authorizationUrl deviceAuthorizationUrl tokenUrl refreshUrl scopes]
+      # Advances the CLI parser state machine by one token.
+      #
+      # @param tokens [Array<Array>] Ripper token stream
+      # @param token [Array] current Ripper token
+      # @param idx [Integer] current token index
+      # @param state [Hash] mutable state hash
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def self.step_cli_token(tokens, token, idx, state, ir)
+        if token[1] == :on_kw
+          handle_cli_keyword(tokens, token[2], idx, state)
+        elsif token[1] == :on_tstring_content && state[:in_when]
+          register_when_operation(tokens, idx, token[2], ir) unless token[2] == 'mcp'
+          state[:in_when] = false
+        end
+      end
+
+      # Handles `case`, `end`, and `when` keywords in `ClientSdkCli::Parser`.
+      #
+      # @param tokens [Array<Array>] Ripper token stream
+      # @param keyword [String] keyword string
+      # @param idx [Integer] token index
+      # @param state [Hash] mutable state hash
+      # @return [void]
+      def self.handle_cli_keyword(tokens, keyword, idx, state)
+        case keyword
+        when 'case'
+          state[:nesting] += 1
+          next_ident = tokens[(idx + 1)..(idx + 5)].find { |t| t[1] == :on_ident }
+          state[:in_cli_case] = true if next_ident && next_ident[2] == 'command'
+        when 'end'
+          return unless state[:nesting].positive?
+
+          state[:in_cli_case] = false if state[:in_cli_case] && state[:nesting] == 1
+          state[:nesting] -= 1
+        when 'when'
+          state[:in_when] = true if state[:in_cli_case]
+        end
+      end
+
+      # Registers an operation extracted from a CLI `when '<op_id>'` branch.
+      #
+      # @param tokens [Array<Array>] Ripper token stream
+      # @param idx [Integer] index of the operationId string token
+      # @param op_id [String] operationId string
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def self.register_when_operation(tokens, idx, op_id, ir)
+        http_method = 'get'
+        path_str = "/#{op_id}"
+
+        tokens[idx..(idx + 20)].each do |tok|
+          next unless tok[1] == :on_tstring_content && tok[2].start_with?('Calling ')
+
+          parts = tok[2].split
+          http_method = parts[1].downcase
+          path_str = parts[2]
+          break
+        end
+
+        ir.openapi_spec['paths'] ||= {}
+        ir.openapi_spec['paths'][path_str] ||= {}
+        ir.openapi_spec['paths'][path_str][http_method] = { 'operationId' => op_id }
       end
     end
   end

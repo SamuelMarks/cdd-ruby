@@ -91,4 +91,32 @@ class OpenapiMetadataTest < Minitest::Test
     emitted = Cdd::Openapi::Emitter.emit(ir)
     assert_match(/# @swagger_version 2.0/, emitted)
   end
+
+  def test_openapi_emit_optional_fields
+    ir = Cdd::IR.new
+    ir.openapi_spec['info'] = {
+      'title' => 'T', 'version' => '1', 'description' => 'D'
+    }
+    ir.openapi_spec['swagger'] = '2.0'
+    ir.openapi_spec['$self'] = 'self'
+    ir.openapi_spec['jsonSchemaDialect'] = 'http://json-schema.org/draft-04/schema#'
+    ir.openapi_spec['servers'] = [{ 'url' => 'http://test' }]
+    ir.openapi_spec['tags'] = [{ 'name' => 't1' }]
+
+    out = Cdd::Openapi::Emitter.emit(ir)
+    assert_match(%r{@api_server http://test$}, out)
+    assert_match(/@api_tag t1$/, out)
+
+    ir2 = Cdd::IR.new
+    ir2.openapi_spec['externalDocs'] = { 'url' => 'http://ext' }
+    assert_match(%r{@api_externalDocs http://ext$}, Cdd::Openapi::Emitter.emit(ir2))
+
+    ir3 = Cdd::IR.new
+    ir3.openapi_spec['webhooks'] = { 'my_hook' => { 'post' => {} } }
+    assert_match(/@api_webhook my_hook POST/, Cdd::Openapi::Emitter.emit(ir3))
+
+    ir4 = Cdd::IR.new
+    ir4.openapi_spec['externalDocs'] = { 'url' => 'http://ext', 'description' => 'Docs' }
+    assert_match(%r{@api_externalDocs http://ext Docs$}, Cdd::Openapi::Emitter.emit(ir4))
+  end
 end

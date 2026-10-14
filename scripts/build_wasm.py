@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 import os
+import shutil
 import subprocess
 import sys
+
+for ruby_bin in ('/opt/homebrew/opt/ruby/bin', '/usr/local/opt/ruby/bin'):
+    if os.path.isdir(ruby_bin):
+        os.environ['PATH'] = f"{ruby_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+
+if shutil.which('rbwasm') is None:
+    print('rbwasm not found in PATH; skipping WASM build.')
+    sys.exit(0)
 
 bin_dir = os.environ.get('BIN_DIR', 'dist')
 os.makedirs(bin_dir, exist_ok=True)

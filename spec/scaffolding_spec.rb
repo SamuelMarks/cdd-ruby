@@ -3,15 +3,17 @@
 require_relative 'spec_helper'
 require_relative '../src/scaffolding'
 require 'fileutils'
+require 'tempfile'
+require 'tmpdir'
 
 class ScaffoldingTest < Minitest::Test
   def setup
-    @out_dir = 'scaffolding_unit_test'
-    FileUtils.rm_rf(@out_dir)
+    @base_tmp = Dir.mktmpdir
+    @out_dir = File.join(@base_tmp, 'scaffolding_unit_test')
   end
 
   def teardown
-    FileUtils.rm_rf(@out_dir)
+    FileUtils.rm_rf(@base_tmp)
   end
 
   def test_generate_server
@@ -53,5 +55,19 @@ class ScaffoldingTest < Minitest::Test
     assert gemfile_content.include?("gem 'sqlite3'")
     assert gemfile_content.include?("gem 'faker'")
     assert gemspec_content.include?("spec.add_dependency 'faker'")
+  end
+
+  def test_generate_existing_files_and_flags
+    Dir.mktmpdir do |dir|
+      Cdd::Scaffolding.generate({ output: dir, no_github_actions: true, no_installable_package: true }, 'client')
+    end
+
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, 'cdd_sdk.gemspec'), '')
+      File.write(File.join(dir, 'Gemfile'), '')
+      Cdd::Scaffolding.generate({ output: dir }, 'server')
+    end
+
+    Cdd::Scaffolding.generate({ output: Dir.pwd, no_github_actions: true, no_installable_package: true }, 'client')
   end
 end

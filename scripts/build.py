@@ -5,6 +5,10 @@ import glob
 import shutil
 import sys
 
+for ruby_bin in ('/opt/homebrew/opt/ruby/bin', '/usr/local/opt/ruby/bin'):
+    if os.path.isdir(ruby_bin):
+        os.environ['PATH'] = f"{ruby_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+
 bin_dir = os.environ.get('BIN_DIR', 'bin')
 os.makedirs(bin_dir, exist_ok=True)
 

@@ -1,0 +1,111 @@
+# frozen_string_literal: true
+
+module Cdd
+  class Error < StandardError
+  end
+
+  class ParseError < Error
+  end
+
+  class EmitError < Error
+  end
+
+  class ValidationError < Error
+  end
+
+  class RpcError < Error
+    attr_reader code: Integer
+    def initialize: (String message, ?code: Integer) -> void
+  end
+
+  class McpError < Error
+  end
+
+  class UnsupportedEnvironmentError < Error
+  end
+
+  class Config
+    ATTRIBUTES: Array[Symbol]
+    attr_accessor subcommand: String?
+    attr_accessor input: String?
+    attr_accessor output: String?
+    attr_accessor input_dir: String?
+    attr_accessor no_imports: bool?
+    attr_accessor no_wrapping: bool?
+    attr_accessor no_github_actions: bool?
+    attr_accessor no_installable_package: bool?
+    attr_accessor tests: bool?
+    attr_accessor mcp: bool?
+    attr_accessor truth: String?
+    attr_accessor with_ephemeral: bool?
+    attr_accessor with_seed: bool?
+    attr_accessor port: (Integer | String)?
+    attr_accessor listen: String?
+
+    def initialize: (?Hash[Symbol | String, untyped] opts) -> void
+    def []: (Symbol | String key) -> untyped
+    def to_h: () -> Hash[Symbol, untyped]
+    def to_a: () -> Array[String]
+  end
+
+  class IR
+    attr_accessor classes: Array[String]
+    attr_accessor routes: Array[Hash[String, untyped]]
+    attr_accessor openapi_spec: Hash[String, untyped]
+    attr_accessor tests: Array[Hash[String, untyped]]
+    attr_accessor mocks: Array[Hash[String, untyped]]
+
+    def initialize: (?Hash[String, untyped]? openapi_spec) -> void
+    def self.from_openapi_hash: (Hash[String, untyped] hash) -> IR
+    def to_openapi_hash: () -> Hash[String, untyped]
+    def typed_info: () -> untyped
+    def typed_servers: () -> Array[untyped]
+    def typed_schemas: () -> Array[untyped]
+    def to_h: () -> Hash[String, untyped]
+  end
+
+  class Parser
+    def self.parse: (String | Array[String] filepaths) -> String
+  end
+
+  class Emitter
+    def self.emit: (String filepath, ?String? original_ruby_filepath) -> String
+    def self.merge_openapi_specs: (Hash[String, untyped] base_spec, Hash[String, untyped] target_spec) -> Hash[String, untyped]
+    def self.emit_sdk_cli: (Hash[Symbol, untyped] options) -> String
+    def self.emit_server: (Hash[Symbol, untyped] options) -> String
+    def self.emit_sdk: (Hash[Symbol, untyped] options) -> String
+  end
+
+  class Server
+    def self.start: (String listen, Integer | String port) -> void
+    def self.handle_rpc: (String method, Hash[String, untyped] params) -> untyped
+  end
+
+  class Sync
+    def self.sync: (String input, String truth) -> void
+  end
+
+  class Scaffolding
+    def self.generate: (Hash[Symbol, untyped] options, String type) -> void
+  end
+
+  module CLI
+    def self.get_arg: (Hash[Symbol, untyped] options, Symbol key, String env_key, ?untyped default) -> untyped
+    def self.print_help: () -> void
+    def self.print_from_openapi_help: () -> void
+    def self.print_to_openapi_help: () -> void
+    def self.print_to_docs_json_help: () -> void
+    def self.print_serve_json_rpc_help: () -> void
+    def self.print_mcp_help: () -> void
+    def self.print_sync_help: () -> void
+    def self.from_openapi: (Config config) -> Integer
+    def self.to_openapi: (Config config) -> Integer
+    def self.to_docs_json: (Config config) -> Integer
+    def self.serve_json_rpc: (Config config) -> Integer
+    def self.mcp: (Config config) -> Integer
+    def self.sync: (Config config) -> Integer
+    def self.run: (Array[String] argv) -> Integer
+  end
+end
+
+CDD: singleton(Cdd)

@@ -3,12 +3,14 @@
 require 'json'
 require_relative 'cdd'
 
+# Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
   # The Server class exposes the CDD compiler as a JSON-RPC server.
   class Server
     # Starts the JSON-RPC server.
     # @param listen [String] the host to bind to
     # @param port [Integer, String] the port to listen on
+    # @return [void]
     def self.start(listen, port)
       require 'webrick'
       server = WEBrick::HTTPServer.new(Port: port.to_i, BindAddress: listen)
@@ -28,20 +30,21 @@ module Cdd
               res.content_type = 'application/json'
             else
               res.status = 400
-              res.body = { error: 'Invalid JSON-RPC request' }.to_json
+              res.body = { jsonrpc: '2.0', error: 'Invalid JSON-RPC request', code: -32_600 }.to_json
             end
+          rescue Cdd::RpcError => e
+            res.status = 500
+            res.body = { jsonrpc: '2.0', error: e.message, code: e.code }.to_json
           rescue StandardError => e
             res.status = 500
-            res.body = { error: e.message }.to_json
+            res.body = { jsonrpc: '2.0', error: e.message, code: -32_700 }.to_json
           end
         else
           res.status = 405
         end
       end
 
-      trap 'INT' do
-        server.shutdown
-      end
+      trap('INT') { server.shutdown }
       puts "JSON-RPC server listening on #{listen}:#{port}"
       server.start
     end
@@ -50,6 +53,7 @@ module Cdd
     # @param method [String] the RPC method name
     # @param params [Hash] the RPC parameters
     # @return [Object] the result of the RPC call
+    # @raise [Cdd::RpcError] when the RPC method is not found
     def self.handle_rpc(method, params)
       case method
       when 'version'
@@ -69,7 +73,7 @@ module Cdd
       when 'from_openapi_to_server'
         Cdd::Emitter.emit_server(params.transform_keys(&:to_sym))
       else
-        raise "Method not found: #{method}"
+        raise Cdd::RpcError.new("Method not found: #{method}", code: -32_601)
       end
     end
   end

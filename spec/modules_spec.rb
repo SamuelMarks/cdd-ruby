@@ -34,6 +34,22 @@ class ModulesTest < Minitest::Test
 
   def test_docstrings_emit
     assert_equal '', Cdd::Docstrings::Emitter.emit(@ir)
+
+    @ir.openapi_spec['components']['schemas']['Pet'] = { 'description' => 'A pet schema' }
+    @ir.openapi_spec['components']['schemas']['Tag'] = {}
+    @ir.openapi_spec['paths']['/pets'] = {
+      'summary' => 'Path summary',
+      'x-custom' => 'ext',
+      'get' => { 'summary' => 'List pets' },
+      'post' => {}
+    }
+    @ir.openapi_spec['paths']['/invalid'] = 'not_a_hash'
+    emitted = Cdd::Docstrings::Emitter.emit(@ir)
+    assert_includes emitted, '# @schema Pet A pet schema'
+    assert_includes emitted, '# @schema Tag'
+    assert_includes emitted, '# @summary List pets'
+    assert_includes emitted, '# @route GET /pets'
+    assert_includes emitted, '# @route POST /pets'
   end
 
   def test_functions_parse

@@ -1,14 +1,16 @@
 # frozen_string_literal: true
 
-# Documentation for Cdd
+# Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
-  # Module for tests handling
+  # Module for parsing and emitting unit and integration test suites.
   module Tests
-    # Parser for tests
+    # Parser for extracting `@api_test` route annotations from Ripper tokens.
     class Parser
-      # Parses tests from tokens and adds to ir
-      # @param tokens [Array] tokens array
+      # Parses `@api_test` comments from tokens and populates the IR.
+      #
+      # @param tokens [Array<Array>] Ripper lexed token array
       # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
       def self.parse(tokens, ir)
         tokens.each do |token|
           next unless (token[1] == :on_comment) && (token[2] =~ /#\s*@api_test\s+([A-Z]+)\s+(\S+)/)
