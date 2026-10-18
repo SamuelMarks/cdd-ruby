@@ -79,9 +79,11 @@ end
   def test_mcp_core_router
     router = Cdd::McpCoreRouter.new
     tools = router.get_tools
-    assert_equal 2, tools.length
+    assert_equal 4, tools.length
     assert_equal 'parse_ruby_to_openapi', tools[0][:name]
     assert_equal 'emit_openapi_to_ruby', tools[1][:name]
+    assert_equal 'parse_ruby_to_arazzo', tools[2][:name]
+    assert_equal 'emit_arazzo_to_ruby', tools[3][:name]
 
     res_parse = router.execute_tool('parse_ruby_to_openapi', { 'filepath' => @rb_path })
     assert res_parse.is_a?(String)

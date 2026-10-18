@@ -12,7 +12,7 @@ module Cdd
   class Config
     # Valid configuration attribute symbols.
     ATTRIBUTES = %i[
-      subcommand input output input_dir no_imports no_wrapping
+      subcommand input output input_dir arazzo no_imports no_wrapping
       no_github_actions no_installable_package tests mcp truth
       with_ephemeral with_seed port listen
     ].freeze
@@ -22,6 +22,7 @@ module Cdd
       [:input, '-i', false],
       [:output, '-o', false],
       [:input_dir, '-d', false],
+      [:arazzo, '--arazzo', false],
       [:no_imports, '--no-imports', true],
       [:no_wrapping, '--no-wrapping', true],
       [:no_github_actions, '--no-github-actions', true],
@@ -37,7 +38,7 @@ module Cdd
 
     # Configuration attributes for CLI and SDK invocation.
     # @return [Object, nil]
-    attr_accessor :subcommand, :input, :output, :input_dir, :no_imports, :no_wrapping,
+    attr_accessor :subcommand, :input, :output, :input_dir, :arazzo, :no_imports, :no_wrapping,
                   :no_github_actions, :no_installable_package, :tests, :mcp, :truth,
                   :with_ephemeral, :with_seed, :port, :listen
 
@@ -50,6 +51,7 @@ module Cdd
       @input = opts[:input] || opts['input'] || opts[:i] || opts['i']
       @output = opts[:output] || opts['output'] || opts[:o] || opts['o']
       @input_dir = opts[:input_dir] || opts['input_dir'] || opts[:d] || opts['d']
+      @arazzo = opts[:arazzo] || opts['arazzo']
       @no_imports = opts.fetch(:no_imports, opts['no_imports'])
       @no_wrapping = opts.fetch(:no_wrapping, opts['no_wrapping'])
       @no_github_actions = opts.fetch(:no_github_actions, opts['no_github_actions'])
@@ -107,6 +109,7 @@ module Cdd
       '-i' => :i, '--input' => :i,
       '-o' => :o, '--output' => :o,
       '-d' => :input_dir, '--input-dir' => :input_dir,
+      '--arazzo' => :arazzo,
       '--truth' => :truth,
       '-p' => :port, '--port' => :port,
       '-l' => :listen, '--listen' => :listen
@@ -145,8 +148,26 @@ module Cdd
         }
       },
       {
+        name: 'generate_from_arazzo',
+        description: 'Generate code from Arazzo 1.1.0 specification',
+        inputSchema: {
+          type: 'object',
+          properties: { subcommand: { type: 'string' }, input: { type: 'string' }, output: { type: 'string' } },
+          required: %w[subcommand input]
+        }
+      },
+      {
+        name: 'generate_to_arazzo',
+        description: 'Extract Arazzo 1.1.0 specification from code',
+        inputSchema: {
+          type: 'object',
+          properties: { input: { type: 'string' }, output: { type: 'string' } },
+          required: ['input']
+        }
+      },
+      {
         name: 'inspect_schema',
-        description: 'Inspect an OpenAPI JSON schema file',
+        description: 'Inspect an OpenAPI or Arazzo JSON schema file',
         inputSchema: {
           type: 'object',
           properties: { filepath: { type: 'string' } },
@@ -179,6 +200,8 @@ module Cdd
           Subcommands:
             from_openapi                   Generate code from an OpenAPI specification.
             to_openapi                     Generate an OpenAPI specification from source code.
+            from_arazzo                    Generate code from an Arazzo 1.1.0 specification.
+            to_arazzo                      Generate an Arazzo 1.1.0 specification from source code.
             to_docs_json                   Generate JSON documentation with code snippets for an OpenAPI specification.
             serve_json_rpc                 Expose CLI interface as a JSON-RPC server.
             mcp                            Run the generator as an MCP server over stdio.
@@ -196,6 +219,8 @@ module Cdd
             cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
             cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>]
             cdd-ruby to_openapi -i <path/to/code> [-o <spec.json>]
+            cdd-ruby from_arazzo to_sdk -i <arazzo.json> [-o <target_directory>]
+            cdd-ruby to_arazzo -i <path/to/code> [-o <arazzo.json>]
             cdd-ruby to_docs_json [--no-imports] [--no-wrapping] -i <spec.json> [-o <docs.json>]
         HELP
       end
@@ -240,6 +265,43 @@ module Cdd
           Options:
             -i, --input <path>             Path to the source code directory or file to parse
             -o, --output <path>            Destination path for the generated OpenAPI spec (default: spec.json)
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for `from_arazzo`.
+      #
+      # @return [void]
+      def print_from_arazzo_help
+        puts <<~HELP
+          cdd-ruby from_arazzo - Generate code from an Arazzo 1.1.0 specification.
+          Usage:
+            cdd-ruby from_arazzo [target] [options]
+
+          Targets:
+            to_sdk_cli    Generate a client SDK CLI workflow runner.
+            to_sdk        Generate a client SDK with workflow orchestration.
+            to_server     Generate server workflow engine and E2E test suites.
+
+          Options:
+            -i, --input <spec>             Path to the Arazzo specification file
+            -o, --output <dir>             Destination path for generation (default: current directory)
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for `to_arazzo`.
+      #
+      # @return [void]
+      def print_to_arazzo_help
+        puts <<~HELP
+          cdd-ruby to_arazzo - Generate an Arazzo 1.1.0 specification from source code.
+          Usage:
+            cdd-ruby to_arazzo -i <path/to/code> [-o <arazzo.json>]
+
+          Options:
+            -i, --input <path>             Path to the source code directory or file to parse
+            -o, --output <path>            Destination path for the generated Arazzo spec (default: arazzo.json)
             -h, --help                     Show this help message
         HELP
       end
@@ -324,6 +386,22 @@ module Cdd
         run(['to_openapi'] + config.to_a)
       end
 
+      # Generates code from an Arazzo 1.1.0 specification.
+      #
+      # @param config [Cdd::Config] programmatic configuration
+      # @return [Integer] the exit code
+      def generate_from_arazzo(config)
+        run(['from_arazzo'] + config.to_a)
+      end
+
+      # Generates an Arazzo 1.1.0 specification from source code.
+      #
+      # @param config [Cdd::Config] programmatic configuration
+      # @return [Integer] the exit code
+      def generate_to_arazzo(config)
+        run(['to_arazzo'] + config.to_a)
+      end
+
       # Generates JSON documentation with code snippets for an OpenAPI specification.
       #
       # @param config [Cdd::Config] programmatic configuration
@@ -364,6 +442,8 @@ module Cdd
         case command
         when 'from_openapi' then print_from_openapi_help
         when 'to_openapi' then print_to_openapi_help
+        when 'from_arazzo' then print_from_arazzo_help
+        when 'to_arazzo' then print_to_arazzo_help
         when 'to_docs_json' then print_to_docs_json_help
         when 'serve_json_rpc' then print_serve_json_rpc_help
         when 'mcp' then print_mcp_help
@@ -384,7 +464,7 @@ module Cdd
         end
 
         if argv.include?('-v') || argv.include?('--version')
-          puts '0.0.3'
+          puts '0.0.4'
           return 0
         end
 
@@ -407,11 +487,16 @@ module Cdd
         when 'mcp' then handle_mcp_command
         when 'sync' then handle_sync_command(options)
         when 'to_openapi' then handle_to_openapi_command(options)
+        when 'to_arazzo' then handle_to_arazzo_command(options)
         when 'to_docs_json' then handle_to_docs_json_command(options)
         when 'from_openapi'
           subcommand = argv.shift
           parse_options(argv, options)
           handle_from_openapi_command(subcommand, options)
+        when 'from_arazzo'
+          subcommand = argv.shift
+          parse_options(argv, options)
+          handle_from_arazzo_command(subcommand, options)
         when 'serve_json_rpc' then handle_serve_json_rpc_command(options)
         else
           puts "Error: Unknown or incomplete command: #{command}"
@@ -526,7 +611,7 @@ module Cdd
         targs = req.dig('params', 'arguments') || {}
         if tname == 'inspect_schema'
           handle_inspect_schema_tool(req['id'], targs, resp)
-        elsif %w[generate_from_openapi generate_to_openapi].include?(tname)
+        elsif %w[generate_from_openapi generate_to_openapi generate_from_arazzo generate_to_arazzo].include?(tname)
           handle_generate_tool(tname, targs, resp)
         else
           { jsonrpc: '2.0', id: req['id'], error: { code: -32_601, message: 'Method not found' } }
@@ -543,6 +628,7 @@ module Cdd
         schema = JSON.parse(File.read(targs['filepath']))
         summary = "Schema: #{schema['info']['title']} #{schema['info']['version']}\n"
         summary += "Paths: #{(schema['paths'] || {}).keys.join(', ')}\n"
+        summary += "Workflows: #{schema['workflows'].map { |w| w['workflowId'] }.join(', ')}\n" if schema['workflows']
         summary += "Components: #{(schema.dig('components', 'schemas') || {}).keys.join(', ')}\n"
         resp[:result] = { content: [{ type: 'text', text: summary }] }
         resp
@@ -554,7 +640,7 @@ module Cdd
           result: { isError: true, content: [{ type: 'text', text: e.message }] } }
       end
 
-      # Handles `generate_from_openapi` and `generate_to_openapi` MCP tool calls.
+      # Handles `generate_from_*` and `generate_to_*` MCP tool calls.
       #
       # @param tname [String] tool name
       # @param targs [Hash] tool arguments
@@ -565,8 +651,12 @@ module Cdd
         old_stdout = $stdout
         $stdout = StringIO.new
         begin
-          if tname == 'generate_from_openapi'
-            run(['from_openapi', targs['subcommand'], '-i', targs['input'], '-o', targs['output'] || '.'])
+          case tname
+          when 'generate_from_openapi', 'generate_from_arazzo'
+            cmd = tname.sub('generate_', '')
+            run([cmd, targs['subcommand'], '-i', targs['input'], '-o', targs['output'] || '.'])
+          when 'generate_to_arazzo'
+            run(['to_arazzo', '-i', targs['input'], '-o', targs['output'] || 'arazzo.json'])
           else
             run(['to_openapi', '-i', targs['input'], '-o', targs['output'] || 'spec.json'])
           end
@@ -594,6 +684,19 @@ module Cdd
         0
       end
 
+      # Resolves a single Ruby file or a directory of Ruby files to parse.
+      #
+      # @param file [String] file or directory path
+      # @return [Array<String>] list of Ruby files
+      def resolve_target_ruby_files(file)
+        return [file] unless File.directory?(file)
+
+        Dir.glob(File.join(file, '**', '*.rb')).reject do |f|
+          f.include?('/spec/') || f.include?('/tests/') || f.include?('/vendor/') ||
+            f.include?('/.bundle/') || f.end_with?('_spec.rb') || f.end_with?('_test.rb')
+        end
+      end
+
       # Executes the `to_openapi` subcommand.
       #
       # @param options [Hash] parsed CLI options
@@ -605,15 +708,23 @@ module Cdd
           puts 'Error: Missing -i <filepath> or --input <filepath>'
           return 1
         end
-        target_files = if File.directory?(file)
-                         Dir.glob(File.join(file, '**', '*.rb')).reject do |f|
-                           f.include?('/spec/') || f.include?('/tests/') || f.include?('/vendor/') ||
-                             f.include?('/.bundle/') || f.end_with?('_spec.rb') || f.end_with?('_test.rb')
-                         end
-                       else
-                         [file]
-                       end
-        result = Cdd::Parser.parse(target_files)
+        result = Cdd::Parser.parse(resolve_target_ruby_files(file))
+        write_or_print_output(out, result)
+        0
+      end
+
+      # Executes the `to_arazzo` subcommand.
+      #
+      # @param options [Hash] parsed CLI options
+      # @return [Integer] exit code
+      def handle_to_arazzo_command(options)
+        file = get_arg(options, :i, 'CDD_INPUT')
+        out = get_arg(options, :o, 'CDD_OUTPUT', 'arazzo.json')
+        if file.nil?
+          puts 'Error: Missing -i <filepath> or --input <filepath>'
+          return 1
+        end
+        result = Cdd::Parser.parse_to_arazzo(resolve_target_ruby_files(file))
         write_or_print_output(out, result)
         0
       end
@@ -650,12 +761,22 @@ module Cdd
         end
       end
 
-      # Executes the `from_openapi` subcommand.
+      # Executes the `from_arazzo` subcommand.
       #
       # @param subcommand [String, nil] target subcommand (`to_sdk_cli`, `to_sdk`, `to_server`)
       # @param options [Hash] parsed CLI options
       # @return [Integer] exit code
-      def handle_from_openapi_command(subcommand, options)
+      def handle_from_arazzo_command(subcommand, options)
+        handle_from_openapi_command(subcommand, options, 'from_arazzo')
+      end
+
+      # Executes the `from_openapi` or `from_arazzo` subcommand.
+      #
+      # @param subcommand [String, nil] target subcommand (`to_sdk_cli`, `to_sdk`, `to_server`)
+      # @param options [Hash] parsed CLI options
+      # @param parent_cmd [String] parent CLI command name
+      # @return [Integer] exit code
+      def handle_from_openapi_command(subcommand, options, parent_cmd = 'from_openapi')
         input = get_arg(options, :i, 'CDD_INPUT')
         input_dir = get_arg(options, :input_dir, 'CDD_INPUT_DIR')
         unless input || input_dir
@@ -665,6 +786,7 @@ module Cdd
         emitter_options = {
           input: input,
           input_dir: input_dir,
+          arazzo: get_arg(options, :arazzo, 'CDD_ARAZZO'),
           output: get_arg(options, :o, 'CDD_OUTPUT', Dir.pwd),
           no_github_actions: get_arg(options, :no_github_actions, 'CDD_NO_GITHUB_ACTIONS'),
           no_installable_package: get_arg(options, :no_installable_package, 'CDD_NO_INSTALLABLE_PACKAGE'),
@@ -678,7 +800,7 @@ module Cdd
         when 'to_sdk' then puts Cdd::Emitter.emit_sdk(emitter_options)
         when 'to_server' then puts Cdd::Emitter.emit_server(emitter_options)
         else
-          puts "Unknown from_openapi subcommand: #{subcommand}"
+          puts "Unknown #{parent_cmd} subcommand: #{subcommand}"
           return 1
         end
         0

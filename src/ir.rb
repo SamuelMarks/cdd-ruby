@@ -2,7 +2,7 @@
 
 # Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
-  # Intermediate Representation of a Codebase and its OpenAPI 3.2.0 model.
+  # Intermediate Representation of a Codebase, its OpenAPI 3.2.0 model, and its Arazzo 1.1.0 workflows.
   class IR
     # Strongly-typed representation of OpenAPI Info metadata.
     Info = Data.define(:title, :version, :summary, :description, :terms_of_service, :contact, :license)
@@ -60,25 +60,82 @@ module Cdd
     Example = Data.define(:name, :schema_ref, :summary, :description, :value, :data_value, :serialized_value,
                           :external_value)
 
-    # List of parsed class names, route definitions, OpenAPI specification hash, tests, and mocks.
+    # Strongly-typed representation of the root Arazzo 1.1.0 Specification Object.
+    ArazzoSpec = Data.define(:arazzo, :self_uri, :info, :source_descriptions, :workflows, :components, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Info Object.
+    ArazzoInfo = Data.define(:title, :summary, :description, :version, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Source Description Object.
+    SourceDescription = Data.define(:name, :url, :type, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Workflow Object.
+    Workflow = Data.define(:workflow_id, :summary, :description, :inputs, :depends_on, :steps, :success_actions,
+                           :failure_actions, :outputs, :parameters, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Step Object.
+    Step = Data.define(:step_id, :description, :operation_id, :operation_path, :channel_path, :workflow_id,
+                       :parameters, :request_body, :success_criteria, :on_success, :on_failure, :outputs,
+                       :timeout, :correlation_id, :action, :depends_on, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Parameter Object.
+    ArazzoParameter = Data.define(:name, :in_location, :value, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Reusable Object (`reference` + optional `value`).
+    ReusableObject = Data.define(:reference, :value)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Success Action Object.
+    SuccessAction = Data.define(:name, :type, :workflow_id, :step_id, :parameters, :criteria, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Failure Action Object.
+    FailureAction = Data.define(:name, :type, :workflow_id, :step_id, :parameters, :retry_after, :retry_limit,
+                                :criteria, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Criterion Object.
+    Criterion = Data.define(:context, :condition, :type, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Criterion Expression Type Object.
+    ExpressionType = Data.define(:type, :version, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Selector Object for dynamic output extraction.
+    Selector = Data.define(:context, :selector, :type, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Request Body Object.
+    ArazzoRequestBody = Data.define(:content_type, :payload, :replacements, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Payload Replacement Object.
+    PayloadReplacement = Data.define(:target, :target_selector_type, :value, :extensions)
+
+    # Strongly-typed representation of an Arazzo 1.1.0 Components Object.
+    ArazzoComponents = Data.define(:inputs, :parameters, :success_actions, :failure_actions, :extensions)
+
+    # List of parsed class names, routes, OpenAPI spec, tests, mocks, Arazzo spec, and workflow IDs.
     # @return [Array, Hash]
-    attr_accessor :classes, :routes, :openapi_spec, :tests, :mocks
+    attr_accessor :classes, :routes, :openapi_spec, :tests, :mocks, :arazzo_spec, :workflows
 
     # Initializes a new Intermediate Representation instance.
     #
     # @param openapi_spec [Hash, nil] optional initial OpenAPI specification hash
+    # @param arazzo_spec [Hash, nil] optional initial Arazzo specification hash
     # @return [Cdd::IR]
-    def initialize(openapi_spec = nil)
+    def initialize(openapi_spec = nil, arazzo_spec = nil)
       @classes = []
       @routes = []
       @openapi_spec = openapi_spec || {
         'openapi' => '3.2.0',
-        'info' => { 'title' => 'Generated API', 'version' => '0.0.3' },
+        'info' => { 'title' => 'Generated API', 'version' => '0.0.4' },
         'paths' => {},
         'components' => { 'schemas' => {} }
       }
+      @arazzo_spec = arazzo_spec || {
+        'arazzo' => '1.1.0',
+        'info' => { 'title' => 'Generated Workflows', 'version' => '0.0.4' },
+        'sourceDescriptions' => [],
+        'workflows' => []
+      }
       @tests = []
       @mocks = []
+      @workflows = []
     end
 
     # Constructs a Cdd::IR instance from a raw OpenAPI specification Hash.
@@ -93,11 +150,266 @@ module Cdd
       ir
     end
 
+    # Constructs a Cdd::IR instance from a raw Arazzo 1.0.x/1.1.0 specification Hash.
+    #
+    # @param hash [Hash] raw Arazzo specification
+    # @return [Cdd::IR] populated IR instance
+    # @raise [Cdd::ArazzoValidationError] when the Arazzo version is missing or unsupported
+    def self.from_arazzo_hash(hash)
+      raise Cdd::ArazzoValidationError, 'Arazzo spec must be a Hash' unless hash.is_a?(Hash)
+
+      version = hash['arazzo'].to_s
+      unless version.match?(/\A1\.[01]\.\d+\z/)
+        raise Cdd::ArazzoValidationError, "Unsupported or missing Arazzo version: #{version.inspect}"
+      end
+
+      ir = new(nil, hash)
+      wfs = hash['workflows']
+      ir.workflows = wfs.filter_map { |wf| wf['workflowId'] if wf.is_a?(Hash) } if wfs.is_a?(Array)
+      ir
+    end
+
+    # Extracts `^x-` vendor extension keys from a raw specification Hash.
+    #
+    # @param raw [Hash, nil] raw specification object hash
+    # @return [Hash{String => Object}] vendor extension entries
+    def self.extract_extensions(raw)
+      return {} unless raw.is_a?(Hash)
+
+      raw.select { |k, _| k.to_s.start_with?('x-') }
+    end
+
+    # Builds a typed `ArazzoParameter` or `ReusableObject` from a raw parameter Hash.
+    #
+    # @param raw [Hash] raw parameter or reusable reference hash
+    # @return [Cdd::IR::ArazzoParameter, Cdd::IR::ReusableObject] typed parameter node
+    def self.build_arazzo_param_or_ref(raw)
+      if raw['reference']
+        ReusableObject.new(reference: raw['reference'], value: raw['value'])
+      else
+        ArazzoParameter.new(
+          name: raw['name'],
+          in_location: raw['in'],
+          value: raw['value'],
+          extensions: extract_extensions(raw)
+        )
+      end
+    end
+
+    # Builds a typed `Criterion` from a raw criterion Hash.
+    #
+    # @param raw [Hash] raw criterion hash
+    # @return [Cdd::IR::Criterion] typed criterion node
+    def self.build_criterion(raw)
+      ctype = raw['type']
+      typed_type = if ctype.is_a?(Hash)
+                     ExpressionType.new(
+                       type: ctype['type'],
+                       version: ctype['version'],
+                       extensions: extract_extensions(ctype)
+                     )
+                   else
+                     ctype
+                   end
+      Criterion.new(
+        context: raw['context'],
+        condition: raw['condition'],
+        type: typed_type,
+        extensions: extract_extensions(raw)
+      )
+    end
+
+    # Builds a typed `SuccessAction` or `ReusableObject` from a raw action Hash.
+    #
+    # @param raw [Hash] raw success action hash
+    # @return [Cdd::IR::SuccessAction, Cdd::IR::ReusableObject] typed success action node
+    def self.build_success_action(raw)
+      return ReusableObject.new(reference: raw['reference'], value: raw['value']) if raw['reference']
+
+      SuccessAction.new(
+        name: raw['name'],
+        type: raw['type'],
+        workflow_id: raw['workflowId'],
+        step_id: raw['stepId'],
+        parameters: (raw['parameters'] || []).map { |p| build_arazzo_param_or_ref(p) },
+        criteria: (raw['criteria'] || []).map { |c| build_criterion(c) },
+        extensions: extract_extensions(raw)
+      )
+    end
+
+    # Builds a typed `FailureAction` or `ReusableObject` from a raw action Hash.
+    #
+    # @param raw [Hash] raw failure action hash
+    # @return [Cdd::IR::FailureAction, Cdd::IR::ReusableObject] typed failure action node
+    def self.build_failure_action(raw)
+      return ReusableObject.new(reference: raw['reference'], value: raw['value']) if raw['reference']
+
+      FailureAction.new(
+        name: raw['name'],
+        type: raw['type'],
+        workflow_id: raw['workflowId'],
+        step_id: raw['stepId'],
+        parameters: (raw['parameters'] || []).map { |p| build_arazzo_param_or_ref(p) },
+        retry_after: raw['retryAfter'],
+        retry_limit: raw['retryLimit'],
+        criteria: (raw['criteria'] || []).map { |c| build_criterion(c) },
+        extensions: extract_extensions(raw)
+      )
+    end
+
+    # Builds a typed output value (String runtime expression or `Selector` object).
+    #
+    # @param val [String, Hash] raw output expression or selector hash
+    # @return [String, Cdd::IR::Selector] typed output representation
+    def self.build_output_value(val)
+      return val unless val.is_a?(Hash)
+
+      stype = val['type']
+      typed_type = if stype.is_a?(Hash)
+                     ExpressionType.new(
+                       type: stype['type'],
+                       version: stype['version'],
+                       extensions: extract_extensions(stype)
+                     )
+                   else
+                     stype
+                   end
+      Selector.new(
+        context: val['context'],
+        selector: val['selector'],
+        type: typed_type,
+        extensions: extract_extensions(val)
+      )
+    end
+
+    # Builds a typed `ArazzoRequestBody` from a raw requestBody Hash.
+    #
+    # @param raw [Hash, nil] raw request body hash
+    # @return [Cdd::IR::ArazzoRequestBody, nil] typed request body or nil
+    def self.build_arazzo_request_body(raw)
+      return nil unless raw.is_a?(Hash)
+
+      replacements = (raw['replacements'] || []).map do |rep|
+        PayloadReplacement.new(
+          target: rep['target'],
+          target_selector_type: rep['targetSelectorType'],
+          value: rep['value'],
+          extensions: extract_extensions(rep)
+        )
+      end
+      ArazzoRequestBody.new(
+        content_type: raw['contentType'],
+        payload: raw['payload'],
+        replacements: replacements,
+        extensions: extract_extensions(raw)
+      )
+    end
+
+    # Builds a typed `Step` from a raw step Hash.
+    #
+    # @param raw [Hash] raw step hash
+    # @return [Cdd::IR::Step] typed step node
+    def self.build_step(raw)
+      Step.new(
+        step_id: raw['stepId'],
+        description: raw['description'],
+        operation_id: raw['operationId'],
+        operation_path: raw['operationPath'],
+        channel_path: raw['channelPath'],
+        workflow_id: raw['workflowId'],
+        parameters: (raw['parameters'] || []).map { |p| build_arazzo_param_or_ref(p) },
+        request_body: build_arazzo_request_body(raw['requestBody']),
+        success_criteria: (raw['successCriteria'] || []).map { |c| build_criterion(c) },
+        on_success: (raw['onSuccess'] || []).map { |a| build_success_action(a) },
+        on_failure: (raw['onFailure'] || []).map { |a| build_failure_action(a) },
+        outputs: (raw['outputs'] || {}).transform_values { |v| build_output_value(v) },
+        timeout: raw['timeout'],
+        correlation_id: raw['correlationId'],
+        action: raw['action'],
+        depends_on: raw['dependsOn'],
+        extensions: extract_extensions(raw)
+      )
+    end
+
+    # Builds a typed `Workflow` from a raw workflow Hash.
+    #
+    # @param raw [Hash] raw workflow hash
+    # @return [Cdd::IR::Workflow] typed workflow node
+    def self.build_workflow(raw)
+      Workflow.new(
+        workflow_id: raw['workflowId'],
+        summary: raw['summary'],
+        description: raw['description'],
+        inputs: raw['inputs'],
+        depends_on: raw['dependsOn'],
+        steps: (raw['steps'] || []).map { |s| build_step(s) },
+        success_actions: (raw['successActions'] || []).map { |a| build_success_action(a) },
+        failure_actions: (raw['failureActions'] || []).map { |a| build_failure_action(a) },
+        outputs: (raw['outputs'] || {}).transform_values { |v| build_output_value(v) },
+        parameters: (raw['parameters'] || []).map { |p| build_arazzo_param_or_ref(p) },
+        extensions: extract_extensions(raw)
+      )
+    end
+
+    # Builds a typed `ArazzoComponents` from a raw components Hash.
+    #
+    # @param raw [Hash, nil] raw components hash
+    # @return [Cdd::IR::ArazzoComponents, nil] typed components node or nil
+    def self.build_arazzo_components(raw)
+      return nil unless raw.is_a?(Hash)
+
+      ArazzoComponents.new(
+        inputs: raw['inputs'] || {},
+        parameters: (raw['parameters'] || {}).transform_values { |p| build_arazzo_param_or_ref(p) },
+        success_actions: (raw['successActions'] || {}).transform_values { |a| build_success_action(a) },
+        failure_actions: (raw['failureActions'] || {}).transform_values { |a| build_failure_action(a) },
+        extensions: extract_extensions(raw)
+      )
+    end
+
     # Returns the OpenAPI specification Hash representation.
     #
     # @return [Hash] OpenAPI specification Hash
     def to_openapi_hash
       @openapi_spec
+    end
+
+    # Returns the Arazzo specification Hash representation.
+    #
+    # @return [Hash] Arazzo specification Hash
+    def to_arazzo_hash
+      @arazzo_spec
+    end
+
+    # Builds a typed `ArazzoSpec` value object graph from the current `@arazzo_spec`.
+    #
+    # @return [Cdd::IR::ArazzoSpec] strongly-typed Arazzo specification tree
+    def typed_arazzo
+      raw_info = @arazzo_spec['info'] || {}
+      info = ArazzoInfo.new(
+        title: raw_info['title'] || 'Generated Workflows',
+        summary: raw_info['summary'],
+        description: raw_info['description'],
+        version: raw_info['version'] || '0.0.4',
+        extensions: self.class.extract_extensions(raw_info)
+      )
+      sources = (@arazzo_spec['sourceDescriptions'] || []).map do |src|
+        SourceDescription.new(
+          name: src['name'],
+          url: src['url'],
+          type: src['type'],
+          extensions: self.class.extract_extensions(src)
+        )
+      end
+      ArazzoSpec.new(
+        arazzo: @arazzo_spec['arazzo'] || '1.1.0',
+        self_uri: @arazzo_spec['$self'],
+        info: info,
+        source_descriptions: sources,
+        workflows: (@arazzo_spec['workflows'] || []).map { |wf| self.class.build_workflow(wf) },
+        components: self.class.build_arazzo_components(@arazzo_spec['components']),
+        extensions: self.class.extract_extensions(@arazzo_spec)
+      )
     end
 
     # Builds a typed Info value object from the current OpenAPI spec.
@@ -107,7 +419,7 @@ module Cdd
       raw = @openapi_spec['info'] || {}
       Info.new(
         title: raw['title'] || 'Generated API',
-        version: raw['version'] || '0.0.3',
+        version: raw['version'] || '0.0.4',
         summary: raw['summary'],
         description: raw['description'],
         terms_of_service: raw['termsOfService'],
@@ -169,7 +481,9 @@ module Cdd
         'routes' => @routes,
         'openapi' => @openapi_spec,
         'tests' => @tests,
-        'mocks' => @mocks
+        'mocks' => @mocks,
+        'arazzo' => @arazzo_spec,
+        'workflows' => @workflows
       }
     end
   end

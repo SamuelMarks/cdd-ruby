@@ -31,7 +31,14 @@ module Cdd
           endpoints[path] = path_map unless path_map.empty?
         end
 
-        JSON.pretty_generate({ 'endpoints' => endpoints })
+        result = { 'endpoints' => endpoints }
+        if spec['workflows'].is_a?(Array) && spec['workflows'].any?
+          result['workflows'] = spec['workflows'].to_h do |wf|
+            wf_id = wf['workflowId']
+            [wf_id, format_operation_snippet(wf_id, no_imports: no_imports, no_wrapping: no_wrapping)]
+          end
+        end
+        JSON.pretty_generate(result)
       end
 
       # Loads an OpenAPI specification from a local file or remote HTTP(S) URL.

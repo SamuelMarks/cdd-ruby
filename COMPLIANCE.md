@@ -15,3 +15,26 @@ Currently supported features:
 Full spec compliance achieved for all major Swagger 2.0 and OpenAPI 3.2.0 concepts.
 
 Compliance checks map 1:1 against the AST. We will report when full spec compliance is achieved.
+
+## Support Matrix
+
+| Specification Concept       | Status |
+| --------------------------- | ------ |
+| Info Object                 | ✅     |
+| Server Object               | ✅     |
+| Components Object           | ✅     |
+| Paths Object                | ✅     |
+| Path Item Object            | ✅     |
+| Operation Object            | ✅     |
+| Parameter Object            | ✅     |
+| Request Body Object         | ✅     |
+| Responses Object            | ✅     |
+| Responses / Schema Object   | ✅     |
+| Reference Object (`$ref`)   | ✅     |
+| OAuth Flows                 | ✅     |
+| Security Requirement Object | ✅     |
+| Links / Callbacks           | ✅     |
+| Webhooks                    | ✅     |
+| Arazzo 1.1.0 Workflows      | ✅     |
+| Arazzo Runtime Expressions  | ✅     |
+| Arazzo Criteria & Selectors | ✅     |

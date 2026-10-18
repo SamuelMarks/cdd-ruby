@@ -22,6 +22,9 @@ module Cdd
       # @return [Hash{String => String}] map of test filenames to Ruby source code
       def self.emit_multiple(ir, options = {})
         files = {}
+        workflows = ir.arazzo_spec['workflows'] || []
+        files['arazzo_workflows_test.rb'] = emit_arazzo_workflows_test(ir) if workflows.any?
+
         paths = ir.openapi_spec['paths'] || {}
         return files if paths.empty?
 
@@ -39,6 +42,22 @@ module Cdd
         files['seeder_test.rb'] = emit_seeder_test(schemas) if options[:with_seed]
         files['cli_parser_test.rb'] = emit_cli_parser_test
         files
+      end
+
+      # Emits `arazzo_workflows_test.rb` containing E2E Minitest workflow test methods.
+      #
+      # @param ir [Cdd::IR] Intermediate Representation containing `arazzo_spec`
+      # @return [String] Ruby test class source code
+      def self.emit_arazzo_workflows_test(ir)
+        out = "#{Cdd::Arazzo::Emitter.emit(ir)}\nclass ArazzoWorkflowsTest < Minitest::Test\n"
+        (ir.arazzo_spec['workflows'] || []).each do |wf|
+          wf_id = wf['workflowId']
+          out << "  def test_workflow_#{wf_id}\n"
+          out << "    orch = WorkflowsOrchestrator.new\n"
+          out << "    assert_respond_to orch, :#{wf_id}\n"
+          out << "  end\n\n"
+        end
+        "#{out}end\n"
       end
 
       # Checks whether the IR contains any webhooks or component callbacks.

@@ -64,6 +64,7 @@ The Frontend's responsibility is to read an input source and translate it into t
 The Intermediate Representation is the crucial "glue" of the architecture. It is a normalized, language-agnostic data structure that represents concepts like:
 * **Models**: Entities containing typed properties, required fields, defaults, and descriptions.
 * **Endpoints / Operations**: HTTP verbs, paths, path/query/body parameters, and responses. In the IR, an operation is an abstract concept that can represent *either* a Server Route receiving a request *or* an API Client dispatching a request.
+* **Workflows (Arazzo 1.1.0)**: Multi-step API orchestrations (`Workflow`, `Step`, `Criterion`, `Selector`, `PayloadReplacement`, `SuccessAction`, `FailureAction`, `SourceDescription`, and all 18 `$` runtime expression roots) enabling bidirectional conversion (`Ruby <-> Arazzo`) across Client SDKs, CLIs, and Server E2E harnesses.
 * **Metadata**: Tooling hints, docstrings, and validations.
 
 By standardizing on a single IR (heavily inspired by OpenAPI / JSON Schema primitives), the system guarantees that parsing logic and emitting logic remain completely decoupled.

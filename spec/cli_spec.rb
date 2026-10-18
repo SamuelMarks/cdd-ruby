@@ -204,7 +204,7 @@ end
 
   def test_cli_version
     output = `ruby -Isrc bin/cdd-ruby --version`.strip
-    assert_equal '0.0.3', output
+    assert_equal '0.0.4', output
     assert_equal 0, CDD::CLI.run(['--version'])
   end
 

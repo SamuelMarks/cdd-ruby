@@ -15,10 +15,21 @@ module Cdd
       # @return [Cdd::IR] the updated Intermediate Representation
       def self.parse(tokens, ir)
         payload = extract_payload(tokens)
-        return ir unless payload.is_a?(Hash) && payload['endpoints'].is_a?(Hash)
+        return ir unless payload.is_a?(Hash)
 
+        parse_endpoints(payload['endpoints'], ir) if payload['endpoints'].is_a?(Hash)
+        parse_workflows(payload['workflows'], ir) if payload['workflows'].is_a?(Hash)
+        ir
+      end
+
+      # Parses `endpoints` snippets from a docs_json payload into `ir.openapi_spec`.
+      #
+      # @param endpoints [Hash] endpoints map
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def self.parse_endpoints(endpoints, ir)
         ir.openapi_spec['paths'] ||= {}
-        payload['endpoints'].each do |path, methods|
+        endpoints.each do |path, methods|
           next unless methods.is_a?(Hash)
 
           ir.openapi_spec['paths'][path] ||= {}
@@ -30,7 +41,19 @@ module Cdd
             ir.openapi_spec['paths'][path][method.downcase] = op
           end
         end
-        ir
+      end
+
+      # Parses `workflows` snippets from a docs_json payload into `ir.arazzo_spec`.
+      #
+      # @param workflows [Hash] workflows map (`workflowId => snippet`)
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def self.parse_workflows(workflows, ir)
+        ir.arazzo_spec['workflows'] ||= []
+        workflows.each_key do |wf_id|
+          ir.arazzo_spec['workflows'] << { 'workflowId' => wf_id, 'steps' => [] }
+          ir.workflows |= [wf_id]
+        end
       end
 
       # Extracts a parsed Hash from a Hash, JSON string, or Ripper token array.

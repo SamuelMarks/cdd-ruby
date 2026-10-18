@@ -55,7 +55,7 @@ class IrTest < Minitest::Test
     default_ir = Cdd::IR.from_openapi_hash({ 'components' => 'invalid' })
     default_info = default_ir.typed_info
     assert_equal 'Generated API', default_info.title
-    assert_equal '0.0.3', default_info.version
+    assert_equal '0.0.4', default_info.version
     assert_empty default_ir.typed_servers
     assert_empty default_ir.typed_schemas
 
@@ -82,7 +82,7 @@ class IrTest < Minitest::Test
     assert_empty empty_schema.required
 
     hash = Cdd::IR.new.to_h
-    assert_equal %w[classes routes openapi tests mocks].sort, hash.keys.sort
+    assert_equal %w[classes routes openapi tests mocks arazzo workflows].sort, hash.keys.sort
     assert_equal '3.2.0', hash['openapi']['openapi']
 
     rpc_err = Cdd::RpcError.new('Bad method', code: -32_601)

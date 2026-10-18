@@ -57,20 +57,23 @@ module Cdd
     def self.handle_rpc(method, params)
       case method
       when 'version'
-        '0.0.3'
+        '0.0.4'
       when 'to_openapi'
         filepath = params['input']
         Cdd::Parser.parse(filepath)
+      when 'to_arazzo'
+        filepath = params['input']
+        Cdd::Parser.parse_to_arazzo(filepath)
       when 'to_docs_json'
         input = params['input']
         no_imports = params['no_imports'] || false
         no_wrapping = params['no_wrapping'] || false
         Cdd::DocsJson::Emitter.emit(input, no_imports: no_imports, no_wrapping: no_wrapping)
-      when 'from_openapi_to_sdk_cli'
+      when 'from_openapi_to_sdk_cli', 'from_arazzo_to_sdk_cli'
         Cdd::Emitter.emit_sdk_cli(params.transform_keys(&:to_sym))
-      when 'from_openapi_to_sdk'
+      when 'from_openapi_to_sdk', 'from_arazzo_to_sdk'
         Cdd::Emitter.emit_sdk(params.transform_keys(&:to_sym))
-      when 'from_openapi_to_server'
+      when 'from_openapi_to_server', 'from_arazzo_to_server'
         Cdd::Emitter.emit_server(params.transform_keys(&:to_sym))
       else
         raise Cdd::RpcError.new("Method not found: #{method}", code: -32_601)

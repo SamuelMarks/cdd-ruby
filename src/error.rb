@@ -5,14 +5,20 @@ module Cdd
   # Base error class for all CDD domain errors.
   class Error < StandardError; end
 
-  # Raised when parsing Ruby source code or OpenAPI specifications fails.
+  # Raised when parsing Ruby source code, OpenAPI, or Arazzo specifications fails.
   class ParseError < Error; end
 
-  # Raised when emitting Ruby code or OpenAPI artifacts fails.
+  # Raised when emitting Ruby code, OpenAPI, or Arazzo artifacts fails.
   class EmitError < Error; end
 
   # Raised when configuration or schema validation fails.
   class ValidationError < Error; end
+
+  # Raised when an Arazzo 1.0.x/1.1.0 specification fails structural or semantic validation.
+  class ArazzoValidationError < ValidationError; end
+
+  # Raised when an Arazzo runtime expression, criterion, or selector fails to parse or evaluate.
+  class RuntimeExpressionError < Error; end
 
   # Raised when a JSON-RPC request or method invocation fails.
   class RpcError < Error

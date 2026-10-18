@@ -10,16 +10,29 @@ repos:
     hooks:
       - id: auto-format
         name: Auto Format
-        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/usr/local/opt/ruby/bin:$PATH"; exec bundle exec rubocop -A'
+        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/4.0.0/bin:/usr/local/opt/ruby/bin:$PATH"; exec bundle exec rubocop -A'
         language: system
         types: [ruby]
         pass_filenames: false
 
       - id: lint
         name: Lint
-        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/usr/local/opt/ruby/bin:$PATH"; exec bundle exec rubocop'
+        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/4.0.0/bin:/usr/local/opt/ruby/bin:$PATH"; exec bundle exec rubocop'
         language: system
         types: [ruby]
+        pass_filenames: false
+
+      - id: doc-coverage
+        name: 100% Documentation Coverage
+        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/4.0.0/bin:/usr/local/opt/ruby/bin:$PATH"; out=$(bundle exec yard stats --list-undoc src/**/*.rb); echo "$out"; echo "$out" | grep -q "100.00% documented"'
+        language: system
+        types: [ruby]
+        pass_filenames: false
+
+      - id: rbs-validate
+        name: Validate RBS Type Signatures
+        entry: bash -c 'test -f sig/cdd.rbs && grep -q "module Arazzo" sig/cdd.rbs'
+        language: system
         pass_filenames: false
 
       - id: build
@@ -30,7 +43,13 @@ repos:
 
       - id: test
         name: Test
-        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/usr/local/opt/ruby/bin:$PATH"; exec bundle exec rspec'
+        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/4.0.0/bin:/usr/local/opt/ruby/bin:$PATH"; rm -rf coverage && exec bundle exec rspec'
+        language: system
+        pass_filenames: false
+
+      - id: ground-ml-framework-snapshots
+        name: Ground against ../ml-framework-snapshots
+        entry: python3 scripts/ground_ml_snapshots.py
         language: system
         pass_filenames: false
 

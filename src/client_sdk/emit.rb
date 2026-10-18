@@ -3,28 +3,58 @@
 require 'json'
 require 'fileutils'
 require_relative '../client_sdk_cli/emit'
+require_relative '../arazzo/emit'
 
 # Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
   # Client SDK generation and parsing module.
   module ClientSdk
-    # Emitter for generating a Ruby Client SDK, Auth/MCP adapters, and tests from an OpenAPI spec.
+    # Emitter for generating a Ruby Client SDK, Auth/MCP/Workflow adapters, and tests from OpenAPI/Arazzo specs.
     class Emitter
-      # Emits the Ruby Client SDK and optional test/mock scaffolding from an OpenAPI definition.
+      # Emits the Ruby Client SDK and optional test/mock/workflow scaffolding from an OpenAPI or Arazzo definition.
       #
-      # @param options [Hash] generation options (`:input`, `:input_dir`, `:output`, `:tests`)
-      # @return [String] combined client and models Ruby source code
+      # @param options [Hash] generation options (`:input`, `:input_dir`, `:output`, `:tests`, `:arazzo`)
+      # @return [String] combined client, models, and workflows Ruby source code
       def self.emit_sdk(options)
         input_file = options[:input] || Dir.glob("#{options[:input_dir]}/*.json").first
-        openapi = JSON.parse(File.read(input_file))
+        raw_spec = JSON.parse(File.read(input_file))
+        openapi, arazzo = split_openapi_and_arazzo(raw_spec, options[:arazzo])
 
         models_code = emit_models(openapi)
+        workflows_code = emit_workflows_code(arazzo)
         client_code = emit_client_class(openapi)
         client_code += emit_auth_adapter
-        client_code += emit_mcp_adapter(openapi)
-        write_sdk_artifacts(options, openapi, models_code, client_code) if options[:output]
+        client_code += emit_mcp_adapter(openapi, arazzo)
+        client_code += "\n#{workflows_code}" unless workflows_code.empty?
+        write_sdk_artifacts(options, openapi, models_code, client_code, workflows_code) if options[:output]
 
         "#{client_code}\n#{models_code}"
+      end
+
+      # Separates or loads companion OpenAPI and Arazzo specifications.
+      #
+      # @param raw_spec [Hash] primary parsed JSON specification
+      # @param arazzo_path [String, nil] optional companion Arazzo file path
+      # @return [Array(Hash, Hash, nil)] `[openapi_hash, arazzo_hash]`
+      def self.split_openapi_and_arazzo(raw_spec, arazzo_path = nil)
+        if raw_spec.key?('arazzo')
+          [{ 'openapi' => '3.2.0', 'info' => raw_spec['info'] || {}, 'paths' => {} }, raw_spec]
+        elsif arazzo_path && File.exist?(arazzo_path)
+          [raw_spec, JSON.parse(File.read(arazzo_path))]
+        else
+          [raw_spec, nil]
+        end
+      end
+
+      # Emits `ClientSdkWorkflows` and `WorkflowsOrchestrator` code when an Arazzo spec is provided.
+      #
+      # @param arazzo [Hash, nil] parsed Arazzo specification
+      # @return [String] generated workflows Ruby code or empty string
+      def self.emit_workflows_code(arazzo)
+        return '' unless arazzo.is_a?(Hash) && arazzo['workflows'].is_a?(Array) && !arazzo['workflows'].empty?
+
+        ir = Cdd::IR.from_arazzo_hash(arazzo)
+        "#{Cdd::Arazzo::Emitter.emit(ir)}\nClientSdkWorkflows = WorkflowsOrchestrator\n"
       end
 
       # Emits `models.rb` containing the `Types` module and schema classes.
@@ -283,7 +313,8 @@ module Cdd
           end
         end
         "#{out}  def mcp\n    @mcp ||= ClientSdkMcpAdapter.new(self)\n  end\n  " \
-          "# Identity Provider Helper\n  def auth\n    @auth ||= ClientSdkAuthAdapter.new(self)\n  end\nend\n\n"
+          "# Identity Provider Helper\n  def auth\n    @auth ||= ClientSdkAuthAdapter.new(self)\n  end\n  " \
+          "def workflows\n    @workflows ||= WorkflowsOrchestrator.new('default' => self)\n  end\nend\n\n"
       end
 
       # Emits the `ClientSdkAuthAdapter` class.
@@ -330,9 +361,10 @@ module Cdd
       # Emits the `ClientSdkMcpAdapter` class using `ClientSdkCli::Emitter.build_mcp_tools`.
       #
       # @param openapi [Hash] parsed OpenAPI specification
+      # @param arazzo [Hash, nil] optional parsed Arazzo specification
       # @return [String] Ruby source code for `ClientSdkMcpAdapter`
-      def self.emit_mcp_adapter(openapi)
-        tools_json = Cdd::ClientSdkCli::Emitter.build_mcp_tools(openapi).to_json
+      def self.emit_mcp_adapter(openapi, arazzo = nil)
+        tools_json = Cdd::ClientSdkCli::Emitter.build_mcp_tools(openapi, arazzo).to_json
         <<~RUBY
           class ClientSdkMcpAdapter
             def initialize(client)
@@ -342,7 +374,11 @@ module Cdd
               #{tools_json}
             end
             def execute_tool(name, args)
-              @client.send(name, args)
+              if @client.respond_to?(name)
+                @client.send(name, args)
+              else
+                @client.workflows.send(name, args)
+              end
             end
             def get_resources
               [
@@ -402,13 +438,17 @@ module Cdd
       # @param openapi [Hash] parsed OpenAPI specification
       # @param models_code [String] generated models Ruby code
       # @param client_code [String] generated client Ruby code
+      # @param workflows_code [String] generated workflows Ruby code
       # @return [void]
-      def self.write_sdk_artifacts(options, openapi, models_code, client_code)
+      def self.write_sdk_artifacts(options, openapi, models_code, client_code, workflows_code = '')
         src_dir = File.join(options[:output], 'lib')
         FileUtils.mkdir_p(src_dir)
         Cdd::Scaffolding.generate(options, 'sdk')
         File.write(File.join(src_dir, 'models.rb'), models_code)
         File.write(File.join(src_dir, 'client.rb'), client_code)
+        unless workflows_code.empty?
+          File.write(File.join(src_dir, 'workflows.rb'), "# frozen_string_literal: true\n\n#{workflows_code}")
+        end
         return unless options[:tests]
 
         spec_dir = File.join(options[:output], 'spec')

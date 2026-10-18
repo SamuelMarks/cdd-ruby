@@ -1,17 +1,20 @@
 # frozen_string_literal: true
 
+require_relative '../arazzo/parse'
+
 # Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
   # Client SDK CLI generation and parsing module.
   module ClientSdkCli
-    # Parser for extracting OpenAPI paths and operationIds from generated CLI scripts.
+    # Parser for extracting OpenAPI paths, operationIds, and Arazzo workflows from generated CLI scripts.
     class Parser
-      # Parses CLI `case command` branches from Ripper tokens and populates the IR.
+      # Parses CLI `case command` branches and Arazzo workflow annotations from Ripper tokens.
       #
       # @param tokens [Array<Array>] Ripper lexed token array
       # @param ir [Cdd::IR] Intermediate Representation
       # @return [void]
       def self.parse(tokens, ir)
+        Cdd::Arazzo::Parser.parse(tokens, ir)
         state = { in_cli_case: false, nesting: 0, in_when: false }
         tokens.each_with_index do |token, idx|
           step_cli_token(tokens, token, idx, state, ir)
@@ -30,7 +33,9 @@ module Cdd
         if token[1] == :on_kw
           handle_cli_keyword(tokens, token[2], idx, state)
         elsif token[1] == :on_tstring_content && state[:in_when]
-          register_when_operation(tokens, idx, token[2], ir) unless token[2] == 'mcp'
+          unless %w[mcp workflow list run].include?(token[2]) || ir.workflows.include?(token[2])
+            register_when_operation(tokens, idx, token[2], ir)
+          end
           state[:in_when] = false
         end
       end

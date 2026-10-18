@@ -21,7 +21,7 @@ end
   end
 
   def test_handle_rpc
-    assert_equal '0.0.3', Cdd::Server.handle_rpc('version', {})
+    assert_equal '0.0.4', Cdd::Server.handle_rpc('version', {})
 
     res = Cdd::Server.handle_rpc('to_openapi', { 'input' => @rb_path })
     assert_match(/openapi/, res)
@@ -64,7 +64,7 @@ end
     req.body = { jsonrpc: '2.0', method: 'version', id: 1 }.to_json
     res = http.request(req)
     assert_equal '200', res.code
-    assert_equal '0.0.3', JSON.parse(res.body)['result']
+    assert_equal '0.0.4', JSON.parse(res.body)['result']
 
     # Test invalid JSON-RPC (missing jsonrpc version)
     req.body = { method: 'version', id: 1 }.to_json

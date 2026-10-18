@@ -2,33 +2,36 @@
 
 require 'json'
 require 'fileutils'
+require_relative '../arazzo/emit'
 
 # Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
   # Client SDK CLI generation and parsing module.
   module ClientSdkCli
-    # Emitter for generating a standalone Ruby CLI script and MCP server from an OpenAPI spec.
+    # Emitter for generating a standalone Ruby CLI script, workflow runner, and MCP server.
     class Emitter
-      # Emits a standalone CLI script and optional test/mock scaffolding from an OpenAPI definition.
+      # Emits a standalone CLI script and optional test/mock scaffolding from an OpenAPI or Arazzo definition.
       #
-      # @param options [Hash] generation options (`:input`, `:input_dir`, `:output`, `:tests`)
+      # @param options [Hash] generation options (`:input`, `:input_dir`, `:output`, `:tests`, `:arazzo`)
       # @return [String] generated CLI Ruby source code
       def self.emit_sdk_cli(options)
         input_file = options[:input] || Dir.glob("#{options[:input_dir]}/*.json").first
-        openapi = JSON.parse(File.read(input_file))
+        raw_spec = JSON.parse(File.read(input_file))
+        openapi, arazzo = Cdd::ClientSdk::Emitter.split_openapi_and_arazzo(raw_spec, options[:arazzo])
 
-        ruby_code = emit_header_and_help(openapi)
-        ruby_code += emit_mcp_loop(openapi)
-        ruby_code += emit_command_branches(openapi)
+        ruby_code = emit_header_and_help(openapi, arazzo)
+        ruby_code += emit_mcp_loop(openapi, arazzo)
+        ruby_code += emit_command_branches(openapi, arazzo)
         write_cli_artifacts(options, openapi, ruby_code) if options[:output]
         ruby_code
       end
 
-      # Builds the MCP tools list array from an OpenAPI specification's `paths`.
+      # Builds the MCP tools list array from an OpenAPI specification's `paths` and optional Arazzo `workflows`.
       #
       # @param openapi [Hash] parsed OpenAPI specification
+      # @param arazzo [Hash, nil] optional parsed Arazzo specification
       # @return [Array<Hash>] MCP tool definitions
-      def self.build_mcp_tools(openapi)
+      def self.build_mcp_tools(openapi, arazzo = nil)
         tools_array = []
         openapi['paths']&.each do |path, methods|
           methods.each do |method, details|
@@ -45,16 +48,34 @@ module Cdd
             tools_array << tool
           end
         end
+        append_arazzo_mcp_tools(tools_array, arazzo) if arazzo.is_a?(Hash)
         tools_array
+      end
+
+      # Appends Arazzo workflow tool definitions to `tools_array`.
+      #
+      # @param tools_array [Array<Hash>] mutable MCP tools list
+      # @param arazzo [Hash] parsed Arazzo specification
+      # @return [void]
+      def self.append_arazzo_mcp_tools(tools_array, arazzo)
+        (arazzo['workflows'] || []).each do |workflow|
+          tools_array << {
+            name: workflow['workflowId'],
+            description: workflow['summary'] || workflow['description'] || "Run workflow #{workflow['workflowId']}",
+            inputSchema: workflow['inputs'] || { type: 'object', properties: {}, required: [] }
+          }
+        end
       end
 
       # Emits the file header, imports, and `print_help` function.
       #
       # @param openapi [Hash] parsed OpenAPI specification
+      # @param arazzo [Hash, nil] optional parsed Arazzo specification
       # @return [String] Ruby code for header and help printer
-      def self.emit_header_and_help(openapi)
+      def self.emit_header_and_help(openapi, arazzo = nil)
         info = openapi['info'] || {}
         out = "# frozen_string_literal: true\n\n"
+        out += Cdd::Arazzo::Emitter.emit(Cdd::IR.from_arazzo_hash(arazzo)) if arazzo.is_a?(Hash)
         out += "# Auto-generated SDK CLI for #{info['title'] || 'API'}\n"
         out += "# Version: #{info['version']}\n" if info['version']
         out += "# Summary: #{info['summary']}\n" if info['summary']
@@ -65,8 +86,24 @@ module Cdd
         out += emit_help_servers(openapi['servers'])
         out += emit_help_components(openapi['components'])
         out += "  puts '  mcp - Start Model Context Protocol server'\n"
+        out += emit_help_workflows(arazzo['workflows']) if arazzo.is_a?(Hash)
         out += emit_help_paths(openapi['paths'])
         "#{out}end\n\nif ARGV.empty? || ARGV.include?('-h') || ARGV.include?('--help')\n  print_help\n  exit\nend\n\n"
+      end
+
+      # Emits workflow help lines for `print_help`.
+      #
+      # @param workflows [Array<Hash>, nil] Arazzo workflows list
+      # @return [String] Ruby puts statements
+      def self.emit_help_workflows(workflows)
+        return '' unless workflows.is_a?(Array) && !workflows.empty?
+
+        out = "  puts 'Workflows:'\n  puts '  workflow list | run <workflowId>'\n"
+        workflows.each do |workflow|
+          summary = workflow['summary'] ? " - #{workflow['summary']}" : ''
+          out += "  puts '    #{workflow['workflowId']}#{summary}'\n"
+        end
+        out
       end
 
       # Emits server help lines for `print_help`.
@@ -143,10 +180,11 @@ module Cdd
       # Emits the `when 'mcp'` stdio JSON-RPC server branch using safe Open3 subprocess execution.
       #
       # @param openapi [Hash] parsed OpenAPI specification
+      # @param arazzo [Hash, nil] optional parsed Arazzo specification
       # @return [String] Ruby source code for the MCP branch
-      def self.emit_mcp_loop(openapi)
+      def self.emit_mcp_loop(openapi, arazzo = nil)
         info = openapi['info'] || {}
-        tools_json = build_mcp_tools(openapi).to_json
+        tools_json = build_mcp_tools(openapi, arazzo).to_json
         docs_text = "# #{info['title'] || 'API'} Docs\\n\\n#{info['description'] || ''}"
         <<~RUBY
           command = ARGV.shift
@@ -210,18 +248,38 @@ module Cdd
         RUBY
       end
 
-      # Emits `when '<operation_id>'` command branches for each path operation.
+      # Emits `when '<operation_id>'` and `when 'workflow'` command branches.
       #
       # @param openapi [Hash] parsed OpenAPI specification
+      # @param arazzo [Hash, nil] optional parsed Arazzo specification
       # @return [String] Ruby case branches and closing `end`
-      def self.emit_command_branches(openapi)
+      def self.emit_command_branches(openapi, arazzo = nil)
         out = ''
         openapi['paths']&.each do |path, methods|
           methods.each do |method, details|
             out += emit_single_command_branch(path, method, details)
           end
         end
+        if arazzo.is_a?(Hash) && arazzo['workflows'].is_a?(Array) && !arazzo['workflows'].empty?
+          out += emit_workflow_command_branches(arazzo['workflows'])
+        end
         "#{out}else\n  puts \"Unknown command: \#{command}\"\nend\n"
+      end
+
+      # Emits `when 'workflow'` and individual `when '<workflow_id>'` branches.
+      #
+      # @param workflows [Array<Hash>] Arazzo workflows list
+      # @return [String] Ruby `when` branch code
+      def self.emit_workflow_command_branches(workflows)
+        ids = workflows.map { |w| w['workflowId'] }
+        out = "when 'workflow'\n  sub = ARGV.shift\n"
+        out += "  if sub == 'list'\n    puts #{ids.join(', ').inspect}\n"
+        out += "  elsif sub == 'run'\n    wf_id = ARGV.shift\n    puts \"Running workflow \#{wf_id}\"\n  end\n"
+        workflows.each do |workflow|
+          wf_id = workflow['workflowId']
+          out += "when '#{wf_id}'\n  puts 'Running workflow #{wf_id}'\n"
+        end
+        out
       end
 
       # Emits a single `when '<operation_id>'` branch.

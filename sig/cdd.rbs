@@ -13,6 +13,12 @@ module Cdd
   class ValidationError < Error
   end
 
+  class ArazzoValidationError < ValidationError
+  end
+
+  class RuntimeExpressionError < Error
+  end
+
   class RpcError < Error
     attr_reader code: Integer
     def initialize: (String message, ?code: Integer) -> void
@@ -26,10 +32,12 @@ module Cdd
 
   class Config
     ATTRIBUTES: Array[Symbol]
+    CLI_OPTION_SPECS: Array[[Symbol, String, bool]]
     attr_accessor subcommand: String?
     attr_accessor input: String?
     attr_accessor output: String?
     attr_accessor input_dir: String?
+    attr_accessor arazzo: String?
     attr_accessor no_imports: bool?
     attr_accessor no_wrapping: bool?
     attr_accessor no_github_actions: bool?
@@ -49,31 +57,141 @@ module Cdd
   end
 
   class IR
+    Info: singleton(Data)
+    ServerVariable: singleton(Data)
+    Server: singleton(Data)
+    Property: singleton(Data)
+    Schema: singleton(Data)
+    Parameter: singleton(Data)
+    Encoding: singleton(Data)
+    MediaType: singleton(Data)
+    RequestBody: singleton(Data)
+    Header: singleton(Data)
+    Link: singleton(Data)
+    Response: singleton(Data)
+    Operation: singleton(Data)
+    PathItem: singleton(Data)
+    OAuthFlows: singleton(Data)
+    SecurityScheme: singleton(Data)
+    Example: singleton(Data)
+
+    ArazzoSpec: singleton(Data)
+    ArazzoInfo: singleton(Data)
+    SourceDescription: singleton(Data)
+    Workflow: singleton(Data)
+    Step: singleton(Data)
+    ArazzoParameter: singleton(Data)
+    ReusableObject: singleton(Data)
+    SuccessAction: singleton(Data)
+    FailureAction: singleton(Data)
+    Criterion: singleton(Data)
+    ExpressionType: singleton(Data)
+    Selector: singleton(Data)
+    ArazzoRequestBody: singleton(Data)
+    PayloadReplacement: singleton(Data)
+    ArazzoComponents: singleton(Data)
+
     attr_accessor classes: Array[String]
     attr_accessor routes: Array[Hash[String, untyped]]
     attr_accessor openapi_spec: Hash[String, untyped]
     attr_accessor tests: Array[Hash[String, untyped]]
     attr_accessor mocks: Array[Hash[String, untyped]]
+    attr_accessor arazzo_spec: Hash[String, untyped]
+    attr_accessor workflows: Array[String]
 
-    def initialize: (?Hash[String, untyped]? openapi_spec) -> void
+    def initialize: (?Hash[String, untyped]? openapi_spec, ?Hash[String, untyped]? arazzo_spec) -> void
     def self.from_openapi_hash: (Hash[String, untyped] hash) -> IR
+    def self.from_arazzo_hash: (Hash[String, untyped] hash) -> IR
+    def self.extract_extensions: (Hash[String, untyped]? raw) -> Hash[String, untyped]
+    def self.build_arazzo_param_or_ref: (Hash[String, untyped] raw) -> untyped
+    def self.build_criterion: (Hash[String, untyped] raw) -> untyped
+    def self.build_success_action: (Hash[String, untyped] raw) -> untyped
+    def self.build_failure_action: (Hash[String, untyped] raw) -> untyped
+    def self.build_output_value: (String | Hash[String, untyped] val) -> untyped
+    def self.build_arazzo_request_body: (Hash[String, untyped]? raw) -> untyped
+    def self.build_step: (Hash[String, untyped] raw) -> untyped
+    def self.build_workflow: (Hash[String, untyped] raw) -> untyped
+    def self.build_arazzo_components: (Hash[String, untyped]? raw) -> untyped
     def to_openapi_hash: () -> Hash[String, untyped]
+    def to_arazzo_hash: () -> Hash[String, untyped]
+    def typed_arazzo: () -> untyped
     def typed_info: () -> untyped
     def typed_servers: () -> Array[untyped]
     def typed_schemas: () -> Array[untyped]
     def to_h: () -> Hash[String, untyped]
   end
 
+  module Arazzo
+    class RuntimeExpression
+      VALID_ROOTS: Array[String]
+      def self.valid?: (untyped expr) -> bool
+      def self.evaluate: (untyped expr, ?Hash[Symbol | String, untyped] context) -> untyped
+      def self.evaluate_collection: (Hash[untyped, untyped] | Array[untyped] collection, Hash[Symbol | String, untyped] context) -> (Hash[untyped, untyped] | Array[untyped])
+      def self.evaluate_single: (String expr, Hash[Symbol | String, untyped] context) -> untyped
+      def self.evaluate_envelope: (String expr, Hash[Symbol | String, untyped] context) -> untyped
+      def self.evaluate_body_or_payload: (Hash[untyped, untyped] env, String rest) -> untyped
+      def self.evaluate_namespace: (String namespace, String rest, Hash[Symbol | String, untyped] context) -> untyped
+      def self.lookup_path: (untyped target, String path_str) -> untyped
+      def self.resolve_json_pointer: (untyped data, String? pointer) -> untyped
+      def self.lookup_case_insensitive: (untyped hash, String key) -> untyped
+      def self.fetch_ctx: (untyped hash, Symbol sym) -> untyped
+      def self.parse_json_if_string: (untyped val) -> untyped
+      def self.to_ruby_expr: (untyped expr) -> String
+      def self.translate_direct_ruby_expr: (String expr) -> String
+      def self.from_ruby_expr: (String ruby_code) -> String
+    end
+
+    class CriterionEvaluator
+      def self.evaluate: (untyped criterion, ?Hash[Symbol | String, untyped] context) -> bool
+      def self.extract_type_and_version: (untyped type_spec) -> [String?, String?]
+      def self.evaluate_simple: (String condition, untyped target_val, Hash[Symbol | String, untyped] context) -> bool
+      def self.resolve_operand: (String token, untyped target_val, Hash[Symbol | String, untyped] context) -> untyped
+      def self.values_match?: (untyped lhs, String op, untyped rhs) -> bool
+      def self.jsonpath_criterion_match?: (String condition, untyped target_val, ?String? _version) -> bool
+      def self.xpath_criterion_match?: (String condition, untyped target_val, ?String? _version) -> bool
+    end
+
+    class SelectorEvaluator
+      def self.extract: (untyped selector_or_expr, ?Hash[Symbol | String, untyped] context) -> untyped
+      def self.query_jsonpath: (untyped data, String query) -> untyped
+      def self.apply_jsonpath_filter: (untyped list, String filter_expr) -> Array[untyped]
+      def self.query_xpath: (String xml_str, String xpath_expr) -> String?
+    end
+
+    class PayloadReplacer
+      def self.apply: (untyped payload, Array[untyped]? replacements, ?Hash[Symbol | String, untyped] context) -> untyped
+      def self.apply_single: (untyped current, String target, untyped selector_type, untyped val) -> untyped
+      def self.replace_json_pointer: (untyped data, String pointer, untyped val) -> untyped
+      def self.replace_xpath: (String xml_str, String xpath_expr, untyped val) -> String
+      def self.deep_copy: (untyped obj) -> untyped
+    end
+
+    class Emitter
+      def self.emit: (IR ir) -> String
+    end
+
+    class Parser
+      def self.parse: (Array[Array[untyped]] tokens, IR ir) -> void
+    end
+  end
+
   class Parser
+    def self.parse_to_ir: (String | Array[String] filepaths) -> IR
     def self.parse: (String | Array[String] filepaths) -> String
+    def self.parse_to_arazzo: (String | Array[String] filepaths) -> String
   end
 
   class Emitter
     def self.emit: (String filepath, ?String? original_ruby_filepath) -> String
+    def self.emit_from_arazzo: (String filepath, ?String? original_ruby_filepath) -> String
     def self.merge_openapi_specs: (Hash[String, untyped] base_spec, Hash[String, untyped] target_spec) -> Hash[String, untyped]
+    def self.merge_arazzo_specs: (Hash[String, untyped] base_spec, Hash[String, untyped] target_spec) -> Hash[String, untyped]
     def self.emit_sdk_cli: (Hash[Symbol, untyped] options) -> String
     def self.emit_server: (Hash[Symbol, untyped] options) -> String
     def self.emit_sdk: (Hash[Symbol, untyped] options) -> String
+    def self.emit_arazzo_sdk: (Hash[Symbol, untyped] options) -> String
+    def self.emit_arazzo_sdk_cli: (Hash[Symbol, untyped] options) -> String
+    def self.emit_arazzo_server: (Hash[Symbol, untyped] options) -> String
   end
 
   class Server
@@ -94,16 +212,18 @@ module Cdd
     def self.print_help: () -> void
     def self.print_from_openapi_help: () -> void
     def self.print_to_openapi_help: () -> void
+    def self.print_from_arazzo_help: () -> void
+    def self.print_to_arazzo_help: () -> void
     def self.print_to_docs_json_help: () -> void
     def self.print_serve_json_rpc_help: () -> void
     def self.print_mcp_help: () -> void
     def self.print_sync_help: () -> void
-    def self.from_openapi: (Config config) -> Integer
-    def self.to_openapi: (Config config) -> Integer
-    def self.to_docs_json: (Config config) -> Integer
+    def self.generate_from_openapi: (Config config) -> Integer
+    def self.generate_to_openapi: (Config config) -> Integer
+    def self.generate_from_arazzo: (Config config) -> Integer
+    def self.generate_to_arazzo: (Config config) -> Integer
+    def self.generate_docs_json: (Config config) -> Integer
     def self.serve_json_rpc: (Config config) -> Integer
-    def self.mcp: (Config config) -> Integer
-    def self.sync: (Config config) -> Integer
     def self.run: (Array[String] argv) -> Integer
   end
 end

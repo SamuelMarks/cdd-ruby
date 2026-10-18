@@ -14,7 +14,7 @@ module Cdd
         spec = ir.openapi_spec
         info = spec['info'] || {}
         out = "# @api_title #{info['title'] || 'Generated API'}\n"
-        out += "# @api_version #{info['version'] || '0.0.3'}\n"
+        out += "# @api_version #{info['version'] || '0.0.4'}\n"
         out += "# @swagger_version #{spec['swagger']}\n" if spec['swagger']
         out += "# @api_description #{info['description']}\n" if info['description']
         out += "# @api_self #{spec['$self']}\n" if spec['$self']

@@ -99,7 +99,7 @@ All implementations share a standardized CLI interface (`cdd [subcommand]`), act
 | [`cdd-php`](https://github.com/SamuelMarks/cdd-php) | PHP | Client; Client CLI; Server | | Swagger 2.0 & OpenAPI 3.2.0 | [![CI](https://github.com/SamuelMarks/cdd-php/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-php/actions/workflows/ci.yml) |
 | [`cdd-python`](https://github.com/offscale/cdd-python) | Python | N/A (server building blocks) | CLI ↔ SQL ↔ Pydantic ↔ docs ↔ JSON-schema | N/A | [![Linting, testing, coverage, and release](https://github.com/offscale/cdd-python/workflows/Linting,%20testing,%20coverage,%20and%20release/badge.svg)](https://github.com/offscale/cdd-python/actions) |
 | [`cdd-python-all`](https://github.com/offscale/cdd-python-all) | Python | Client; Client CLI; Server |  | Swagger 2.0 & OpenAPI 3.2.0 | [![CI](https://github.com/offscale/cdd-python-client/actions/workflows/ci.yml/badge.svg)](https://github.com/offscale/cdd-python-all/actions/workflows/ci.yml) |
-| [`cdd-ruby`](https://github.com/SamuelMarks/cdd-ruby) | Ruby | Client; Client CLI; Server |  | Swagger 2.0 & OpenAPI 3.2.0 | [![CI](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml) |
+| [`cdd-ruby`](https://github.com/SamuelMarks/cdd-ruby) | Ruby | Client; Client CLI; Server | Arazzo 1.1.0 Workflows & MCP | Swagger 2.0, OpenAPI 3.2.0 & Arazzo 1.1.0 | [![CI](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-ruby/actions/workflows/ci.yml) |
 | [`cdd-rust`](https://github.com/SamuelMarks/cdd-rust) | Rust | Client; Client CLI; Server |  | Swagger 2.0 & OpenAPI 3.2.0 | [![CI](https://github.com/offscale/cdd-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/offscale/cdd-rust/actions/workflows/ci.yml) |
 | [`cdd-sh`](https://github.com/SamuelMarks/cdd-sh) | Shell (/bin/sh) | Client; Client CLI; Server |  | Swagger 2.0 & OpenAPI 3.2.0 | [![CI](https://github.com/SamuelMarks/cdd-sh/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-sh/actions/workflows/ci.yml) |
 | [`cdd-swift`](https://github.com/SamuelMarks/cdd-swift) | Swift | Client; Client CLI; Server |  | Swagger 2.0 & OpenAPI 3.2.0 | [![CI](https://github.com/SamuelMarks/cdd-swift/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-swift/actions/workflows/ci.yml) |
@@ -155,6 +155,37 @@ Usage:
 Options:
   -i, --input <path>             Path to the source code directory or file to parse
   -o, --output <path>            Destination path for the generated OpenAPI spec (default: spec.json)
+  -h, --help                     Show this help message
+```
+
+#### `from_arazzo`
+
+```text
+cdd-ruby from_arazzo - Generate code from an Arazzo 1.1.0 specification.
+Usage:
+  cdd-ruby from_arazzo [target] [options]
+
+Targets:
+  to_sdk_cli    Generate a client SDK CLI workflow runner.
+  to_sdk        Generate a client SDK with workflow orchestration.
+  to_server     Generate server workflow engine and E2E test suites.
+
+Options:
+  -i, --input <spec>             Path to the Arazzo specification file
+  -o, --output <dir>             Destination path for generation (default: current directory)
+  -h, --help                     Show this help message
+```
+
+#### `to_arazzo`
+
+```text
+cdd-ruby to_arazzo - Generate an Arazzo 1.1.0 specification from source code.
+Usage:
+  cdd-ruby to_arazzo -i <path/to/code> [-o <arazzo.json>]
+
+Options:
+  -i, --input <path>             Path to the source code directory or file to parse
+  -o, --output <path>            Destination path for the generated Arazzo spec (default: arazzo.json)
   -h, --help                     Show this help message
 ```
 

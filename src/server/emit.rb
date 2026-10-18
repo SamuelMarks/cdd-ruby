@@ -3,27 +3,30 @@
 require 'json'
 require 'fileutils'
 require_relative '../scaffolding'
+require_relative '../client_sdk/emit'
 require_relative '../client_sdk_cli/emit'
+require_relative '../arazzo/emit'
 
 # Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
   # Server generation and parsing module.
   module ServerGen
-    # Emitter for generating a complete Sinatra server, DAOs, models, middlewares, and tests.
+    # Emitter for generating a complete Sinatra server, DAOs, models, middlewares, workflows, and tests.
     class Emitter
-      # Emits a complete Sinatra server application and optional test/mock suites from an OpenAPI spec.
+      # Emits a complete Sinatra server application and optional test/mock suites from an OpenAPI or Arazzo spec.
       #
-      # @param options [Hash] generation options (`:input`, `:input_dir`, `:output`, `:with_ephemeral`, etc.)
+      # @param options [Hash] generation options (`:input`, `:input_dir`, `:output`, `:with_ephemeral`, `:arazzo`, etc.)
       # @return [String] generated `server.rb` entrypoint source code
       def self.emit_server(options)
         input_file = options[:input] || Dir.glob("#{options[:input_dir]}/*.json").first
-        openapi = JSON.parse(File.read(input_file))
+        raw_spec = JSON.parse(File.read(input_file))
+        openapi, arazzo = Cdd::ClientSdk::Emitter.split_openapi_and_arazzo(raw_spec, options[:arazzo])
         out_dir = options[:output] || Dir.pwd
         FileUtils.mkdir_p(out_dir)
 
         Cdd::Scaffolding.generate(options, 'server')
         schemas = openapi.dig('components', 'schemas') || openapi['definitions'] || {}
-        %w[config middlewares models daos routes].each { |dir| FileUtils.mkdir_p(File.join(out_dir, dir)) }
+        %w[config middlewares models daos routes workflows].each { |dir| FileUtils.mkdir_p(File.join(out_dir, dir)) }
         needs_db = options[:with_ephemeral] || options[:with_seed]
 
         emit_cli_parser_file(out_dir)
@@ -36,10 +39,37 @@ module Cdd
         emit_webhook_routes_file(out_dir, openapi)
         emit_domain_routes_files(out_dir, openapi, schemas)
         emit_mcp_routes_file(out_dir, openapi)
+        emit_arazzo_engine_files(out_dir, arazzo) if arazzo.is_a?(Hash)
 
         server_code = emit_server_entrypoint(out_dir, openapi)
-        emit_server_tests_and_mocks(options, openapi) if options[:tests]
+        emit_server_tests_and_mocks(options, openapi, arazzo) if options[:tests]
         server_code
+      end
+
+      # Emits `workflows/arazzo_engine.rb` and `routes/arazzo_routes.rb` when an Arazzo spec is provided.
+      #
+      # @param out_dir [String] server output directory
+      # @param arazzo [Hash] parsed Arazzo specification
+      # @return [void]
+      def self.emit_arazzo_engine_files(out_dir, arazzo)
+        ir = Cdd::IR.from_arazzo_hash(arazzo)
+        engine_code = "# frozen_string_literal: true\n\n#{Cdd::Arazzo::Emitter.emit(ir)}"
+        File.write(File.join(out_dir, 'workflows', 'arazzo_engine.rb'), engine_code)
+
+        route_code = <<~RUBY
+          # frozen_string_literal: true
+
+          require 'sinatra'
+          require 'json'
+
+          post '/_mock/execute-workflow/:workflow_id' do
+            content_type :json
+            payload = JSON.parse(request.body.read) rescue {}
+            wf_id = params['workflow_id']
+            { status: 'executed', workflowId: wf_id, inputs: payload }.to_json
+          end
+        RUBY
+        File.write(File.join(out_dir, 'routes', 'arazzo_routes.rb'), route_code)
       end
 
       # Converts a schema name into a valid PascalCase Ruby class name.
@@ -721,6 +751,7 @@ module Cdd
         server_code += "  DatabaseConnection.connect!\n"
         server_code += "  Seeder.seed_database if $cli_options[:seed] && defined?(Seeder)\nend\n\n"
         server_code += "Dir.glob(File.join(__dir__, 'middlewares', '*.rb')).each { |f| require f }\n"
+        server_code += "Dir.glob(File.join(__dir__, 'workflows', '*.rb')).each { |f| require f }\n"
         server_code += "Dir.glob(File.join(__dir__, 'routes', '*.rb')).each { |f| require f }\n"
         File.write(File.join(out_dir, 'server.rb'), server_code)
         server_code
@@ -730,9 +761,10 @@ module Cdd
       #
       # @param options [Hash] server generation options
       # @param openapi [Hash] parsed OpenAPI specification
+      # @param arazzo [Hash, nil] optional parsed Arazzo specification
       # @return [void]
-      def self.emit_server_tests_and_mocks(options, openapi)
-        ir = Cdd::IR.new(openapi)
+      def self.emit_server_tests_and_mocks(options, openapi, arazzo = nil)
+        ir = Cdd::IR.new(openapi, arazzo)
         FileUtils.mkdir_p(File.join(options[:output], 'tests'))
         test_files = Cdd::Tests::Emitter.emit_multiple(ir, options.merge(server: true))
         test_files.each do |filename, t_code|

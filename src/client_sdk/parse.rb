@@ -1,23 +1,26 @@
 # frozen_string_literal: true
 
+require_relative '../arazzo/parse'
+
 # Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
   # Client SDK generation and parsing module.
   module ClientSdk
-    # Parser for extracting OpenAPI paths and operationIds from generated ClientSdk code.
+    # Parser for extracting OpenAPI paths, operationIds, and Arazzo workflows from generated ClientSdk code.
     class Parser
       # Internal SDK helper method names that do not correspond to OpenAPI endpoints.
-      INTERNAL_SDK_METHODS = %w[initialize authorize_oauth2 mcp auth].freeze
+      INTERNAL_SDK_METHODS = %w[initialize authorize_oauth2 mcp auth workflows].freeze
 
       # HTTP verbs recognized on `Net::HTTP::<Verb>` constants.
       NET_HTTP_CONSTS = %w[Get Post Put Delete Patch Options Head Trace].freeze
 
-      # Parses `ClientSdk` method definitions from Ripper tokens and populates the IR.
+      # Parses `ClientSdk` method definitions and Arazzo workflows from Ripper tokens and populates the IR.
       #
       # @param tokens [Array<Array>] Ripper lexed token array
       # @param ir [Cdd::IR] Intermediate Representation
       # @return [void]
       def self.parse(tokens, ir)
+        Cdd::Arazzo::Parser.parse(tokens, ir)
         current_class_name = nil
         current_def = false
         op_id = nil
