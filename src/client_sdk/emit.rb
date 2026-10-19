@@ -9,8 +9,122 @@ require_relative '../arazzo/emit'
 module Cdd
   # Client SDK generation and parsing module.
   module ClientSdk
+    # RSpec integration test and artifact writing helpers mixed into `ClientSdk::Emitter`.
+    module IntegrationSpecEmitter
+      # Writes the generated SDK files and optional test/mock scaffolding to `options[:output]`.
+      #
+      # @param options [Hash] SDK generation options
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @param models_code [String] generated models Ruby code
+      # @param client_code [String] generated client Ruby code
+      # @param workflows_code [String] generated workflows Ruby code
+      # @return [void]
+      def write_sdk_artifacts(options, openapi, models_code, client_code, workflows_code = '')
+        src_dir = File.join(options[:output], 'lib')
+        FileUtils.mkdir_p(src_dir)
+        Cdd::Scaffolding.generate(options, 'sdk')
+        File.write(File.join(src_dir, 'models.rb'), models_code)
+        File.write(File.join(src_dir, 'client.rb'), client_code)
+        unless workflows_code.empty?
+          File.write(File.join(src_dir, 'workflows.rb'), "# frozen_string_literal: true\n\n#{workflows_code}")
+        end
+        return unless options[:tests]
+
+        spec_dir = File.join(options[:output], 'spec')
+        FileUtils.mkdir_p(spec_dir)
+        File.write(File.join(spec_dir, 'integration_spec.rb'), emit_sdk_integration_spec(openapi))
+
+        ir = Cdd::IR.new(openapi)
+        tests_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire_relative 'client'\n\n#{Cdd::Tests::Emitter.emit(ir)}"
+        File.write(File.join(src_dir, 'tests.rb'), tests_code)
+        mocks_code = "# frozen_string_literal: true\n\n#{Cdd::Mocks::Emitter.emit(ir)}"
+        File.write(File.join(src_dir, 'mocks.rb'), mocks_code)
+      end
+
+      # Emits the RSpec integration test suite for `ClientSdk`.
+      #
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @return [String] RSpec integration test content
+      def emit_sdk_integration_spec(openapi)
+        out = "# frozen_string_literal: true\n\nrequire 'rspec'\nrequire 'open3'\nrequire_relative '../lib/client'\n\n"
+        out += "RSpec.shared_context 'server fixture' do |server_flags|\n"
+        out += "  let(:client) { ClientSdk.new('http://127.0.0.1:8080#{openapi['basePath'] || ''}') }\n"
+        out += "  before(:all) do\n    " \
+               "@server_pid = spawn('ruby ../../generated_server/server.rb -p 8080 ' + server_flags)\n    " \
+               "sleep 2\n  end\n"
+        out += "  after(:all) do\n    " \
+               "Process.kill('TERM', @server_pid) rescue nil\n    " \
+               "Process.wait(@server_pid) rescue nil\n  end\nend\n\n"
+        out += "RSpec.describe ClientSdk do\n"
+
+        sorted_paths = []
+        openapi['paths']&.each do |path, methods|
+          methods.each do |method, details|
+            operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
+            sorted_paths << { path: path, method: method, details: details, operation_id: operation_id,
+                              score: path.count('/') + (details['parameters']&.size || 0) }
+          end
+        end
+        sorted_paths.sort_by! { |p| p[:score] }
+
+        { 'Category 2: Stub Tests' => '', 'Category 3: Stateful Ephemeral Tests' => '--ephemeral',
+          'Category 4: Seeded Mock Tests' => '--ephemeral --seed' }.each do |cat_name, flags|
+          out += "  context '#{cat_name}' do\n    include_context 'server fixture', '#{flags}'\n\n"
+          sorted_paths.each { |p| out += emit_single_integration_example(p) }
+          out += "  end\n\n"
+        end
+        "#{out}end\n\nRSpec.configure do |config|\n  config.after(:suite) do\n    sleep 1\n  end\nend\n"
+      end
+
+      # Emits a single `it 'can call <op>'` block for the SDK integration spec.
+      #
+      # @param path_entry [Hash] sorted operation descriptor
+      # @return [String] RSpec `it` block code
+      def emit_single_integration_example(path_entry)
+        operation_id = path_entry[:operation_id]
+        details = path_entry[:details]
+        valid_codes = details['responses'] ? details['responses'].keys.select { |k| k.to_i.positive? } : []
+        valid_codes = (valid_codes + %w[200 201 202 204 400 404 501]).uniq
+        params_str = build_integration_params_str(details)
+
+        "    it 'can call #{operation_id}' do\n      " \
+          "begin\n        " \
+          "response = client.#{operation_id}(#{params_str})\n        " \
+          "expect([#{valid_codes.map { |c| "'#{c}'" }.join(', ')}]).to include(client.last_response.code)\n        " \
+          "expect(response).not_to be_nil\n      " \
+          "rescue Errno::ECONNREFUSED, Errno::ECONNRESET\n        " \
+          "skip 'Server is not available'\n      " \
+          "end\n    " \
+          "end\n\n"
+      end
+
+      # Builds the sample parameters Hash literal string for an SDK integration test call.
+      #
+      # @param details [Hash] OpenAPI operation details
+      # @return [String] Ruby Hash literal string
+      def build_integration_params_str(details)
+        params = (details['parameters'] || []).map do |param|
+          "'#{param['name']}' => #{Cdd::TokenScanner.sample_param_value(param)}"
+        end
+        if details['requestBody']
+          is_array = details.dig('requestBody', 'content')&.values&.any? do |mt|
+            mt.dig('schema', 'type') == 'array' || mt.dig('schema', 'items')
+          end
+          if is_array
+            params << "'body' => [{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"
+          else
+            params.push("'id' => 1", "'name' => 'test'", "'photoUrls' => ['http://example.com']",
+                        "'status' => 'available'")
+          end
+        end
+        params.empty? ? '{}' : "{ #{params.join(', ')} }"
+      end
+    end
+
     # Emitter for generating a Ruby Client SDK, Auth/MCP/Workflow adapters, and tests from OpenAPI/Arazzo specs.
     class Emitter
+      extend IntegrationSpecEmitter
+
       # Emits the Ruby Client SDK and optional test/mock/workflow scaffolding from an OpenAPI or Arazzo definition.
       #
       # @param options [Hash] generation options (`:input`, `:input_dir`, `:output`, `:tests`, `:arazzo`)
@@ -145,12 +259,12 @@ module Cdd
       # @param details [Hash] OpenAPI operation details
       # @return [String] Ruby method definition and comments
       def self.emit_operation_method(path, method, details)
-        operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+        operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
         out = emit_operation_doc_comments(path, details)
         query_keys, header_keys, body_key = partition_parameter_keys(details['parameters'] || [])
 
         out += "  def #{operation_id}(params = {})\n"
-        out += "    body_params = params.dup\n    req_path = '#{path}'.dup\n"
+        out += "    body_params = params.dup\n    req_path = #{Cdd::TokenScanner.single_quote_literal(path)}.dup\n"
         out += "    params.each do |k, v|\n      if req_path.include?(\"{#\{k}}\")\n"
         out += "        req_path.gsub!(\"{#\{k}}\", v.to_s)\n        body_params.delete(k)\n      end\n    end\n"
         out += "    query_params = body_params.select { |k, _| #{query_keys.inspect}.include?(k.to_s) }\n"
@@ -263,16 +377,18 @@ module Cdd
         content_type = resolve_content_type(details)
         return '' unless %w[post put patch].include?(method)
 
+        ct_lit = Cdd::TokenScanner.single_quote_literal(content_type)
         if ['application/x-www-form-urlencoded', 'multipart/form-data'].include?(content_type)
-          "    req.set_form(body_params.map { |k, v| [k, v.to_s] }, '#{content_type}')\n"
+          "    req.set_form(body_params.map { |k, v| [k, v.to_s] }, #{ct_lit})\n"
         elsif body_key
-          "    req['Content-Type'] = '#{content_type}'\n    " \
-            "b_name = '#{body_key}'\n    " \
+          bk_lit = Cdd::TokenScanner.single_quote_literal(body_key)
+          "    req['Content-Type'] = #{ct_lit}\n    " \
+            "b_name = #{bk_lit}\n    " \
             "b_val = body_params[b_name]\n    " \
             "b_json = b_val.is_a?(String) ? b_val : b_val.to_json\n    " \
             "req.body = body_params.key?(b_name) ? b_json : body_params.to_json\n"
         else
-          "    req['Content-Type'] = '#{content_type}'\n    req.body = body_params.to_json\n"
+          "    req['Content-Type'] = #{ct_lit}\n    req.body = body_params.to_json\n"
         end
       end
 
@@ -430,133 +546,6 @@ module Cdd
             end
           end
         RUBY
-      end
-
-      # Writes the generated SDK files and optional test/mock scaffolding to `options[:output]`.
-      #
-      # @param options [Hash] SDK generation options
-      # @param openapi [Hash] parsed OpenAPI specification
-      # @param models_code [String] generated models Ruby code
-      # @param client_code [String] generated client Ruby code
-      # @param workflows_code [String] generated workflows Ruby code
-      # @return [void]
-      def self.write_sdk_artifacts(options, openapi, models_code, client_code, workflows_code = '')
-        src_dir = File.join(options[:output], 'lib')
-        FileUtils.mkdir_p(src_dir)
-        Cdd::Scaffolding.generate(options, 'sdk')
-        File.write(File.join(src_dir, 'models.rb'), models_code)
-        File.write(File.join(src_dir, 'client.rb'), client_code)
-        unless workflows_code.empty?
-          File.write(File.join(src_dir, 'workflows.rb'), "# frozen_string_literal: true\n\n#{workflows_code}")
-        end
-        return unless options[:tests]
-
-        spec_dir = File.join(options[:output], 'spec')
-        FileUtils.mkdir_p(spec_dir)
-        File.write(File.join(spec_dir, 'integration_spec.rb'), emit_sdk_integration_spec(openapi))
-
-        ir = Cdd::IR.new(openapi)
-        tests_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire_relative 'client'\n\n#{Cdd::Tests::Emitter.emit(ir)}"
-        File.write(File.join(src_dir, 'tests.rb'), tests_code)
-        mocks_code = "# frozen_string_literal: true\n\n#{Cdd::Mocks::Emitter.emit(ir)}"
-        File.write(File.join(src_dir, 'mocks.rb'), mocks_code)
-      end
-
-      # Emits the RSpec integration test suite for `ClientSdk`.
-      #
-      # @param openapi [Hash] parsed OpenAPI specification
-      # @return [String] RSpec integration test content
-      def self.emit_sdk_integration_spec(openapi)
-        out = "# frozen_string_literal: true\n\nrequire 'rspec'\nrequire 'open3'\nrequire_relative '../lib/client'\n\n"
-        out += "RSpec.shared_context 'server fixture' do |server_flags|\n"
-        out += "  let(:client) { ClientSdk.new('http://127.0.0.1:8080#{openapi['basePath'] || ''}') }\n"
-        out += "  before(:all) do\n    " \
-               "@server_pid = spawn('ruby ../../generated_server/server.rb -p 8080 ' + server_flags)\n    " \
-               "sleep 2\n  end\n"
-        out += "  after(:all) do\n    " \
-               "Process.kill('TERM', @server_pid) rescue nil\n    " \
-               "Process.wait(@server_pid) rescue nil\n  end\nend\n\n"
-        out += "RSpec.describe ClientSdk do\n"
-
-        sorted_paths = []
-        openapi['paths']&.each do |path, methods|
-          methods.each do |method, details|
-            operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
-            sorted_paths << { path: path, method: method, details: details, operation_id: operation_id,
-                              score: path.count('/') + (details['parameters']&.size || 0) }
-          end
-        end
-        sorted_paths.sort_by! { |p| p[:score] }
-
-        { 'Category 2: Stub Tests' => '', 'Category 3: Stateful Ephemeral Tests' => '--ephemeral',
-          'Category 4: Seeded Mock Tests' => '--ephemeral --seed' }.each do |cat_name, flags|
-          out += "  context '#{cat_name}' do\n    include_context 'server fixture', '#{flags}'\n\n"
-          sorted_paths.each { |p| out += emit_single_integration_example(p) }
-          out += "  end\n\n"
-        end
-        "#{out}end\n\nRSpec.configure do |config|\n  config.after(:suite) do\n    sleep 1\n  end\nend\n"
-      end
-
-      # Emits a single `it 'can call <op>'` block for the SDK integration spec.
-      #
-      # @param path_entry [Hash] sorted operation descriptor
-      # @return [String] RSpec `it` block code
-      def self.emit_single_integration_example(path_entry)
-        operation_id = path_entry[:operation_id]
-        details = path_entry[:details]
-        valid_codes = details['responses'] ? details['responses'].keys.select { |k| k.to_i.positive? } : []
-        valid_codes = (valid_codes + %w[200 201 202 204 400 404 501]).uniq
-        params_str = build_integration_params_str(details)
-
-        "    it 'can call #{operation_id}' do\n      " \
-          "begin\n        " \
-          "response = client.#{operation_id}(#{params_str})\n        " \
-          "expect([#{valid_codes.map { |c| "'#{c}'" }.join(', ')}]).to include(client.last_response.code)\n        " \
-          "expect(response).not_to be_nil\n      " \
-          "rescue Errno::ECONNREFUSED, Errno::ECONNRESET\n        " \
-          "skip 'Server is not available'\n      " \
-          "end\n    " \
-          "end\n\n"
-      end
-
-      # Builds the sample parameters Hash literal string for an SDK integration test call.
-      #
-      # @param details [Hash] OpenAPI operation details
-      # @return [String] Ruby Hash literal string
-      def self.build_integration_params_str(details)
-        params = (details['parameters'] || []).map { |param| "'#{param['name']}' => #{sample_param_value(param)}" }
-        if details['requestBody']
-          is_array = details.dig('requestBody', 'content')&.values&.any? do |mt|
-            mt.dig('schema', 'type') == 'array' || mt.dig('schema', 'items')
-          end
-          if is_array
-            params << "'body' => [{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"
-          else
-            params.push("'id' => 1", "'name' => 'test'", "'photoUrls' => ['http://example.com']",
-                        "'status' => 'available'")
-          end
-        end
-        params.empty? ? '{}' : "{ #{params.join(', ')} }"
-      end
-
-      # Returns a Ruby literal string for a single OpenAPI/Swagger parameter in integration tests.
-      #
-      # @param param [Hash] parameter definition
-      # @return [String] Ruby literal expression
-      def self.sample_param_value(param)
-        if param.dig('schema', 'type') == 'integer' || param['type'] == 'integer'
-          '1'
-        elsif param['in'] == 'body'
-          if param.dig('schema',
-                       'type') == 'array' || param.dig('schema', 'items') || param['type'] == 'array' || param['items']
-            "[{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"
-          else
-            "{ 'id' => 1, 'username' => 'test_user', 'name' => 'test', " \
-              "'photoUrls' => ['http://example.com'], 'status' => 'available' }"
-          end
-        else
-          param['name'] == 'status' ? "'available'" : "'test_#{param['name']}'"
-        end
       end
     end
   end

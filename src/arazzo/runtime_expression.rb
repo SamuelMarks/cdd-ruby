@@ -306,12 +306,11 @@ module Cdd
       # @param context [Hash] full runtime context
       # @return [Boolean] evaluation result
       def self.evaluate_simple(condition, target_val, context)
-        if condition.include?('||')
-          return condition.split('||').any? { |part| evaluate_simple(part.strip, target_val, context) }
-        end
-        if condition.include?('&&')
-          return condition.split('&&').all? { |part| evaluate_simple(part.strip, target_val, context) }
-        end
+        or_parts = split_outside_quotes(condition, '||')
+        return or_parts.any? { |part| evaluate_simple(part.strip, target_val, context) } if or_parts.size > 1
+
+        and_parts = split_outside_quotes(condition, '&&')
+        return and_parts.all? { |part| evaluate_simple(part.strip, target_val, context) } if and_parts.size > 1
 
         if condition =~ /\A(.+?)\s*(==|!=|<=|>=|<|>)\s*(.+)\z/
           lhs = resolve_operand(Regexp.last_match(1).strip, target_val, context)
@@ -322,6 +321,38 @@ module Cdd
           val = resolve_operand(condition.strip, target_val, context)
           !val.nil? && val != false && val != ''
         end
+      end
+
+      # Splits a condition expression on `delimiter` (`'||'` or `'&&'`) while ignoring quoted string literals.
+      #
+      # @param str [String] condition expression
+      # @param delimiter [String] two-character operator delimiter
+      # @return [Array<String>] split segments
+      def self.split_outside_quotes(str, delimiter)
+        parts = []
+        current = +''
+        quote = nil
+        idx = 0
+        while idx < str.length
+          ch = str[idx]
+          if quote
+            quote = nil if ch == quote
+            current << ch
+            idx += 1
+          elsif ["'", '"'].include?(ch)
+            quote = ch
+            current << ch
+            idx += 1
+          elsif str[idx, delimiter.length] == delimiter
+            parts << current
+            current = +''
+            idx += delimiter.length
+          else
+            current << ch
+            idx += 1
+          end
+        end
+        parts << current
       end
 
       # Resolves an operand in a simple condition (either `$` expression, JSONPath `$.*`, or literal).
@@ -470,7 +501,7 @@ module Cdd
       # @return [String, nil] matched node text or attribute value
       def self.query_xpath(xml_str, xpath_expr)
         xml = xml_str.to_s
-        return nil unless xml.count('<') == xml.count('>') && xml.include?('<')
+        return nil unless xml.include?('<') && xml.scan(/<[^>]*\z/).empty?
 
         target = xpath_expr.to_s.split('/').reject(&:empty?)
         last = target.last.to_s
@@ -548,13 +579,7 @@ module Cdd
         return val if pointer.empty? || pointer == '/'
 
         segments = pointer.sub(%r{\A/}, '').split('/').map { |s| s.gsub('~1', '/').gsub('~0', '~') }
-        parent = segments[0...-1].reduce(data) do |acc, seg|
-          if acc.is_a?(Array)
-            acc[seg.to_i]
-          elsif acc.is_a?(Hash)
-            acc[seg] ||= {}
-          end
-        end
+        parent = navigate_pointer_parent(data, segments[0...-1])
         last = segments.last
         if parent.is_a?(Array) && last.match?(/\A\d+\z/)
           parent[last.to_i] = val
@@ -562,6 +587,21 @@ module Cdd
           parent[last] = val
         end
         data
+      end
+
+      # Navigates or creates intermediate containers along `segments`.
+      #
+      # @param data [Object] root payload
+      # @param segments [Array<String>] parent pointer segments
+      # @return [Object] resolved parent container
+      def self.navigate_pointer_parent(data, segments)
+        segments.reduce(data) do |acc, seg|
+          if acc.is_a?(Array)
+            acc[seg.to_i]
+          elsif acc.is_a?(Hash)
+            acc[seg] ||= {}
+          end
+        end
       end
 
       # Replaces the text of the first matching XPath node in `xml_str`.

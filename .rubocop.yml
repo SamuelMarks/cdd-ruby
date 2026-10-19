@@ -29,7 +29,7 @@ Metrics/MethodLength:
     - 'spec/**/*'
 
 Metrics/ClassLength:
-  Max: 530
+  Max: 300
   CountAsOne: ['array', 'hash', 'heredoc', 'method_call']
   Exclude:
     - 'spec/**/*'
@@ -47,17 +47,17 @@ Metrics/BlockLength:
     - 'spec/**/*'
 
 Metrics/AbcSize:
-  Max: 45
+  Max: 40
   Exclude:
     - 'spec/**/*'
 
 Metrics/CyclomaticComplexity:
-  Max: 15
+  Max: 12
   Exclude:
     - 'spec/**/*'
 
 Metrics/PerceivedComplexity:
-  Max: 16
+  Max: 12
   Exclude:
     - 'spec/**/*'
 
@@ -86,7 +86,9 @@ Naming/MethodParameterName:
     - j
 
 Naming/AccessorMethodName:
-  Enabled: false
+  Enabled: true
+  Exclude:
+    - 'src/cdd.rb'
 
 Naming/PredicateMethod:
   AllowedMethods:

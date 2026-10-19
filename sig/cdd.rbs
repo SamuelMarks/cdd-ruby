@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 module Cdd
+  type json_scalar = String | Integer | Float | bool | nil
+  type json_value = json_scalar | Array[json_value] | Hash[String, json_value]
+  type json_object = Hash[String, json_value]
+  type ripper_token = [[Integer, Integer], Symbol, String, Array[String]?]
+
   class Error < StandardError
   end
 
@@ -33,6 +38,8 @@ module Cdd
   class Config
     ATTRIBUTES: Array[Symbol]
     CLI_OPTION_SPECS: Array[[Symbol, String, bool]]
+    ATTRIBUTE_ALIASES: Hash[Symbol, Array[Symbol]]
+
     attr_accessor subcommand: String?
     attr_accessor input: String?
     attr_accessor output: String?
@@ -50,128 +57,776 @@ module Cdd
     attr_accessor port: (Integer | String)?
     attr_accessor listen: String?
 
-    def initialize: (?Hash[Symbol | String, untyped] opts) -> void
-    def []: (Symbol | String key) -> untyped
-    def to_h: () -> Hash[Symbol, untyped]
+    def initialize: (?Hash[Symbol | String, json_value] opts) -> void
+    def []: (Symbol | String key) -> json_value
+    def to_h: () -> Hash[Symbol, json_value]
     def to_a: () -> Array[String]
   end
 
   class IR
-    Info: singleton(Data)
-    ServerVariable: singleton(Data)
-    Server: singleton(Data)
-    Property: singleton(Data)
-    Schema: singleton(Data)
-    Parameter: singleton(Data)
-    Encoding: singleton(Data)
-    MediaType: singleton(Data)
-    RequestBody: singleton(Data)
-    Header: singleton(Data)
-    Link: singleton(Data)
-    Response: singleton(Data)
-    Operation: singleton(Data)
-    PathItem: singleton(Data)
-    OAuthFlows: singleton(Data)
-    SecurityScheme: singleton(Data)
-    Example: singleton(Data)
+    class Info < Data
+      attr_reader title: String
+      attr_reader version: String
+      attr_reader summary: String?
+      attr_reader description: String?
+      attr_reader terms_of_service: String?
+      attr_reader contact: json_object?
+      attr_reader license: json_object?
+    end
 
-    ArazzoSpec: singleton(Data)
-    ArazzoInfo: singleton(Data)
-    SourceDescription: singleton(Data)
-    Workflow: singleton(Data)
-    Step: singleton(Data)
-    ArazzoParameter: singleton(Data)
-    ReusableObject: singleton(Data)
-    SuccessAction: singleton(Data)
-    FailureAction: singleton(Data)
-    Criterion: singleton(Data)
-    ExpressionType: singleton(Data)
-    Selector: singleton(Data)
-    ArazzoRequestBody: singleton(Data)
-    PayloadReplacement: singleton(Data)
-    ArazzoComponents: singleton(Data)
+    class ServerVariable < Data
+      attr_reader default: String
+      attr_reader enum: Array[String]?
+      attr_reader description: String?
+    end
+
+    class Server < Data
+      attr_reader url: String
+      attr_reader description: String?
+      attr_reader variables: Hash[String, ServerVariable]
+    end
+
+    class Property < Data
+      attr_reader name: String
+      attr_reader type: String?
+      attr_reader ref: String?
+      attr_reader items: json_object?
+      attr_reader description: String?
+      attr_reader xml: json_object?
+      attr_reader example: json_value
+    end
+
+    class Schema < Data
+      attr_reader name: String
+      attr_reader type: String?
+      attr_reader properties: Array[Property]
+      attr_reader required: Array[String]
+      attr_reader all_of: Array[json_object]?
+      attr_reader one_of: Array[json_object]?
+      attr_reader any_of: Array[json_object]?
+      attr_reader discriminator: json_object?
+      attr_reader xml: json_object?
+      attr_reader example: json_value
+      attr_reader description: String?
+    end
+
+    class Parameter < Data
+      attr_reader name: String
+      attr_reader in_location: String?
+      attr_reader schema: json_object?
+      attr_reader required: bool
+      attr_reader description: String?
+      attr_reader style: String?
+      attr_reader explode: bool?
+      attr_reader allow_reserved: bool?
+      attr_reader allow_empty_value: bool?
+      attr_reader deprecated: bool?
+      attr_reader examples: json_object?
+    end
+
+    class Encoding < Data
+      attr_reader content_type: String?
+      attr_reader headers: json_object?
+      attr_reader style: String?
+      attr_reader explode: bool?
+      attr_reader allow_reserved: bool?
+      attr_reader description: String?
+    end
+
+    class MediaType < Data
+      attr_reader schema: json_object?
+      attr_reader example: json_value
+      attr_reader examples: json_object?
+      attr_reader encoding: Hash[String, Encoding]
+    end
+
+    class RequestBody < Data
+      attr_reader description: String?
+      attr_reader content: Hash[String, MediaType]
+      attr_reader required: bool?
+    end
+
+    class Header < Data
+      attr_reader description: String?
+      attr_reader schema: json_object?
+      attr_reader required: bool?
+      attr_reader deprecated: bool?
+      attr_reader example: json_value
+      attr_reader examples: json_object?
+    end
+
+    class Link < Data
+      attr_reader operation_ref: String?
+      attr_reader operation_id: String?
+      attr_reader parameters: json_object?
+      attr_reader request_body: json_value
+      attr_reader description: String?
+      attr_reader server: json_object?
+    end
+
+    class Response < Data
+      attr_reader status: String
+      attr_reader description: String?
+      attr_reader headers: Hash[String, Header]
+      attr_reader content: Hash[String, MediaType]
+      attr_reader links: Hash[String, Link]
+    end
+
+    class Operation < Data
+      attr_reader http_method: String
+      attr_reader path: String
+      attr_reader operation_id: String?
+      attr_reader summary: String?
+      attr_reader description: String?
+      attr_reader tags: Array[String]
+      attr_reader parameters: Array[Parameter]
+      attr_reader request_body: RequestBody?
+      attr_reader responses: Hash[String, Response]
+      attr_reader callbacks: json_object?
+      attr_reader security: Array[json_object]?
+      attr_reader servers: Array[json_object]?
+      attr_reader deprecated: bool?
+      attr_reader external_docs: json_object?
+    end
+
+    class PathItem < Data
+      attr_reader path: String
+      attr_reader summary: String?
+      attr_reader description: String?
+      attr_reader operations: Hash[String, Operation]
+      attr_reader parameters: Array[Parameter]
+      attr_reader servers: Array[json_object]?
+      attr_reader ref: String?
+    end
+
+    class OAuthFlows < Data
+      attr_reader implicit: json_object?
+      attr_reader password: json_object?
+      attr_reader client_credentials: json_object?
+      attr_reader authorization_code: json_object?
+      attr_reader device_authorization: json_object?
+    end
+
+    class SecurityScheme < Data
+      attr_reader name: String
+      attr_reader type: String?
+      attr_reader description: String?
+      attr_reader param_name: String?
+      attr_reader in_location: String?
+      attr_reader scheme: String?
+      attr_reader bearer_format: String?
+      attr_reader flows: OAuthFlows?
+      attr_reader open_id_connect_url: String?
+      attr_reader oauth2_metadata_url: String?
+    end
+
+    class Example < Data
+      attr_reader name: String
+      attr_reader schema_ref: String?
+      attr_reader summary: String?
+      attr_reader description: String?
+      attr_reader value: json_value
+      attr_reader data_value: json_value
+      attr_reader serialized_value: String?
+      attr_reader external_value: String?
+    end
+
+    class ArazzoSpec < Data
+      attr_reader arazzo: String
+      attr_reader self_uri: String?
+      attr_reader info: ArazzoInfo
+      attr_reader source_descriptions: Array[SourceDescription]
+      attr_reader workflows: Array[Workflow]
+      attr_reader components: ArazzoComponents
+      attr_reader extensions: json_object
+    end
+
+    class ArazzoInfo < Data
+      attr_reader title: String
+      attr_reader summary: String?
+      attr_reader description: String?
+      attr_reader version: String
+      attr_reader extensions: json_object
+    end
+
+    class SourceDescription < Data
+      attr_reader name: String
+      attr_reader url: String
+      attr_reader type: String
+      attr_reader extensions: json_object
+    end
+
+    class Workflow < Data
+      attr_reader workflow_id: String
+      attr_reader summary: String?
+      attr_reader description: String?
+      attr_reader inputs: json_object?
+      attr_reader depends_on: Array[String]
+      attr_reader steps: Array[Step]
+      attr_reader success_actions: Array[SuccessAction | ReusableObject]
+      attr_reader failure_actions: Array[FailureAction | ReusableObject]
+      attr_reader outputs: Hash[String, String | Selector]
+      attr_reader parameters: Array[ArazzoParameter | ReusableObject]
+      attr_reader extensions: json_object
+    end
+
+    class Step < Data
+      attr_reader step_id: String
+      attr_reader description: String?
+      attr_reader operation_id: String?
+      attr_reader operation_path: String?
+      attr_reader workflow_id: String?
+      attr_reader parameters: Array[ArazzoParameter | ReusableObject]
+      attr_reader request_body: ArazzoRequestBody?
+      attr_reader success_criteria: Array[Criterion]
+      attr_reader on_success: Array[SuccessAction | ReusableObject]
+      attr_reader on_failure: Array[FailureAction | ReusableObject]
+      attr_reader outputs: Hash[String, String | Selector]
+      attr_reader extensions: json_object
+    end
+
+    class ArazzoParameter < Data
+      attr_reader name: String
+      attr_reader in_location: String?
+      attr_reader value: json_value
+      attr_reader extensions: json_object
+    end
+
+    class ReusableObject < Data
+      attr_reader reference: String
+      attr_reader value: json_value
+    end
+
+    class SuccessAction < Data
+      attr_reader name: String
+      attr_reader type: String
+      attr_reader workflow_id: String?
+      attr_reader step_id: String?
+      attr_reader criteria: Array[Criterion]
+      attr_reader extensions: json_object
+    end
+
+    class FailureAction < Data
+      attr_reader name: String
+      attr_reader type: String
+      attr_reader workflow_id: String?
+      attr_reader step_id: String?
+      attr_reader retry_after: (Integer | Float)?
+      attr_reader retry_limit: Integer?
+      attr_reader criteria: Array[Criterion]
+      attr_reader extensions: json_object
+    end
+
+    class Criterion < Data
+      attr_reader context: String?
+      attr_reader condition: String
+      attr_reader type: (String | ExpressionType)?
+      attr_reader extensions: json_object
+    end
+
+    class ExpressionType < Data
+      attr_reader type: String
+      attr_reader version: String?
+      attr_reader extensions: json_object
+    end
+
+    class Selector < Data
+      attr_reader context: String
+      attr_reader selector: String
+      attr_reader type: (String | ExpressionType)?
+      attr_reader extensions: json_object
+    end
+
+    class ArazzoRequestBody < Data
+      attr_reader content_type: String?
+      attr_reader payload: json_value
+      attr_reader replacements: Array[PayloadReplacement]
+      attr_reader extensions: json_object
+    end
+
+    class PayloadReplacement < Data
+      attr_reader target: String
+      attr_reader value: json_value
+      attr_reader target_selector_type: (String | ExpressionType)?
+      attr_reader extensions: json_object
+    end
+
+    class ArazzoComponents < Data
+      attr_reader inputs: Hash[String, json_object]
+      attr_reader parameters: Hash[String, ArazzoParameter]
+      attr_reader success_actions: Hash[String, SuccessAction]
+      attr_reader failure_actions: Hash[String, FailureAction]
+      attr_reader extensions: json_object
+    end
 
     attr_accessor classes: Array[String]
-    attr_accessor routes: Array[Hash[String, untyped]]
-    attr_accessor openapi_spec: Hash[String, untyped]
-    attr_accessor tests: Array[Hash[String, untyped]]
-    attr_accessor mocks: Array[Hash[String, untyped]]
-    attr_accessor arazzo_spec: Hash[String, untyped]
+    attr_accessor routes: Array[String]
+    attr_accessor openapi_spec: json_object
+    attr_accessor tests: Array[String]
+    attr_accessor mocks: Array[String]
+    attr_accessor arazzo_spec: json_object
     attr_accessor workflows: Array[String]
 
-    def initialize: (?Hash[String, untyped]? openapi_spec, ?Hash[String, untyped]? arazzo_spec) -> void
-    def self.from_openapi_hash: (Hash[String, untyped] hash) -> IR
-    def self.from_arazzo_hash: (Hash[String, untyped] hash) -> IR
-    def self.extract_extensions: (Hash[String, untyped]? raw) -> Hash[String, untyped]
-    def self.build_arazzo_param_or_ref: (Hash[String, untyped] raw) -> untyped
-    def self.build_criterion: (Hash[String, untyped] raw) -> untyped
-    def self.build_success_action: (Hash[String, untyped] raw) -> untyped
-    def self.build_failure_action: (Hash[String, untyped] raw) -> untyped
-    def self.build_output_value: (String | Hash[String, untyped] val) -> untyped
-    def self.build_arazzo_request_body: (Hash[String, untyped]? raw) -> untyped
-    def self.build_step: (Hash[String, untyped] raw) -> untyped
-    def self.build_workflow: (Hash[String, untyped] raw) -> untyped
-    def self.build_arazzo_components: (Hash[String, untyped]? raw) -> untyped
-    def to_openapi_hash: () -> Hash[String, untyped]
-    def to_arazzo_hash: () -> Hash[String, untyped]
-    def typed_arazzo: () -> untyped
-    def typed_info: () -> untyped
-    def typed_servers: () -> Array[untyped]
-    def typed_schemas: () -> Array[untyped]
-    def to_h: () -> Hash[String, untyped]
+    def initialize: (?json_object? openapi_spec, ?json_object? arazzo_spec) -> void
+    def self.from_openapi_hash: (json_object hash) -> IR
+    def self.from_arazzo_hash: (json_object hash) -> IR
+    def self.extract_extensions: (json_object? raw) -> json_object
+    def self.build_arazzo_param_or_ref: (json_object raw) -> (ArazzoParameter | ReusableObject)
+    def self.build_criterion: (json_object raw) -> Criterion
+    def self.build_success_action: (json_object raw) -> (SuccessAction | ReusableObject)
+    def self.build_failure_action: (json_object raw) -> (FailureAction | ReusableObject)
+    def self.build_output_value: (String | json_object val) -> (String | Selector)
+    def self.build_arazzo_request_body: (json_object? raw) -> ArazzoRequestBody?
+    def self.build_step: (json_object raw) -> Step
+    def self.build_workflow: (json_object raw) -> Workflow
+    def self.build_arazzo_components: (json_object? raw) -> ArazzoComponents
+    def self.build_parameter: (json_object raw) -> Parameter
+    def self.build_media_type: (json_object raw) -> MediaType
+    def self.build_request_body: (json_object? raw) -> RequestBody?
+    def self.build_response: (String status, json_object raw) -> Response
+    def self.build_operation: (String http_method, String path, json_object raw) -> Operation
+    def to_openapi_hash: () -> json_object
+    def to_arazzo_hash: () -> json_object
+    def typed_arazzo: () -> ArazzoSpec
+    def typed_info: () -> Info
+    def typed_servers: () -> Array[Server]
+    def typed_schemas: () -> Array[Schema]
+    def typed_paths: () -> Array[PathItem]
+    def typed_security_schemes: () -> Array[SecurityScheme]
+    def typed_examples: () -> Array[Example]
+    def to_h: () -> Hash[String, json_value]
+  end
+
+  module TokenScanner
+    SINATRA_HTTP_VERBS: Array[String]
+    DISQUALIFYING_PREV_TYPES: Array[Symbol]
+    SCAFFOLDING_CLASSES: Array[String]
+
+    def self.scaffolding_class?: (String name) -> bool
+    def self.operation_id_for: (String method, String path, ?json_object details, ?collapse: bool) -> String
+    def self.single_quote_literal: (String str) -> String
+    def self.classify_name: (String | Symbol name) -> String
+    def self.sample_param_value: (json_object param) -> String
+    def self.parse_composition_comment: (String composition_key, String rest) -> json_object
+    def self.parse_sinatra_routes: (Array[ripper_token] tokens, IR ir) -> void
+    def self.extract_route_path_literal: (Array[ripper_token] tokens, Integer start_idx) -> String?
+    def self.register_sinatra_route: (IR ir, String method, String path) -> void
   end
 
   module Arazzo
     class RuntimeExpression
       VALID_ROOTS: Array[String]
-      def self.valid?: (untyped expr) -> bool
-      def self.evaluate: (untyped expr, ?Hash[Symbol | String, untyped] context) -> untyped
-      def self.evaluate_collection: (Hash[untyped, untyped] | Array[untyped] collection, Hash[Symbol | String, untyped] context) -> (Hash[untyped, untyped] | Array[untyped])
-      def self.evaluate_single: (String expr, Hash[Symbol | String, untyped] context) -> untyped
-      def self.evaluate_envelope: (String expr, Hash[Symbol | String, untyped] context) -> untyped
-      def self.evaluate_body_or_payload: (Hash[untyped, untyped] env, String rest) -> untyped
-      def self.evaluate_namespace: (String namespace, String rest, Hash[Symbol | String, untyped] context) -> untyped
-      def self.lookup_path: (untyped target, String path_str) -> untyped
-      def self.resolve_json_pointer: (untyped data, String? pointer) -> untyped
-      def self.lookup_case_insensitive: (untyped hash, String key) -> untyped
-      def self.fetch_ctx: (untyped hash, Symbol sym) -> untyped
-      def self.parse_json_if_string: (untyped val) -> untyped
-      def self.to_ruby_expr: (untyped expr) -> String
+      def self.valid?: (json_value expr) -> bool
+      def self.evaluate: (json_value expr, ?Hash[Symbol | String, json_value] context) -> json_value
+      def self.evaluate_collection: (Hash[String, json_value] | Array[json_value] collection, Hash[Symbol | String, json_value] context) -> (Hash[String, json_value] | Array[json_value])
+      def self.evaluate_single: (String expr, Hash[Symbol | String, json_value] context) -> json_value
+      def self.evaluate_envelope: (String expr, Hash[Symbol | String, json_value] context) -> json_value
+      def self.evaluate_body_or_payload: (Hash[String, json_value] env, String rest) -> json_value
+      def self.evaluate_namespace: (String namespace, String rest, Hash[Symbol | String, json_value] context) -> json_value
+      def self.lookup_path: (json_value target, String path_str) -> json_value
+      def self.resolve_json_pointer: (json_value data, String? pointer) -> json_value
+      def self.lookup_case_insensitive: (json_value hash, String key) -> json_value
+      def self.fetch_ctx: (json_value hash, Symbol sym) -> json_value
+      def self.parse_json_if_string: (json_value val) -> json_value
+      def self.to_ruby_expr: (json_value expr) -> String
       def self.translate_direct_ruby_expr: (String expr) -> String
       def self.from_ruby_expr: (String ruby_code) -> String
     end
 
     class CriterionEvaluator
-      def self.evaluate: (untyped criterion, ?Hash[Symbol | String, untyped] context) -> bool
-      def self.extract_type_and_version: (untyped type_spec) -> [String?, String?]
-      def self.evaluate_simple: (String condition, untyped target_val, Hash[Symbol | String, untyped] context) -> bool
-      def self.resolve_operand: (String token, untyped target_val, Hash[Symbol | String, untyped] context) -> untyped
-      def self.values_match?: (untyped lhs, String op, untyped rhs) -> bool
-      def self.jsonpath_criterion_match?: (String condition, untyped target_val, ?String? _version) -> bool
-      def self.xpath_criterion_match?: (String condition, untyped target_val, ?String? _version) -> bool
+      def self.evaluate: (IR::Criterion | json_object criterion, ?Hash[Symbol | String, json_value] context) -> bool
+      def self.extract_type_and_version: (String | IR::ExpressionType | json_object | nil type_spec) -> [String?, String?]
+      def self.evaluate_simple: (String condition, json_value target_val, Hash[Symbol | String, json_value] context) -> bool
+      def self.split_outside_quotes: (String str, String delimiter) -> Array[String]
+      def self.resolve_operand: (String token, json_value target_val, Hash[Symbol | String, json_value] context) -> json_value
+      def self.values_match?: (json_value lhs, String op, json_value rhs) -> bool
+      def self.jsonpath_criterion_match?: (String condition, json_value target_val, ?String? _version) -> bool
+      def self.xpath_criterion_match?: (String condition, json_value target_val, ?String? _version) -> bool
     end
 
     class SelectorEvaluator
-      def self.extract: (untyped selector_or_expr, ?Hash[Symbol | String, untyped] context) -> untyped
-      def self.query_jsonpath: (untyped data, String query) -> untyped
-      def self.apply_jsonpath_filter: (untyped list, String filter_expr) -> Array[untyped]
+      def self.extract: (String | IR::Selector | json_object selector_or_expr, ?Hash[Symbol | String, json_value] context) -> json_value
+      def self.query_jsonpath: (json_value data, String query) -> json_value
+      def self.apply_jsonpath_filter: (json_value list, String filter_expr) -> Array[json_value]
       def self.query_xpath: (String xml_str, String xpath_expr) -> String?
     end
 
     class PayloadReplacer
-      def self.apply: (untyped payload, Array[untyped]? replacements, ?Hash[Symbol | String, untyped] context) -> untyped
-      def self.apply_single: (untyped current, String target, untyped selector_type, untyped val) -> untyped
-      def self.replace_json_pointer: (untyped data, String pointer, untyped val) -> untyped
-      def self.replace_xpath: (String xml_str, String xpath_expr, untyped val) -> String
-      def self.deep_copy: (untyped obj) -> untyped
+      def self.apply: (json_value payload, Array[IR::PayloadReplacement | json_object]? replacements, ?Hash[Symbol | String, json_value] context) -> json_value
+      def self.apply_single: (json_value current, String target, (String | IR::ExpressionType | json_object)? selector_type, json_value val) -> json_value
+      def self.replace_json_pointer: (json_value data, String pointer, json_value val) -> json_value
+      def self.navigate_pointer_parent: (json_value data, Array[String] segments) -> json_value
+      def self.replace_xpath: (String xml_str, String xpath_expr, json_value val) -> String
+      def self.deep_copy: (json_value obj) -> json_value
     end
 
     class Emitter
       def self.emit: (IR ir) -> String
+      def self.emit_root_lines: (IR ir) -> Array[String]
+      def self.emit_info_lines: (json_object info) -> Array[String]
+      def self.emit_source_lines: (Array[json_object] sources) -> Array[String]
+      def self.emit_component_lines: (json_object? components) -> Array[String]
+      def self.emit_extension_lines: (String tag_name, json_object? obj) -> Array[String]
+      def self.emit_workflow_lines: (json_object workflow) -> Array[String]
+      def self.emit_workflow_doc_lines: (json_object workflow) -> Array[String]
+      def self.emit_step_lines: (json_object step) -> Array[String]
+      def self.emit_step_call_lines: (String step_id_lit, json_object step, String params_code, String body_code) -> Array[String]
+      def self.emit_step_criteria_lines: (String step_id_lit, Array[json_object] criteria) -> Array[String]
+      def self.emit_workflow_outputs_line: (json_object outputs) -> String
     end
 
     class Parser
-      def self.parse: (Array[Array[untyped]] tokens, IR ir) -> void
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+      def self.parse_arazzo_docstrings: (Array[ripper_token] tokens, IR ir) -> bool
+      def self.parse_json_tag: (String raw_json) -> json_value
+      def self.parse_root_tag: (String line, json_object spec) -> void
+      def self.apply_workflow_attribute_tag: (String line, json_object current_wf) -> void
+      def self.infer_workflows_from_ast: (Array[ripper_token] tokens, IR ir) -> void
+      def self.scan_inferred_method_body: (String body_text, json_object wf) -> void
+      def self.register_inferred_step: (String var_name, String? receiver, String call_name, String raw_args, Hash[String, String] step_vars, json_object wf) -> void
+      def self.extract_inferred_parameters: (String raw_args, Hash[String, String] step_vars) -> Array[json_object]
+      def self.synthesize_default_source: (IR ir) -> void
+    end
+  end
+
+  module Classes
+    class Emitter
+      def self.emit: (IR ir) -> String
+      def self.emit_schema: (String name, json_object schema) -> String
+      def self.emit_composition_schema: (String comp_key, String name, json_object schema) -> String
+      def self.emit_object_schema: (String name, json_object schema) -> String
+      def self.emit_class_header: (String name, Array[json_object]? all_of) -> String
+    end
+
+    class Parser
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+      def self.step_class_token: (Array[ripper_token] tokens, ripper_token token, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.parse_class_declaration: (Array[ripper_token] tokens, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.parse_attr_accessor: (Array[ripper_token] tokens, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.parse_activerecord_column: (Array[ripper_token] tokens, Integer idx, String col_type, String current_class, IR ir) -> void
+      def self.ensure_schemas: (IR ir) -> Hash[String, json_object]
+      def self.ensure_class_schema: (IR ir, String class_name) -> json_object
+    end
+  end
+
+  module ClientSdk
+    module IntegrationSpecEmitter
+      def write_sdk_artifacts: (Hash[Symbol, json_value] options, json_object openapi, String models_code, String client_code, ?String workflows_code) -> void
+      def emit_sdk_integration_spec: (json_object openapi) -> String
+      def emit_single_integration_example: (Hash[Symbol, json_value] path_entry) -> String
+      def build_integration_params_str: (json_object details) -> String
+    end
+
+    class Emitter
+      extend IntegrationSpecEmitter
+
+      def self.emit_sdk: (Hash[Symbol, json_value] options) -> String
+      def self.split_openapi_and_arazzo: (json_object raw_spec, ?String? arazzo_path) -> [json_object, json_object?]
+      def self.emit_workflows_code: (json_object? arazzo) -> String
+      def self.emit_models: (json_object openapi) -> String
+      def self.emit_single_model: (String name, json_object schema) -> String
+      def self.emit_client_class: (json_object openapi) -> String
+      def self.resolve_default_base_url: (json_object openapi) -> String
+      def self.emit_operation_method: (String path, String method, json_object details) -> String
+      def self.emit_operation_doc_comments: (String path, json_object details) -> String
+      def self.emit_request_body_doc_comments: (json_object request_body) -> String
+      def self.emit_responses_doc_comments: (json_object? responses) -> String
+      def self.partition_parameter_keys: (Array[json_object] parameters) -> [Array[String], Array[String], String?]
+      def self.emit_request_body_handling: (String method, json_object details, String? body_key) -> String
+      def self.resolve_content_type: (json_object details) -> String
+      def self.emit_webhook_handlers: (json_object? webhooks) -> String
+      def self.emit_auth_adapter: () -> String
+      def self.emit_mcp_adapter: (json_object openapi, ?json_object? arazzo) -> String
+    end
+
+    class Parser
+      INTERNAL_SDK_METHODS: Array[String]
+      NET_HTTP_CONSTS: Array[String]
+
+      def self.parse: (Array[ripper_token] tokens, IR ir, ?skip_arazzo: bool) -> void
+      def self.step_sdk_token: (Array[ripper_token] tokens, ripper_token token, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.handle_sdk_def: (Array[ripper_token] tokens, Integer idx, IR ir) -> [String?, bool]
+      def self.handle_req_path: (Array[ripper_token] tokens, Integer idx, String? op_id, IR ir) -> [bool, nil]
+      def self.detect_net_http_method: (Array[ripper_token] slice) -> String
+    end
+  end
+
+  module ClientSdkCli
+    class Emitter
+      def self.emit_sdk_cli: (Hash[Symbol, json_value] options) -> String
+      def self.build_mcp_tools: (json_object openapi, ?json_object? arazzo) -> Array[Hash[Symbol, json_value]]
+      def self.append_arazzo_mcp_tools: (Array[Hash[Symbol, json_value]] tools_array, json_object? arazzo) -> void
+      def self.emit_cli_header: (json_object info) -> String
+      def self.emit_help_block: (json_object openapi, ?json_object? arazzo) -> String
+      def self.emit_help_servers: (Array[json_object]? servers) -> String
+      def self.emit_help_tags_and_docs: (Array[json_object]? tags, json_object? external_docs) -> String
+      def self.emit_help_security_schemes: (json_object? schemes) -> String
+      def self.emit_help_paths: (json_object? paths) -> String
+      def self.emit_mcp_loop: (json_object openapi, ?json_object? arazzo) -> String
+      def self.emit_command_branches: (json_object openapi, ?json_object? arazzo) -> String
+      def self.emit_workflow_command_branches: (Array[json_object] workflows) -> String
+      def self.emit_single_command_branch: (String path, String method, json_object details) -> String
+      def self.emit_branch_request_body_comments: (json_object request_body) -> String
+      def self.emit_branch_response_comments: (json_object responses) -> String
+      def self.emit_cli_integration_spec: (json_object openapi) -> String
+    end
+
+    class Parser
+      NON_ENDPOINT_COMMANDS: Array[String]
+
+      def self.parse: (Array[ripper_token] tokens, IR ir, ?skip_arazzo: bool) -> void
+      def self.step_cli_token: (Array[ripper_token] tokens, ripper_token token, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.handle_when_branch: (Array[ripper_token] tokens, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.extract_operation_from_puts: (Array[ripper_token] slice, String op_id, IR ir) -> void
+    end
+  end
+
+  module DocsJson
+    class Emitter
+      def self.emit: (String input, ?no_imports: bool, ?no_wrapping: bool) -> String
+      def self.load_spec: (String input) -> json_object
+      def self.build_path_snippets: (String path, json_object ops, no_imports: bool, no_wrapping: bool) -> Hash[String, String]
+      def self.format_operation_snippet: (String op_id, no_imports: bool, no_wrapping: bool) -> String
+    end
+
+    class Parser
+      def self.parse: (String | Array[ripper_token] | json_object tokens_or_json, IR ir) -> void
+      def self.extract_payload: (String | Array[ripper_token] | json_object tokens_or_json) -> json_object?
+      def self.populate_paths_from_endpoints: (json_object endpoints, IR ir) -> void
+      def self.populate_workflows_from_docs: (json_object workflows, IR ir) -> void
+    end
+  end
+
+  module Docstrings
+    class Emitter
+      NON_VERB_KEYS: Array[String]
+
+      def self.emit: (IR ir) -> String
+      def self.emit_path_lines: (String path, json_object methods, Array[String] lines) -> void
+    end
+
+    module TagHelpers
+      PRIMITIVE_TYPES: Array[String]
+
+      def parse_rest: (String? rest) -> [Hash[String, String], String]
+      def coerce_boolean_or_string: (json_value val) -> json_value
+      def schema_or_ref: (String schema_type) -> Hash[String, String]
+      def apply_coerced_pairs: (json_object target, Hash[String, String]? pairs) -> void
+      def apply_link_pairs: (json_object link_obj, Hash[String, String] pairs) -> void
+      def build_response_object: (String? schema_name, String? media_type, Hash[String, String] pairs, String? desc_text) -> json_object
+      def last_callback_operation: (json_object? callbacks) -> json_object?
+    end
+
+    module ComponentAttacher
+      include TagHelpers
+
+      def parse_schema_tags?: (String comment, IR ir) -> bool
+      def parse_security_scheme_tag: (String scheme_name, String type, String rest, IR ir) -> void
+      def parse_schema_xml_tag: (String schema_name, String rest, IR ir) -> void
+      def parse_composition_tag: (String comp_key, String schema_name, String rest, IR ir) -> void
+      def parse_object_schema_tag: (String schema_name, String rest, IR ir) -> void
+      def parse_component_tags?: (String comment, IR ir) -> bool
+      def parse_component_param: (String name, String schema_type, String loc, String rest, IR ir) -> void
+      def parse_component_request_body: (String name, String schema_name, String media_type, String rest, IR ir) -> void
+      def parse_component_header: (String name, String schema_type, String rest, IR ir) -> void
+      def parse_component_link: (String name, String rest, IR ir) -> void
+      def parse_component_response: (String name, String? schema_name, String? media_type, String rest, IR ir) -> void
+      def parse_component_callback_tags?: (String comment, IR ir) -> bool
+      def attach_component_callback_request_body: (String schema_name, String media_type, String rest, IR ir) -> void
+      def attach_component_callback_response: (String status, String? schema_name, String? media_type, String rest, IR ir) -> void
+    end
+
+    module OperationAttacher
+      include TagHelpers
+
+      def build_operation_from_tags: (bool is_webhook, String method, String path, Array[Hash[Symbol, json_value]] current_tags, IR ir) -> void
+      def apply_operation_tag: (Hash[Symbol, json_value] tag, Hash[Symbol, json_value] ctx) -> void
+      def apply_param_tag: (Hash[Symbol, json_value] tag, Array[json_object] params) -> void
+      def apply_request_body_tag: (Hash[Symbol, json_value] tag, json_object op) -> void
+      def apply_response_body_tag: (Hash[Symbol, json_value] tag, json_object op) -> void
+      def apply_header_or_link_tag: (Hash[Symbol, json_value] tag, json_object op) -> void
+      def attach_response_header_tag: (Hash[Symbol, json_value] tag, json_object resp) -> void
+      def attach_response_link_tag: (Hash[Symbol, json_value] tag, json_object resp) -> void
+      def apply_callback_tag: (Hash[Symbol, json_value] tag, json_object op) -> void
+      def attach_operation_callback_body_or_response: (Hash[Symbol, json_value] tag, json_object? cb_op) -> void
+      def apply_meta_or_server_tag: (Hash[Symbol, json_value] tag, Hash[Symbol, json_value] ctx) -> void
+      def apply_scalar_meta_tag: (Hash[Symbol, json_value] tag, Hash[Symbol, json_value] ctx) -> void
+      def apply_op_server_var: (Hash[Symbol, json_value] tag, Array[json_object] servers) -> void
+      def extract_implicit_path_params: (String path, Array[json_object] params) -> void
+    end
+
+    class Parser
+      extend TagHelpers
+      extend ComponentAttacher
+      extend OperationAttacher
+
+      PRIMITIVE_TYPES: Array[String]
+
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+      def self.dispatch_comment: (String comment, Array[Hash[Symbol, json_value]] current_tags, IR ir) -> void
+      def self.parse_server_tags?: (String comment, Array[Hash[Symbol, json_value]] current_tags, IR ir) -> bool
+      def self.attach_server_variable: (IR ir, String url, String var_name, String default_val, String rest) -> void
+      def self.parse_operation_tags?: (String comment, Array[Hash[Symbol, json_value]] current_tags, IR _ir) -> bool
+      def self.parse_param_and_body_tags?: (String comment, Array[Hash[Symbol, json_value]] current_tags) -> bool
+      def self.parse_response_and_link_tags?: (String comment, Array[Hash[Symbol, json_value]] current_tags) -> bool
+      def self.parse_callback_and_meta_tags?: (String comment, Array[Hash[Symbol, json_value]] current_tags) -> bool
+      def self.parse_metadata_tags?: (String comment, Array[Hash[Symbol, json_value]] current_tags) -> bool
+    end
+  end
+
+  module Functions
+    class Emitter
+      def self.emit: (IR ir) -> String
+      def self.emit_client_method: (String path, String method, json_object op) -> String
+    end
+
+    class Parser
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+      def self.step_function_token: (Array[ripper_token] tokens, ripper_token token, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.handle_keyword_token: (Array[ripper_token] tokens, String keyword, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.register_client_endpoint: (IR ir, String path, String http_method) -> void
+      def self.parse_method_signature: (Array[ripper_token] tokens, Integer idx, IR ir, String? http_path, String? http_method) -> void
+      def self.attach_argument_to_operation: (json_object op, String http_path, String arg_name) -> void
+    end
+  end
+
+  module Mocks
+    class Emitter
+      def self.emit: (IR ir) -> String
+      def self.emit_multiple: (IR ir) -> Hash[String, String]
+    end
+
+    class Parser
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+      def self.step_mock_token: (ripper_token token, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.register_external_example: (String schema, String ex_name, String ext_url, IR ir) -> void
+      def self.flush_mock: (Hash[Symbol, json_value] state, IR ir) -> void
+      def self.infer_schema: (json_value val) -> json_object
+    end
+  end
+
+  module Openapi
+    class Emitter
+      def self.emit: (IR ir) -> String
+      def self.emit_servers_and_tags: (IR ir) -> String
+      def self.emit_docs_and_webhooks: (json_object spec) -> String
+    end
+
+    class Parser
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+      def self.dispatch_openapi_comment: (String comment, json_object spec) -> void
+      def self.parse_collection_openapi_comment: (String comment, json_object spec) -> void
+      def self.build_described_entry: (String primary_key, String raw_val, String? raw_desc) -> json_object
+    end
+  end
+
+  module Routes
+    module ComponentEmitter
+      def schema_type_name: (json_object holder) -> String
+      def first_media_schema: (json_object content_map) -> [String, String]
+      def format_options_list: (Array[String] opts) -> String
+      def format_param_options: (json_object param) -> String
+      def format_link_options: (json_object link_obj) -> String
+      def emit_components: (json_object components) -> String
+      def emit_component_parameters: (json_object? parameters) -> String
+      def emit_component_request_bodies: (json_object? request_bodies) -> String
+      def emit_component_headers: (json_object? headers) -> String
+      def emit_component_responses: (json_object? responses) -> String
+      def emit_component_links: (json_object? links) -> String
+      def emit_component_callbacks: (json_object? callbacks) -> String
+      def emit_single_callback_op: (String tag_prefix, String cb_name, String cb_url, String cb_method, json_object cb_op) -> String
+      def format_callback_response_line: (String tag_prefix, String cb_status, json_object cb_resp, bool is_component) -> String
+      def format_contentless_callback_desc: (String? raw_desc, bool is_component) -> String
+    end
+
+    class Emitter
+      extend ComponentEmitter
+
+      def self.emit: (IR ir) -> String
+      def self.emit_servers: (Array[json_object] servers, String prefix) -> String
+      def self.emit_global_security: (Array[json_object] security_schemes) -> String
+      def self.emit_path_item: (Hash[Symbol, json_value] op_entry) -> String
+      def self.emit_operation: (String op_type, String path, String method, json_object op) -> String
+      def self.emit_operation_metadata: (json_object op) -> String
+      def self.emit_operation_parameters: (Array[json_object] parameters) -> String
+      def self.emit_operation_request_body: (json_object? request_body) -> String
+      def self.emit_content_encodings: (String media_type, json_object encodings) -> String
+      def self.emit_operation_responses: (json_object responses) -> String
+      def self.default_ok_response?: (String status, json_object resp) -> bool
+      def self.emit_single_response_body: (String status, json_object resp) -> String
+      def self.emit_response_headers: (String status, json_object headers) -> String
+      def self.emit_response_links: (String status, json_object links) -> String
+      def self.emit_operation_callbacks: (json_object callbacks) -> String
+      def self.emit_operation_security: (Array[json_object]? security) -> String
+    end
+
+    class Parser
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+    end
+  end
+
+  module ServerGen
+    module RouteEmitter
+      def emit_webhook_routes_file: (String out_dir, json_object openapi) -> void
+      def emit_domain_routes_files: (String out_dir, json_object openapi, json_object schemas) -> void
+      def resolve_route_model_name: (String path, json_object schemas) -> String?
+      def build_domain_route_block: (String sinatra_path, String method, json_object details, String? model_name) -> String
+      def build_route_header_comments: (String method, json_object details) -> [String, String?]
+      def build_dao_backed_route_body: (String verb, String model_name, String? path_param) -> String
+      def emit_mcp_routes_file: (String out_dir, json_object openapi) -> void
+      def emit_server_entrypoint: (String out_dir, json_object openapi) -> String
+      def emit_server_tests_and_mocks: (Hash[Symbol, json_value] options, json_object openapi, ?json_object? arazzo) -> void
+    end
+
+    class Emitter
+      extend RouteEmitter
+
+      def self.emit_server: (Hash[Symbol, json_value] options) -> String
+      def self.classify_name: (String name) -> String
+      def self.emit_cli_parser_file: (String out_dir) -> void
+      def self.emit_database_file: (String out_dir, json_object schemas) -> void
+      def self.emit_model_files: (String out_dir, json_object schemas, bool? needs_db) -> void
+      def self.build_single_model_code: (String name, json_object schema, bool? needs_db) -> String
+      def self.emit_dao_files: (String out_dir, json_object schemas, bool? needs_db) -> void
+      def self.build_single_dao_code: (String class_name, bool? needs_db) -> String
+      def self.build_dao_factory_code: (Array[String] schema_names, bool? needs_db) -> String
+      def self.emit_seeder_file: (String out_dir, json_object schemas) -> void
+      def self.faker_expression_for: (String prop_name, json_object prop_details) -> String
+      def self.emit_middleware_files: (String out_dir, json_object openapi, bool? needs_db) -> void
+      def self.build_auth_middleware_code: (Array[json_object] sec_schemes, bool? needs_db) -> String
+      def self.emit_auth_routes_file: (String out_dir, bool? needs_db) -> void
+      def self.emit_workflow_files: (String out_dir, json_object? arazzo) -> void
+    end
+
+    class Parser
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+    end
+  end
+
+  module Tests
+    class Emitter
+      def self.emit: (IR ir, ?Hash[Symbol, json_value] options) -> String
+      def self.emit_multiple: (IR ir, ?Hash[Symbol, json_value] options) -> Hash[String, String]
+      def self.emit_arazzo_workflows_test: (IR ir) -> String
+      def self.group_paths_by_tag: (json_object paths) -> Hash[String, Hash[String, json_object]]
+      def self.emit_tag_test_class: (String tag, Hash[String, json_object] tag_paths, bool? is_server) -> String
+      def self.emit_single_operation_test: (String path, String method, json_object op, bool? is_server) -> String
+      def self.emit_server_operation_body: (String path, String method, json_object op) -> String
+      def self.partition_test_route_params: (String path, Array[json_object] parameters) -> [String, String]
+      def self.emit_client_operation_body: (String op_id, json_object op) -> String
+      def self.sample_test_param_val: (json_object param) -> (Integer | String)
+      def self.emit_server_auxiliary_tests: (IR ir, Hash[Symbol, json_value] options, Hash[String, String] files) -> void
+      def self.emit_dao_and_factory_test: (json_object schemas, bool? needs_db) -> String
+      def self.emit_dao_test_setup_method: (json_object schemas) -> String
+      def self.emit_single_dao_test_methods: (String name, bool? needs_db) -> String
+      def self.emit_seeder_and_webhook_test: (json_object spec, Hash[Symbol, json_value] options) -> String
+      def self.emit_auth_middleware_test: (Hash[Symbol, json_value] options) -> String
+      def self.emit_cors_and_validation_test: () -> String
+      def self.emit_cli_parser_test: () -> String
+    end
+
+    class Parser
+      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
     end
   end
 
@@ -182,48 +837,106 @@ module Cdd
   end
 
   class Emitter
+    def self.parse_spec_file: (String filepath) -> json_value
+    def self.validate_spec_hash: (json_value spec) -> json_object
     def self.emit: (String filepath, ?String? original_ruby_filepath) -> String
     def self.emit_from_arazzo: (String filepath, ?String? original_ruby_filepath) -> String
-    def self.merge_openapi_specs: (Hash[String, untyped] base_spec, Hash[String, untyped] target_spec) -> Hash[String, untyped]
-    def self.merge_arazzo_specs: (Hash[String, untyped] base_spec, Hash[String, untyped] target_spec) -> Hash[String, untyped]
-    def self.emit_sdk_cli: (Hash[Symbol, untyped] options) -> String
-    def self.emit_server: (Hash[Symbol, untyped] options) -> String
-    def self.emit_sdk: (Hash[Symbol, untyped] options) -> String
-    def self.emit_arazzo_sdk: (Hash[Symbol, untyped] options) -> String
-    def self.emit_arazzo_sdk_cli: (Hash[Symbol, untyped] options) -> String
-    def self.emit_arazzo_server: (Hash[Symbol, untyped] options) -> String
+    def self.merge_openapi_specs: (json_object base_spec, json_object target_spec) -> json_object
+    def self.merge_arazzo_specs: (json_object base_spec, json_object target_spec) -> json_object
+    def self.emit_sdk_cli: (Hash[Symbol, json_value] options) -> String
+    def self.emit_server: (Hash[Symbol, json_value] options) -> String
+    def self.emit_sdk: (Hash[Symbol, json_value] options) -> String
+    def self.emit_arazzo_sdk: (Hash[Symbol, json_value] options) -> String
+    def self.emit_arazzo_sdk_cli: (Hash[Symbol, json_value] options) -> String
+    def self.emit_arazzo_server: (Hash[Symbol, json_value] options) -> String
+  end
+
+  class McpCoreRouter
+    PROTOCOL_VERSION: String
+    DEFAULT_CAPABILITIES: Hash[Symbol, Hash[Symbol, bool]]
+
+    def self.build_init_result: (?String name, ?String version) -> Hash[Symbol, json_value]
+    def get_tools: () -> Array[Hash[Symbol, json_value]]
+    def execute_tool: (String name, Hash[String, json_value] args) -> Hash[Symbol, json_value]
+    def get_resources: () -> Array[Hash[Symbol, String]]
+    def read_resource: (String uri) -> Hash[Symbol, Array[Hash[Symbol, String]]]
+    def subscribe_resource: (String _uri) -> bool
+    def unsubscribe_resource: (String _uri) -> bool
+    def complete_prompt: (String? _prompt_name, String? _arg_name, String? _value) -> Hash[Symbol, Hash[Symbol, json_value]]
+    def complete: (String? _prompt_name, String? _arg_name, String? _value) -> Hash[Symbol, Hash[Symbol, json_value]]
+    def handle_cancelled: (String | Integer _request_id) -> nil
+    def get_roots: () -> Array[Hash[Symbol, String]]
+    def get_resource_templates: () -> Array[Hash[Symbol, String]]
+    def sample_message: () -> Hash[Symbol, json_value]
+    def handle_progress: (String | Integer _progress_token, Numeric _progress, Numeric _total) -> nil
+    def set_level: (String level) -> String
+    def ping: () -> bool
+    def handle_subscribe: (String uri) -> bool
+    def handle_unsubscribe: (String uri) -> bool
+    def get_prompts: () -> Array[Hash[Symbol, json_value]]
+    def get_prompt: (String _name, Hash[String, json_value] _args) -> Hash[Symbol, json_value]
   end
 
   class Server
+    EMITTER_RPC_METHODS: Hash[String, Symbol]
+
+    def self.current_server: () -> Object?
+    def self.build: (String listen, Integer | String port) -> Object
+    def self.shutdown: () -> void
+    def self.handle_http_request: (Object req, Object res) -> void
     def self.start: (String listen, Integer | String port) -> void
-    def self.handle_rpc: (String method, Hash[String, untyped] params) -> untyped
+    def self.handle_rpc: (String method, json_object params) -> json_value
   end
 
   class Sync
+    EXCLUDED_DIRS: Array[String]
+
     def self.sync: (String input, String truth) -> void
   end
 
   class Scaffolding
-    def self.generate: (Hash[Symbol, untyped] options, String type) -> void
+    def self.generate: (Hash[Symbol, json_value] options, String type, ?String project_name) -> nil
+    def self.resolve_out_dir: (Hash[Symbol, json_value] options) -> String
+    def self.write_rubocop_config: (String out_dir) -> void
+    def self.write_gemfile: (String out_dir, String type) -> void
+    def self.write_gemspec: (String out_dir, String type, String project_name) -> void
+    def self.write_readme: (String out_dir, String type, String project_name) -> void
+    def self.build_readme_body: (String type) -> String
+    def self.write_dockerfile: (String out_dir, String type) -> void
+    def self.write_github_ci: (String out_dir) -> void
   end
 
   module CLI
-    def self.get_arg: (Hash[Symbol, untyped] options, Symbol key, String env_key, ?untyped default) -> untyped
-    def self.print_help: () -> void
-    def self.print_from_openapi_help: () -> void
-    def self.print_from_openapi_to_sdk_cli_help: () -> void
-    def self.print_from_openapi_to_sdk_help: () -> void
-    def self.print_from_openapi_to_server_help: () -> void
-    def self.print_to_openapi_help: () -> void
-    def self.print_from_arazzo_help: () -> void
-    def self.print_from_arazzo_to_sdk_cli_help: () -> void
-    def self.print_from_arazzo_to_sdk_help: () -> void
-    def self.print_from_arazzo_to_server_help: () -> void
-    def self.print_to_arazzo_help: () -> void
-    def self.print_to_docs_json_help: () -> void
-    def self.print_serve_json_rpc_help: () -> void
-    def self.print_mcp_help: () -> void
-    def self.print_sync_help: () -> void
+    VALUE_FLAGS: Hash[String, Symbol]
+    BOOLEAN_FLAGS: Hash[String, Symbol]
+    MCP_PROMPTS: Array[Hash[Symbol, json_value]]
+    MCP_TOOLS: Array[Hash[Symbol, json_value]]
+    FROM_OPENAPI_OPTIONS_TEXT: String
+    FROM_ARAZZO_OPTIONS_TEXT: String
+    HELP_TEXTS: Hash[Symbol, String]
+
+    module HelpPrinter
+      def print_help_for: (Symbol key) -> void
+      def print_help: () -> void
+      def print_from_openapi_help: () -> void
+      def print_from_openapi_to_sdk_cli_help: () -> void
+      def print_from_openapi_to_sdk_help: () -> void
+      def print_from_openapi_to_server_help: () -> void
+      def print_to_openapi_help: () -> void
+      def print_from_arazzo_help: () -> void
+      def print_from_arazzo_to_sdk_cli_help: () -> void
+      def print_from_arazzo_to_sdk_help: () -> void
+      def print_from_arazzo_to_server_help: () -> void
+      def print_to_arazzo_help: () -> void
+      def print_to_docs_json_help: () -> void
+      def print_serve_json_rpc_help: () -> void
+      def print_mcp_help: () -> void
+      def print_sync_help: () -> void
+    end
+
+    extend HelpPrinter
+
+    def self.get_arg: (Hash[Symbol, json_value] options, Symbol key, String env_key, ?json_value default) -> json_value
     def self.dispatch_help: (String? command, ?String? target) -> Integer
     def self.dispatch_from_openapi_help: (String? target) -> void
     def self.dispatch_from_arazzo_help: (String? target) -> void
@@ -234,6 +947,24 @@ module Cdd
     def self.generate_docs_json: (Config config) -> Integer
     def self.serve_json_rpc: (Config config) -> Integer
     def self.run: (Array[String] argv) -> Integer
+    def self.parse_options: (Array[String] argv, Hash[Symbol, json_value] options) -> void
+    def self.dispatch_command: (String command, Array[String] argv, Hash[Symbol, json_value] options) -> Integer
+    def self.handle_mcp_command: () -> Integer
+    def self.process_mcp_line: (String line) -> void
+    def self.dispatch_mcp_request: (json_object req) -> Hash[Symbol, json_value]
+    def self.mcp_init_result: () -> Hash[Symbol, json_value]
+    def self.handle_mcp_prompt_or_resource: (json_object req) -> Hash[Symbol, json_value]
+    def self.handle_mcp_tool_call: (json_object req, Hash[Symbol, json_value] resp) -> Hash[Symbol, json_value]
+    def self.inspect_schema_properties: (String file, String? name) -> Array[String]
+    def self.handle_sync_command: (Hash[Symbol, json_value] options) -> Integer
+    def self.resolve_target_ruby_files: (String file) -> Array[String]
+    def self.handle_to_openapi_command: (Hash[Symbol, json_value] options) -> Integer
+    def self.handle_to_arazzo_command: (Hash[Symbol, json_value] options) -> Integer
+    def self.handle_to_docs_json_command: (Hash[Symbol, json_value] options) -> Integer
+    def self.write_or_print_output: (String out, String result) -> void
+    def self.handle_from_arazzo_command: (String? subcommand, Hash[Symbol, json_value] options) -> Integer
+    def self.handle_from_openapi_command: (String? subcommand, Hash[Symbol, json_value] options, ?String parent_cmd) -> Integer
+    def self.handle_serve_json_rpc_command: (Hash[Symbol, json_value] options) -> Integer
   end
 end
 

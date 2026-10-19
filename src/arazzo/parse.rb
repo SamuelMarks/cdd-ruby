@@ -55,6 +55,17 @@ module Cdd
         current_wf
       end
 
+      # Safely parses a JSON payload inside an `@arazzo*` docstring tag.
+      #
+      # @param raw_json [String] raw JSON string
+      # @return [Object] parsed JSON value
+      # @raise [Cdd::ParseError] when `raw_json` is not valid JSON
+      def self.parse_json_tag(raw_json)
+        JSON.parse(raw_json)
+      rescue JSON::ParserError => e
+        raise Cdd::ParseError, "Invalid JSON in Arazzo docstring tag: #{e.message}"
+      end
+
       # Parses root-level `@arazzo*` tags (`@arazzo`, `@arazzo_self`, `@arazzo_info_*`, `@arazzo_source`, etc.).
       #
       # @param line [String] stripped comment line
@@ -69,15 +80,15 @@ module Cdd
           spec['info'][Regexp.last_match(1)] = Regexp.last_match(2).strip
         when /\A#\s*@arazzo_info_ext\s+(x-\S+)\s+(.+)\z/
           spec['info'] ||= {}
-          spec['info'][Regexp.last_match(1)] = JSON.parse(Regexp.last_match(2))
+          spec['info'][Regexp.last_match(1)] = parse_json_tag(Regexp.last_match(2))
         when /\A#\s*@arazzo_ext\s+(x-\S+)\s+(.+)\z/
-          spec[Regexp.last_match(1)] = JSON.parse(Regexp.last_match(2))
+          spec[Regexp.last_match(1)] = parse_json_tag(Regexp.last_match(2))
         when /\A#\s*@arazzo_source\s+(.+)\z/
           spec['sourceDescriptions'] ||= []
-          src_obj = JSON.parse(Regexp.last_match(1))
+          src_obj = parse_json_tag(Regexp.last_match(1))
           spec['sourceDescriptions'] |= [src_obj]
         when /\A#\s*@arazzo_components\s+(.+)\z/
-          spec['components'] = JSON.parse(Regexp.last_match(1))
+          spec['components'] = parse_json_tag(Regexp.last_match(1))
         end
       end
 
@@ -90,18 +101,20 @@ module Cdd
         case line
         when /\A#\s*@arazzo_summary\s+(.+)\z/ then current_wf['summary'] = Regexp.last_match(1).strip
         when /\A#\s*@arazzo_description\s+(.+)\z/ then current_wf['description'] = Regexp.last_match(1).strip
-        when /\A#\s*@arazzo_inputs\s+(.+)\z/ then current_wf['inputs'] = JSON.parse(Regexp.last_match(1))
-        when /\A#\s*@arazzo_depends_on\s+(.+)\z/ then current_wf['dependsOn'] = JSON.parse(Regexp.last_match(1))
-        when /\A#\s*@arazzo_workflow_params\s+(.+)\z/ then current_wf['parameters'] = JSON.parse(Regexp.last_match(1))
+        when /\A#\s*@arazzo_inputs\s+(.+)\z/ then current_wf['inputs'] = parse_json_tag(Regexp.last_match(1))
+        when /\A#\s*@arazzo_depends_on\s+(.+)\z/ then current_wf['dependsOn'] = parse_json_tag(Regexp.last_match(1))
+        when /\A#\s*@arazzo_workflow_params\s+(.+)\z/
+          current_wf['parameters'] = parse_json_tag(Regexp.last_match(1))
         when /\A#\s*@arazzo_workflow_success_actions\s+(.+)\z/
-          current_wf['successActions'] = JSON.parse(Regexp.last_match(1))
+          current_wf['successActions'] = parse_json_tag(Regexp.last_match(1))
         when /\A#\s*@arazzo_workflow_failure_actions\s+(.+)\z/
-          current_wf['failureActions'] = JSON.parse(Regexp.last_match(1))
-        when /\A#\s*@arazzo_workflow_outputs\s+(.+)\z/ then current_wf['outputs'] = JSON.parse(Regexp.last_match(1))
+          current_wf['failureActions'] = parse_json_tag(Regexp.last_match(1))
+        when /\A#\s*@arazzo_workflow_outputs\s+(.+)\z/
+          current_wf['outputs'] = parse_json_tag(Regexp.last_match(1))
         when /\A#\s*@arazzo_workflow_ext\s+(x-\S+)\s+(.+)\z/
-          current_wf[Regexp.last_match(1)] = JSON.parse(Regexp.last_match(2))
+          current_wf[Regexp.last_match(1)] = parse_json_tag(Regexp.last_match(2))
         when /\A#\s*@arazzo_step_json\s+(.+)\z/
-          current_wf['steps'] << JSON.parse(Regexp.last_match(1))
+          current_wf['steps'] << parse_json_tag(Regexp.last_match(1))
         end
       end
 

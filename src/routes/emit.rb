@@ -4,8 +4,237 @@
 module Cdd
   # Module for parsing and emitting Sinatra route definitions.
   module Routes
+    # Formatting and reusable component docstring emission helpers mixed into `Routes::Emitter`.
+    module ComponentEmitter
+      # Extracts the type or referenced schema name from a parameter or header object.
+      #
+      # @param holder [Hash] parameter or header hash containing a `'schema'` key
+      # @return [String] resolved type or schema name
+      def schema_type_name(holder)
+        ref = holder.dig('schema', '$ref')
+        ref ? ref.split('/').last : (holder.dig('schema', 'type') || 'string')
+      end
+
+      # Extracts the referenced schema name from a media type map's first entry.
+      #
+      # @param content_map [Hash] OpenAPI content map (`media_type => { 'schema' => ... }`)
+      # @return [Array(String, String)] `[media_type, schema_name]`
+      def first_media_schema(content_map)
+        media_type = content_map.keys.first
+        ref = content_map[media_type].dig('schema', '$ref')
+        [media_type, ref ? ref.split('/').last : 'Object']
+      end
+
+      # Formats an array of `key:value` option strings with a leading space when non-empty.
+      #
+      # @param opts [Array<String>] option strings
+      # @return [String] space-prefixed joined options or empty string
+      def format_options_list(opts)
+        opts.empty? ? '' : " #{opts.join(' ')}"
+      end
+
+      # Builds standard parameter option strings (`required`, `style`, `explode`, etc.).
+      #
+      # @param param [Hash] OpenAPI parameter object
+      # @return [String] space-prefixed parameter option string
+      def format_param_options(param)
+        opts = []
+        opts << "required:#{param['required']}" unless param['required'].nil?
+        opts << "style:#{param['style']}" if param['style']
+        opts << "explode:#{param['explode']}" unless param['explode'].nil?
+        opts << "allowReserved:#{param['allowReserved']}" unless param['allowReserved'].nil?
+        opts << "allowEmptyValue:#{param['allowEmptyValue']}" unless param['allowEmptyValue'].nil?
+        opts << "deprecated:#{param['deprecated']}" unless param['deprecated'].nil?
+        format_options_list(opts)
+      end
+
+      # Formats Link option strings (`operationId`, `operationRef`, `parameters.*`, `requestBody`).
+      #
+      # @param link_obj [Hash] OpenAPI Link object
+      # @return [String] space-prefixed link options string
+      def format_link_options(link_obj)
+        l_opts = []
+        l_opts << "operationId:#{link_obj['operationId']}" if link_obj['operationId']
+        l_opts << "operationRef:#{link_obj['operationRef']}" if link_obj['operationRef']
+        link_obj['parameters']&.each { |pk, pv| l_opts << "parameters.#{pk}:#{pv}" }
+        l_opts << "requestBody:#{link_obj['requestBody']}" if link_obj['requestBody']
+        format_options_list(l_opts)
+      end
+
+      # Emits all reusable `@component_*` docstring tags.
+      #
+      # @param components [Hash] OpenAPI `components` hash
+      # @return [String] formatted component docstring tags
+      def emit_components(components)
+        out = emit_component_parameters(components['parameters'])
+        out += emit_component_request_bodies(components['requestBodies'])
+        out += emit_component_headers(components['headers'])
+        out += emit_component_responses(components['responses'])
+        out += emit_component_links(components['links'])
+        out + emit_component_callbacks(components['callbacks'])
+      end
+
+      # Emits `@component_param` docstring tags.
+      #
+      # @param parameters [Hash, nil] `components.parameters` map
+      # @return [String] formatted `@component_param` lines
+      def emit_component_parameters(parameters)
+        return '' unless parameters
+
+        lines = parameters.map do |p_name, param|
+          desc = param['description'] ? " #{param['description']}" : ''
+          "# @component_param #{p_name} [#{schema_type_name(param)}] in:#{param['in']}" \
+            "#{format_param_options(param)}#{desc}\n"
+        end
+        "#{lines.join}\n"
+      end
+
+      # Emits `@component_request_body` docstring tags.
+      #
+      # @param request_bodies [Hash, nil] `components.requestBodies` map
+      # @return [String] formatted `@component_request_body` lines
+      def emit_component_request_bodies(request_bodies)
+        return '' unless request_bodies
+
+        lines = request_bodies.map do |rb_name, rb|
+          media_type, schema_name = first_media_schema(rb['content'])
+          opts_str = rb['required'].nil? ? '' : " required:#{rb['required']}"
+          desc = rb['description'] ? " description:#{rb['description']}" : ''
+          "# @component_request_body #{rb_name} [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
+        end
+        "#{lines.join}\n"
+      end
+
+      # Emits `@component_header` docstring tags.
+      #
+      # @param headers [Hash, nil] `components.headers` map
+      # @return [String] formatted `@component_header` lines
+      def emit_component_headers(headers)
+        return '' unless headers
+
+        lines = headers.map do |h_name, hdr|
+          opts_str = hdr['required'].nil? ? '' : " required:#{hdr['required']}"
+          desc = hdr['description'] ? " description:#{hdr['description']}" : ''
+          "# @component_header #{h_name} [#{schema_type_name(hdr)}]#{opts_str}#{desc}\n"
+        end
+        "#{lines.join}\n"
+      end
+
+      # Emits `@component_response` docstring tags.
+      #
+      # @param responses [Hash, nil] `components.responses` map
+      # @return [String] formatted `@component_response` lines
+      def emit_component_responses(responses)
+        return '' unless responses
+
+        lines = responses.map do |r_name, resp|
+          desc = resp['description'] && resp['description'] != 'Response' ? " description:#{resp['description']}" : ''
+          if resp['content']
+            media_type, schema_name = first_media_schema(resp['content'])
+            req_val = resp['content'][media_type]['required']
+            opts_str = req_val.nil? ? '' : " required:#{req_val}"
+            "# @component_response #{r_name} [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
+          else
+            "# @component_response #{r_name}#{desc}\n"
+          end
+        end
+        "#{lines.join}\n"
+      end
+
+      # Emits `@component_link` docstring tags.
+      #
+      # @param links [Hash, nil] `components.links` map
+      # @return [String] formatted `@component_link` lines
+      def emit_component_links(links)
+        return '' unless links
+
+        lines = links.map do |l_name, link_obj|
+          desc = link_obj['description'] ? " description:#{link_obj['description']}" : ''
+          "# @component_link #{l_name}#{format_link_options(link_obj)}#{desc}\n"
+        end
+        "#{lines.join}\n"
+      end
+
+      # Emits `@component_callback*` docstring tags.
+      #
+      # @param callbacks [Hash, nil] `components.callbacks` map
+      # @return [String] formatted `@component_callback*` lines
+      def emit_component_callbacks(callbacks)
+        return '' unless callbacks
+
+        out = ''
+        callbacks.each do |cb_name, cb_urls|
+          cb_urls.each do |cb_url, cb_methods|
+            cb_methods.each do |cb_method, cb_op|
+              out += emit_single_callback_op('component_callback', cb_name, cb_url, cb_method, cb_op)
+            end
+          end
+        end
+        "#{out}\n"
+      end
+
+      # Emits a single callback operation and its request body / response tags.
+      #
+      # @param tag_prefix [String] `'component_callback'` or `'callback'`
+      # @param cb_name [String] callback name
+      # @param cb_url [String] callback URL expression
+      # @param cb_method [String] HTTP method
+      # @param cb_op [Hash] callback operation hash
+      # @return [String] formatted callback docstring lines
+      def emit_single_callback_op(tag_prefix, cb_name, cb_url, cb_method, cb_op)
+        is_component = tag_prefix == 'component_callback'
+        out = "# @#{tag_prefix} #{cb_name} #{cb_url} #{cb_method.downcase}\n"
+        if cb_op['requestBody'] && cb_op['requestBody']['content']
+          media_type, schema_name = first_media_schema(cb_op['requestBody']['content'])
+          desc = cb_op['requestBody']['description'] ? " #{cb_op['requestBody']['description']}" : ''
+          out += "# @#{tag_prefix}_request_body [#{schema_name}] #{media_type}#{desc}\n"
+        end
+        return out unless cb_op['responses']
+
+        cb_op['responses'].each do |cb_status, cb_resp|
+          next if cb_status == '200' && cb_resp['description'] == 'OK' && !cb_resp['content']
+
+          out += format_callback_response_line(tag_prefix, cb_status, cb_resp, is_component)
+        end
+        out
+      end
+
+      # Formats a single `@callback_response` or `@component_callback_response` line.
+      #
+      # @param tag_prefix [String] `'component_callback'` or `'callback'`
+      # @param cb_status [String] HTTP status code
+      # @param cb_resp [Hash] callback response hash
+      # @param is_component [Boolean] whether this is a component callback
+      # @return [String] formatted callback response docstring line
+      def format_callback_response_line(tag_prefix, cb_status, cb_resp, is_component)
+        raw_desc = cb_resp['description']
+        has_custom_desc = raw_desc && (!is_component || raw_desc != 'Response')
+        if cb_resp['content']
+          media_type, schema_name = first_media_schema(cb_resp['content'])
+          desc = has_custom_desc ? " description:#{raw_desc}" : ''
+          "# @#{tag_prefix}_response #{cb_status} [#{schema_name}] #{media_type}#{desc}\n"
+        else
+          desc = format_contentless_callback_desc(raw_desc, is_component)
+          "# @#{tag_prefix}_response #{cb_status}#{desc}\n"
+        end
+      end
+
+      # Formats the description suffix for a contentless callback response.
+      #
+      # @param raw_desc [String, nil] response description
+      # @param is_component [Boolean] whether this is a component callback
+      # @return [String] formatted description suffix
+      def format_contentless_callback_desc(raw_desc, is_component)
+        return '' unless raw_desc && raw_desc != 'Response'
+
+        is_component ? " description:#{raw_desc}" : " #{raw_desc}"
+      end
+    end
+
     # Emitter for generating Sinatra route blocks and OpenAPI route docstrings from the IR.
     class Emitter
+      extend ComponentEmitter
+
       # Emits server, security, component, route, and webhook blocks from the IR.
       #
       # @param ir [Cdd::IR] Intermediate Representation
@@ -21,61 +250,6 @@ module Cdd
         webhooks.each { |w, data| all_ops << { type: 'webhook', path: w, data: data } }
         all_ops.each { |op_entry| out += emit_path_item(op_entry) }
         out
-      end
-
-      # Extracts the type or referenced schema name from a parameter or header object.
-      #
-      # @param holder [Hash] parameter or header hash containing a `'schema'` key
-      # @return [String] resolved type or schema name
-      def self.schema_type_name(holder)
-        ref = holder.dig('schema', '$ref')
-        ref ? ref.split('/').last : (holder.dig('schema', 'type') || 'string')
-      end
-
-      # Extracts the referenced schema name from a media type map's first entry.
-      #
-      # @param content_map [Hash] OpenAPI content map (`media_type => { 'schema' => ... }`)
-      # @return [Array(String, String)] `[media_type, schema_name]`
-      def self.first_media_schema(content_map)
-        media_type = content_map.keys.first
-        ref = content_map[media_type].dig('schema', '$ref')
-        [media_type, ref ? ref.split('/').last : 'Object']
-      end
-
-      # Formats an array of `key:value` option strings with a leading space when non-empty.
-      #
-      # @param opts [Array<String>] option strings
-      # @return [String] space-prefixed joined options or empty string
-      def self.format_options_list(opts)
-        opts.empty? ? '' : " #{opts.join(' ')}"
-      end
-
-      # Builds standard parameter option strings (`required`, `style`, `explode`, etc.).
-      #
-      # @param param [Hash] OpenAPI parameter object
-      # @return [String] space-prefixed parameter option string
-      def self.format_param_options(param)
-        opts = []
-        opts << "required:#{param['required']}" unless param['required'].nil?
-        opts << "style:#{param['style']}" if param['style']
-        opts << "explode:#{param['explode']}" unless param['explode'].nil?
-        opts << "allowReserved:#{param['allowReserved']}" unless param['allowReserved'].nil?
-        opts << "allowEmptyValue:#{param['allowEmptyValue']}" unless param['allowEmptyValue'].nil?
-        opts << "deprecated:#{param['deprecated']}" unless param['deprecated'].nil?
-        format_options_list(opts)
-      end
-
-      # Formats Link option strings (`operationId`, `operationRef`, `parameters.*`, `requestBody`).
-      #
-      # @param link_obj [Hash] OpenAPI Link object
-      # @return [String] space-prefixed link options string
-      def self.format_link_options(link_obj)
-        l_opts = []
-        l_opts << "operationId:#{link_obj['operationId']}" if link_obj['operationId']
-        l_opts << "operationRef:#{link_obj['operationRef']}" if link_obj['operationRef']
-        link_obj['parameters']&.each { |pk, pv| l_opts << "parameters.#{pk}:#{pv}" }
-        l_opts << "requestBody:#{link_obj['requestBody']}" if link_obj['requestBody']
-        format_options_list(l_opts)
       end
 
       # Emits `@server` / `@server_var` or `@op_server` / `@op_server_var` docstring tags.
@@ -113,172 +287,6 @@ module Cdd
           sec.each { |scheme, scopes| out += "# @security #{scheme} #{scopes.join(', ')}\n" }
         end
         out
-      end
-
-      # Emits all reusable `@component_*` docstring tags.
-      #
-      # @param components [Hash] OpenAPI `components` hash
-      # @return [String] formatted component docstring tags
-      def self.emit_components(components)
-        out = emit_component_parameters(components['parameters'])
-        out += emit_component_request_bodies(components['requestBodies'])
-        out += emit_component_headers(components['headers'])
-        out += emit_component_responses(components['responses'])
-        out += emit_component_links(components['links'])
-        out + emit_component_callbacks(components['callbacks'])
-      end
-
-      # Emits `@component_param` docstring tags.
-      #
-      # @param parameters [Hash, nil] `components.parameters` map
-      # @return [String] formatted `@component_param` lines
-      def self.emit_component_parameters(parameters)
-        return '' unless parameters
-
-        lines = parameters.map do |p_name, param|
-          desc = param['description'] ? " #{param['description']}" : ''
-          "# @component_param #{p_name} [#{schema_type_name(param)}] in:#{param['in']}" \
-            "#{format_param_options(param)}#{desc}\n"
-        end
-        "#{lines.join}\n"
-      end
-
-      # Emits `@component_request_body` docstring tags.
-      #
-      # @param request_bodies [Hash, nil] `components.requestBodies` map
-      # @return [String] formatted `@component_request_body` lines
-      def self.emit_component_request_bodies(request_bodies)
-        return '' unless request_bodies
-
-        lines = request_bodies.map do |rb_name, rb|
-          media_type, schema_name = first_media_schema(rb['content'])
-          opts_str = rb['required'].nil? ? '' : " required:#{rb['required']}"
-          desc = rb['description'] ? " description:#{rb['description']}" : ''
-          "# @component_request_body #{rb_name} [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
-        end
-        "#{lines.join}\n"
-      end
-
-      # Emits `@component_header` docstring tags.
-      #
-      # @param headers [Hash, nil] `components.headers` map
-      # @return [String] formatted `@component_header` lines
-      def self.emit_component_headers(headers)
-        return '' unless headers
-
-        lines = headers.map do |h_name, hdr|
-          opts_str = hdr['required'].nil? ? '' : " required:#{hdr['required']}"
-          desc = hdr['description'] ? " description:#{hdr['description']}" : ''
-          "# @component_header #{h_name} [#{schema_type_name(hdr)}]#{opts_str}#{desc}\n"
-        end
-        "#{lines.join}\n"
-      end
-
-      # Emits `@component_response` docstring tags.
-      #
-      # @param responses [Hash, nil] `components.responses` map
-      # @return [String] formatted `@component_response` lines
-      def self.emit_component_responses(responses)
-        return '' unless responses
-
-        lines = responses.map do |r_name, resp|
-          desc = resp['description'] && resp['description'] != 'Response' ? " description:#{resp['description']}" : ''
-          if resp['content']
-            media_type, schema_name = first_media_schema(resp['content'])
-            req_val = resp['content'][media_type]['required']
-            opts_str = req_val.nil? ? '' : " required:#{req_val}"
-            "# @component_response #{r_name} [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
-          else
-            "# @component_response #{r_name}#{desc}\n"
-          end
-        end
-        "#{lines.join}\n"
-      end
-
-      # Emits `@component_link` docstring tags.
-      #
-      # @param links [Hash, nil] `components.links` map
-      # @return [String] formatted `@component_link` lines
-      def self.emit_component_links(links)
-        return '' unless links
-
-        lines = links.map do |l_name, link_obj|
-          desc = link_obj['description'] ? " description:#{link_obj['description']}" : ''
-          "# @component_link #{l_name}#{format_link_options(link_obj)}#{desc}\n"
-        end
-        "#{lines.join}\n"
-      end
-
-      # Emits `@component_callback*` docstring tags.
-      #
-      # @param callbacks [Hash, nil] `components.callbacks` map
-      # @return [String] formatted `@component_callback*` lines
-      def self.emit_component_callbacks(callbacks)
-        return '' unless callbacks
-
-        out = ''
-        callbacks.each do |cb_name, cb_urls|
-          cb_urls.each do |cb_url, cb_methods|
-            cb_methods.each do |cb_method, cb_op|
-              out += emit_single_callback_op('component_callback', cb_name, cb_url, cb_method, cb_op)
-            end
-          end
-        end
-        "#{out}\n"
-      end
-
-      # Emits a single callback operation and its request body / response tags.
-      #
-      # @param tag_prefix [String] `'component_callback'` or `'callback'`
-      # @param cb_name [String] callback name
-      # @param cb_url [String] callback URL expression
-      # @param cb_method [String] HTTP method
-      # @param cb_op [Hash] callback operation hash
-      # @return [String] formatted callback docstring lines
-      def self.emit_single_callback_op(tag_prefix, cb_name, cb_url, cb_method, cb_op)
-        is_component = tag_prefix == 'component_callback'
-        out = "# @#{tag_prefix} #{cb_name} #{cb_url} #{cb_method.downcase}\n"
-        if cb_op['requestBody'] && cb_op['requestBody']['content']
-          media_type, schema_name = first_media_schema(cb_op['requestBody']['content'])
-          desc = cb_op['requestBody']['description'] ? " #{cb_op['requestBody']['description']}" : ''
-          out += "# @#{tag_prefix}_request_body [#{schema_name}] #{media_type}#{desc}\n"
-        end
-        return out unless cb_op['responses']
-
-        cb_op['responses'].each do |cb_status, cb_resp|
-          next if cb_status == '200' && cb_resp['description'] == 'OK' && !cb_resp['content']
-
-          out += format_callback_response_line(tag_prefix, cb_status, cb_resp, is_component)
-        end
-        out
-      end
-
-      # Formats a single `@callback_response` or `@component_callback_response` line.
-      #
-      # @param tag_prefix [String] `'component_callback'` or `'callback'`
-      # @param cb_status [String] HTTP status code
-      # @param cb_resp [Hash] callback response hash
-      # @param is_component [Boolean] whether this is a component callback
-      # @return [String] formatted callback response docstring line
-      def self.format_callback_response_line(tag_prefix, cb_status, cb_resp, is_component)
-        if cb_resp['content']
-          media_type, schema_name = first_media_schema(cb_resp['content'])
-          raw_desc = cb_resp['description']
-          desc = if is_component
-                   raw_desc && raw_desc != 'Response' ? " description:#{raw_desc}" : ''
-                 else
-                   raw_desc ? " description:#{raw_desc}" : ''
-                 end
-          "# @#{tag_prefix}_response #{cb_status} [#{schema_name}] #{media_type}#{desc}\n"
-        else
-          raw_desc = cb_resp['description'] && cb_resp['description'] != 'Response' ? cb_resp['description'] : nil
-          desc = if raw_desc
-                   is_component ? " description:#{raw_desc}" : " #{raw_desc}"
-                 else
-                   ''
-                 end
-          "# @#{tag_prefix}_response #{cb_status}#{desc}\n"
-        end
       end
 
       # Emits a single path item or webhook entry.

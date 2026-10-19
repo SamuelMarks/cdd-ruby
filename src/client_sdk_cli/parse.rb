@@ -12,9 +12,10 @@ module Cdd
       #
       # @param tokens [Array<Array>] Ripper lexed token array
       # @param ir [Cdd::IR] Intermediate Representation
+      # @param skip_arazzo [Boolean] whether Arazzo::Parser has already been executed on `tokens`
       # @return [void]
-      def self.parse(tokens, ir)
-        Cdd::Arazzo::Parser.parse(tokens, ir)
+      def self.parse(tokens, ir, skip_arazzo: false)
+        Cdd::Arazzo::Parser.parse(tokens, ir) unless skip_arazzo
         state = { in_cli_case: false, nesting: 0, in_when: false }
         tokens.each_with_index do |token, idx|
           step_cli_token(tokens, token, idx, state, ir)

@@ -6,8 +6,8 @@ require_relative '../token_scanner'
 module Cdd
   # Module for parsing and emitting OpenAPI docstring annotations.
   module Docstrings
-    # Parser for extracting OpenAPI 3.2.0 metadata, components, and operations from docstring comments.
-    class Parser
+    # Shared docstring option and schema reference helpers.
+    module TagHelpers
       # Primitive JSON Schema types recognized inline without `$ref` wrapping.
       PRIMITIVE_TYPES = %w[string number integer boolean array object].freeze
 
@@ -15,7 +15,7 @@ module Cdd
       #
       # @param rest [String, nil] trailing docstring text
       # @return [Array(Hash{String => String}, String)] extracted key-value pairs and remaining description
-      def self.parse_rest(rest)
+      def parse_rest(rest)
         return [{}, ''] if rest.nil? || rest.strip.empty?
 
         pairs = {}
@@ -37,7 +37,7 @@ module Cdd
       #
       # @param val [String, Object] raw option value
       # @return [Boolean, String, Object] coerced value
-      def self.coerce_boolean_or_string(val)
+      def coerce_boolean_or_string(val)
         return true if val == 'true'
         return false if val == 'false'
 
@@ -48,7 +48,7 @@ module Cdd
       #
       # @param schema_type [String] primitive type name or component schema name
       # @return [Hash{String => String}] OpenAPI schema object
-      def self.schema_or_ref(schema_type)
+      def schema_or_ref(schema_type)
         down = schema_type.downcase
         PRIMITIVE_TYPES.include?(down) ? { 'type' => down } : { '$ref' => "#/components/schemas/#{schema_type}" }
       end
@@ -58,7 +58,7 @@ module Cdd
       # @param target [Hash] destination hash
       # @param pairs [Hash] raw string key-value pairs
       # @return [void]
-      def self.apply_coerced_pairs(target, pairs)
+      def apply_coerced_pairs(target, pairs)
         (pairs || {}).each { |k, v| target[k] = coerce_boolean_or_string(v) }
       end
 
@@ -67,7 +67,7 @@ module Cdd
       # @param link_obj [Hash] target OpenAPI Link hash
       # @param pairs [Hash] key-value pairs
       # @return [void]
-      def self.apply_link_pairs(link_obj, pairs)
+      def apply_link_pairs(link_obj, pairs)
         pairs.each do |k, v|
           if k.include?('.')
             main_k, sub_k = k.split('.', 2)
@@ -78,6 +78,624 @@ module Cdd
           end
         end
       end
+
+      # Builds an OpenAPI Response object from schema, media_type, options, and description.
+      #
+      # @param schema_name [String, nil] schema reference name
+      # @param media_type [String, nil] content media type
+      # @param pairs [Hash] option key-value pairs
+      # @param desc_text [String, nil] response description
+      # @return [Hash] OpenAPI Response hash
+      def build_response_object(schema_name, media_type, pairs, desc_text)
+        clean_desc = desc_text.to_s.strip
+        resp = { 'description' => clean_desc.empty? ? 'Response' : clean_desc }
+        if media_type && schema_name
+          resp['content'] = { media_type => { 'schema' => { '$ref' => "#/components/schemas/#{schema_name}" } } }
+          apply_coerced_pairs(resp['content'][media_type], pairs)
+        else
+          apply_coerced_pairs(resp, pairs)
+        end
+        resp
+      end
+
+      # Finds the last operation hash inside a callbacks map.
+      #
+      # @param callbacks [Hash, nil] callbacks map
+      # @return [Hash, nil] the last callback operation hash or nil
+      def last_callback_operation(callbacks)
+        return nil unless callbacks
+
+        cb_name = callbacks.keys.last
+        cb_url = callbacks[cb_name].keys.last
+        cb_method = callbacks[cb_name][cb_url].keys.last
+        callbacks[cb_name][cb_url][cb_method]
+      end
+    end
+
+    # Attaches reusable `@component_*`, `@security_scheme`, and `@schema*` tags onto the IR.
+    module ComponentAttacher
+      include TagHelpers
+
+      # Parses `@security_scheme`, `@schema_xml`, `@schema_one_of`, `@schema_any_of`, and `@schema` tags.
+      #
+      # @param comment [String] raw comment line
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [Boolean] true if matched
+      def parse_schema_tags?(comment, ir)
+        case comment
+        when /#\s*@security_scheme\s+(\w+)\s+(\w+)(?:\s+(.*))?/
+          parse_security_scheme_tag(::Regexp.last_match(1), ::Regexp.last_match(2), ::Regexp.last_match(3) || '', ir)
+        when /#\s*@schema_xml\s+(\w+)(?:\s+(.*))?/
+          parse_schema_xml_tag(::Regexp.last_match(1), ::Regexp.last_match(2) || '', ir)
+        when /#\s*@(schema_one_of|schema_any_of)\s+(\w+)\s+(.*)/
+          comp_key = ::Regexp.last_match(1) == 'schema_one_of' ? 'oneOf' : 'anyOf'
+          parse_composition_tag(comp_key, ::Regexp.last_match(2), ::Regexp.last_match(3), ir)
+        when /#\s*@schema\s+(\w+)(?:\s+(.*))?/
+          parse_object_schema_tag(::Regexp.last_match(1), ::Regexp.last_match(2) || '', ir)
+        else
+          return false
+        end
+        true
+      end
+
+      # Parses a `@security_scheme` tag into `components.securitySchemes`.
+      #
+      # @param scheme_name [String] security scheme key
+      # @param type [String] security scheme type
+      # @param rest [String] options and description
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_security_scheme_tag(scheme_name, type, rest, ir)
+        pairs, parsed_rest = parse_rest(rest)
+        ir.openapi_spec['components'] ||= {}
+        ir.openapi_spec['components']['securitySchemes'] ||= {}
+        scheme = { 'type' => type }.merge(pairs)
+        scheme['description'] = parsed_rest.strip unless parsed_rest.strip.empty?
+        ir.openapi_spec['components']['securitySchemes'][scheme_name] = scheme
+      end
+
+      # Parses a `@schema_xml` tag into a schema's `xml` metadata object.
+      #
+      # @param schema_name [String] target schema name
+      # @param rest [String] key:value XML options
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_schema_xml_tag(schema_name, rest, ir)
+        pairs = {}
+        while rest =~ /^([a-zA-Z]+):(\S+)\s+(.*)$/
+          pairs[::Regexp.last_match(1)] = ::Regexp.last_match(2)
+          rest = ::Regexp.last_match(3)
+        end
+        pairs[::Regexp.last_match(1)] = ::Regexp.last_match(2) if rest =~ /^([a-zA-Z]+):(\S+)$/
+
+        ir.openapi_spec['components'] ||= {}
+        ir.openapi_spec['components']['schemas'] ||= {}
+        ir.openapi_spec['components']['schemas'][schema_name] ||= { 'type' => 'object' }
+        xml_hash = (ir.openapi_spec['components']['schemas'][schema_name]['xml'] ||= {})
+        apply_coerced_pairs(xml_hash, pairs)
+      end
+
+      # Parses `@schema_one_of` and `@schema_any_of` tags into `components.schemas`.
+      #
+      # @param comp_key [String] `'oneOf'` or `'anyOf'`
+      # @param schema_name [String] schema name
+      # @param rest [String] comma-separated refs and optional discriminator options
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_composition_tag(comp_key, schema_name, rest, ir)
+        ir.openapi_spec['components'] ||= {}
+        ir.openapi_spec['components']['schemas'] ||= {}
+        if rest =~ /^([a-zA-Z0-9_,\s]+)\s+discriminator:(\w+)(?:\s+mapping:([^\s]+))?(?:\s+defaultMapping:(\w+))?$/
+          m = ::Regexp.last_match
+          refs = m[1].split(/\s*,\s*/).map { |r| { '$ref' => "#/components/schemas/#{r}" } }
+          disc = { 'propertyName' => m[2] }
+          if m[3]
+            disc['mapping'] = m[3].split(/\s*,\s*/).to_h do |pair|
+              k, v = pair.split(':')
+              [k, "#/components/schemas/#{v}"]
+            end
+          end
+          disc['defaultMapping'] = "#/components/schemas/#{m[4]}" if m[4]
+          ir.openapi_spec['components']['schemas'][schema_name] = { comp_key => refs, 'discriminator' => disc }
+        else
+          refs = rest.split(/\s*,\s*/).map { |r| { '$ref' => "#/components/schemas/#{r}" } }
+          ir.openapi_spec['components']['schemas'][schema_name] ||= { comp_key => refs }
+        end
+      end
+
+      # Parses a `@schema` tag into `components.schemas`.
+      #
+      # @param schema_name [String] schema name
+      # @param rest [String] options and description
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_object_schema_tag(schema_name, rest, ir)
+        pairs, parsed_rest = parse_rest(rest)
+        ir.openapi_spec['components'] ||= {}
+        ir.openapi_spec['components']['schemas'] ||= {}
+        schema = (ir.openapi_spec['components']['schemas'][schema_name] ||= { 'type' => 'object', 'properties' => {} })
+        pairs.each { |k, v| schema[k] = v }
+        schema['description'] = parsed_rest.strip unless parsed_rest.strip.empty?
+      end
+
+      # Parses reusable `@component_*` tags into `ir.openapi_spec['components']`.
+      #
+      # @param comment [String] raw comment line
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [Boolean] true if matched
+      def parse_component_tags?(comment, ir)
+        case comment
+        when /#\s*@component_param\s+(\w+)\s+\[(\w+)\]\s+in:(\w+)(?:\s+(.*))?/
+          parse_component_param(::Regexp.last_match(1), ::Regexp.last_match(2),
+                                ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
+        when /#\s*@component_request_body\s+(\w+)\s+\[(\w+)\]\s+(\S+)(?:\s+(.*))?/
+          parse_component_request_body(::Regexp.last_match(1), ::Regexp.last_match(2),
+                                       ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
+        when /#\s*@component_header\s+(\w+)\s+\[(\w+)\](?:\s+(.*))?/
+          parse_component_header(::Regexp.last_match(1), ::Regexp.last_match(2), ::Regexp.last_match(3) || '', ir)
+        when /#\s*@component_link\s+(\w+)(?:\s+(.*))?/
+          parse_component_link(::Regexp.last_match(1), ::Regexp.last_match(2) || '', ir)
+        when /#\s*@component_response\s+(\w+)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
+          parse_component_response(::Regexp.last_match(1), ::Regexp.last_match(2),
+                                   ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
+        else
+          return parse_component_callback_tags?(comment, ir)
+        end
+        true
+      end
+
+      # Parses `@component_param` into `components.parameters`.
+      #
+      # @param name [String] parameter component key
+      # @param schema_type [String] type or schema reference
+      # @param loc [String] parameter location (`query`, `header`, `path`, `cookie`)
+      # @param rest [String] trailing options and description
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_component_param(name, schema_type, loc, rest, ir)
+        pairs, parsed_rest = parse_rest(rest)
+        param = { 'name' => name, 'in' => loc, 'schema' => schema_or_ref(schema_type) }
+        apply_coerced_pairs(param, pairs)
+        param['description'] = parsed_rest.strip unless parsed_rest.strip.empty?
+        ir.openapi_spec['components'] ||= {}
+        (ir.openapi_spec['components']['parameters'] ||= {})[name] = param
+      end
+
+      # Parses `@component_request_body` into `components.requestBodies`.
+      #
+      # @param name [String] requestBody component key
+      # @param schema_name [String] referenced schema name
+      # @param media_type [String] media type string
+      # @param rest [String] trailing options and description
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_component_request_body(name, schema_name, media_type, rest, ir)
+        pairs, parsed_rest = parse_rest(rest)
+        rb = { 'content' => { media_type => { 'schema' => { '$ref' => "#/components/schemas/#{schema_name}" } } } }
+        apply_coerced_pairs(rb, pairs)
+        rb['description'] = parsed_rest.strip unless parsed_rest.empty?
+        ir.openapi_spec['components'] ||= {}
+        (ir.openapi_spec['components']['requestBodies'] ||= {})[name] = rb
+      end
+
+      # Parses `@component_header` into `components.headers`.
+      #
+      # @param name [String] header component key
+      # @param schema_type [String] type or schema reference
+      # @param rest [String] trailing options and description
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_component_header(name, schema_type, rest, ir)
+        pairs, parsed_rest = parse_rest(rest)
+        hdr = { 'schema' => schema_or_ref(schema_type) }
+        apply_coerced_pairs(hdr, pairs)
+        hdr['description'] = parsed_rest.strip unless parsed_rest.empty?
+        ir.openapi_spec['components'] ||= {}
+        (ir.openapi_spec['components']['headers'] ||= {})[name] = hdr
+      end
+
+      # Parses `@component_link` into `components.links`.
+      #
+      # @param name [String] link component key
+      # @param rest [String] trailing options and description
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_component_link(name, rest, ir)
+        pairs, parsed_rest = parse_rest(rest)
+        link_obj = {}
+        apply_link_pairs(link_obj, pairs)
+        link_obj['description'] = parsed_rest.strip unless parsed_rest.empty?
+        ir.openapi_spec['components'] ||= {}
+        (ir.openapi_spec['components']['links'] ||= {})[name] = link_obj
+      end
+
+      # Parses `@component_response` into `components.responses`.
+      #
+      # @param name [String] response component key
+      # @param schema_name [String, nil] optional schema name
+      # @param media_type [String, nil] optional media type
+      # @param rest [String] trailing options and description
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_component_response(name, schema_name, media_type, rest, ir)
+        pairs, parsed_rest = parse_rest(rest)
+        resp = build_response_object(schema_name, media_type, pairs, parsed_rest)
+        ir.openapi_spec['components'] ||= {}
+        (ir.openapi_spec['components']['responses'] ||= {})[name] = resp
+      end
+
+      # Parses `@component_callback*` tags into `components.callbacks`.
+      #
+      # @param comment [String] raw comment line
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [Boolean] true if matched
+      def parse_component_callback_tags?(comment, ir)
+        case comment
+        when /#\s*@component_callback\s+(\w+)\s+(\S+)\s+(get|put|post|delete|options|head|patch|trace|query)/i
+          name = ::Regexp.last_match(1)
+          url = ::Regexp.last_match(2)
+          method = ::Regexp.last_match(3).downcase
+          ir.openapi_spec['components'] ||= {}
+          cbs = (ir.openapi_spec['components']['callbacks'] ||= {})
+          ((cbs[name] ||= {})[url] ||= {})[method] ||= { 'responses' => { '200' => { 'description' => 'OK' } } }
+        when /#\s*@component_callback_request_body\s+\[(\w+)\]\s+(\S+)(?:\s+(.*))?/
+          attach_component_callback_request_body(::Regexp.last_match(1), ::Regexp.last_match(2),
+                                                 (::Regexp.last_match(3) || '').strip, ir)
+        when /#\s*@component_callback_response\s+(\d+|default)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
+          attach_component_callback_response(::Regexp.last_match(1), ::Regexp.last_match(2),
+                                             ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
+        else
+          return false
+        end
+        true
+      end
+
+      # Attaches a request body to the most recently declared component callback operation.
+      #
+      # @param schema_name [String] schema name
+      # @param media_type [String] media type
+      # @param rest [String] description text
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def attach_component_callback_request_body(schema_name, media_type, rest, ir)
+        cb_op = last_callback_operation(ir.openapi_spec.dig('components', 'callbacks'))
+        return unless cb_op
+
+        rb = { 'content' => { media_type => { 'schema' => { '$ref' => "#/components/schemas/#{schema_name}" } } } }
+        rb['description'] = rest unless rest.empty?
+        cb_op['requestBody'] = rb
+      end
+
+      # Attaches a response to the most recently declared component callback operation.
+      #
+      # @param status [String] HTTP status code
+      # @param schema_name [String, nil] schema name
+      # @param media_type [String, nil] media type
+      # @param rest [String] options and description
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def attach_component_callback_response(status, schema_name, media_type, rest, ir)
+        cb_op = last_callback_operation(ir.openapi_spec.dig('components', 'callbacks'))
+        return unless cb_op
+
+        pairs, parsed_rest = parse_rest(rest)
+        cb_op['responses'][status] = build_response_object(schema_name, media_type, pairs, parsed_rest)
+      end
+    end
+
+    # Attaches operation-level docstring tags onto OpenAPI operations and paths.
+    module OperationAttacher
+      include TagHelpers
+
+      # Assembles an OpenAPI operation hash from accumulated tags when `@route` or `@webhook` is encountered.
+      #
+      # @param is_webhook [Boolean] true if `@webhook`, false if `@route`
+      # @param method [String] lowercase HTTP method
+      # @param path [String] route path or webhook name
+      # @param current_tags [Array<Hash>] accumulated operation tags
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def build_operation_from_tags(is_webhook, method, path, current_tags, ir)
+        root_key = is_webhook ? 'webhooks' : 'paths'
+        ir.routes |= ["#{method.upcase} #{path}"] unless is_webhook
+        ir.openapi_spec[root_key] ||= {}
+        ir.openapi_spec[root_key][path] ||= {}
+
+        ctx = {
+          op: { 'responses' => { '200' => { 'description' => 'OK' } } },
+          params: [],
+          security: [],
+          tags: [],
+          servers: [],
+          path: path,
+          ir: ir
+        }
+
+        current_tags.each { |tag| apply_operation_tag(tag, ctx) }
+        extract_implicit_path_params(path, ctx[:params])
+
+        ctx[:op]['parameters'] = ctx[:params] unless ctx[:params].empty?
+        ctx[:op]['security'] = ctx[:security] unless ctx[:security].empty?
+        ctx[:op]['tags'] = ctx[:tags] unless ctx[:tags].empty?
+        ctx[:op]['servers'] = ctx[:servers] unless ctx[:servers].empty?
+
+        ir.openapi_spec[root_key][path][method] = ctx[:op]
+        current_tags.clear
+      end
+
+      # Applies a single accumulated tag hash onto the operation builder context.
+      #
+      # @param tag [Hash] parsed tag entry
+      # @param ctx [Hash] operation builder context
+      # @return [void]
+      def apply_operation_tag(tag, ctx)
+        case tag[:type]
+        when :param, :param_ref, :param_example_ref
+          apply_param_tag(tag, ctx[:params])
+        when :request_body, :request_body_ref, :request_body_example_ref, :request_body_encoding
+          apply_request_body_tag(tag, ctx[:op])
+        when :response, :response_ref, :response_example_ref
+          apply_response_body_tag(tag, ctx[:op])
+        when :response_header, :response_header_ref, :link, :link_ref
+          apply_header_or_link_tag(tag, ctx[:op])
+        when :callback, :callback_ref, :callback_request_body, :callback_response
+          apply_callback_tag(tag, ctx[:op])
+        else
+          apply_meta_or_server_tag(tag, ctx)
+        end
+      end
+
+      # Applies `@param`, `@param_ref`, and `@param_example_ref` tags onto `params`.
+      #
+      # @param tag [Hash] parsed tag entry
+      # @param params [Array<Hash>] operation parameters list
+      # @return [void]
+      def apply_param_tag(tag, params)
+        case tag[:type]
+        when :param
+          p = { 'name' => tag[:name], 'in' => tag[:in], 'schema' => schema_or_ref(tag[:schema_type]) }
+          apply_coerced_pairs(p, tag[:options])
+          p['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
+          params << p
+        when :param_ref
+          params << { '$ref' => "#/components/parameters/#{tag[:name]}" }
+        else
+          target = params.find { |param| param['name'] == tag[:param_name] }
+          return unless target
+
+          (target['examples'] ||= {})[tag[:example_name]] = { '$ref' => "#/components/examples/#{tag[:ref_name]}" }
+        end
+      end
+
+      # Applies `@request_body*` tags onto `op`.
+      #
+      # @param tag [Hash] parsed tag entry
+      # @param op [Hash] OpenAPI operation hash
+      # @return [void]
+      def apply_request_body_tag(tag, op)
+        case tag[:type]
+        when :request_body
+          ref_schema = { '$ref' => "#/components/schemas/#{tag[:schema_name]}" }
+          rb = { 'content' => { tag[:media_type] => { 'schema' => ref_schema } } }
+          apply_coerced_pairs(rb, tag[:options])
+          rb['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
+          op['requestBody'] = rb
+        when :request_body_ref
+          op['requestBody'] = { '$ref' => "#/components/requestBodies/#{tag[:name]}" }
+        when :request_body_example_ref
+          media = op.dig('requestBody', 'content', tag[:media_type])
+          return unless media
+
+          (media['examples'] ||= {})[tag[:example_name]] = { '$ref' => "#/components/examples/#{tag[:ref_name]}" }
+        else
+          media = op.dig('requestBody', 'content', tag[:media_type])
+          return unless media
+
+          enc = {}
+          apply_coerced_pairs(enc, tag[:options])
+          enc['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
+          (media['encoding'] ||= {})[tag[:property]] = enc
+        end
+      end
+
+      # Applies `@response`, `@response_ref`, and `@response_example_ref` tags onto `op`.
+      #
+      # @param tag [Hash] parsed tag entry
+      # @param op [Hash] OpenAPI operation hash
+      # @return [void]
+      def apply_response_body_tag(tag, op)
+        case tag[:type]
+        when :response
+          op['responses'][tag[:status]] = build_response_object(tag[:schema_name], tag[:media_type],
+                                                                tag[:options], tag[:description])
+        when :response_ref
+          op['responses'][tag[:status]] = { '$ref' => "#/components/responses/#{tag[:name]}" }
+        else
+          media = op.dig('responses', tag[:status], 'content', tag[:media_type])
+          return unless media
+
+          (media['examples'] ||= {})[tag[:example_name]] = { '$ref' => "#/components/examples/#{tag[:ref_name]}" }
+        end
+      end
+
+      # Applies `@response_header*` and `@link*` tags onto `op`.
+      #
+      # @param tag [Hash] parsed tag entry
+      # @param op [Hash] OpenAPI operation hash
+      # @return [void]
+      def apply_header_or_link_tag(tag, op)
+        resp = (op['responses'][tag[:status]] ||= { 'description' => 'Response' })
+        if %i[response_header response_header_ref].include?(tag[:type])
+          attach_response_header_tag(tag, resp)
+        else
+          attach_response_link_tag(tag, resp)
+        end
+      end
+
+      # Attaches a `@response_header` or `@response_header_ref` tag onto a response object.
+      #
+      # @param tag [Hash] parsed header tag
+      # @param resp [Hash] OpenAPI response hash
+      # @return [void]
+      def attach_response_header_tag(tag, resp)
+        headers = (resp['headers'] ||= {})
+        if tag[:type] == :response_header_ref
+          headers[tag[:name]] = { '$ref' => "#/components/headers/#{tag[:ref_name]}" }
+          return
+        end
+        hdr = { 'schema' => schema_or_ref(tag[:schema_type]) }
+        hdr['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
+        apply_coerced_pairs(hdr, tag[:options])
+        headers[tag[:name]] = hdr
+      end
+
+      # Attaches a `@link` or `@link_ref` tag onto a response object.
+      #
+      # @param tag [Hash] parsed link tag
+      # @param resp [Hash] OpenAPI response hash
+      # @return [void]
+      def attach_response_link_tag(tag, resp)
+        links = (resp['links'] ||= {})
+        if tag[:type] == :link_ref
+          links[tag[:name]] = { '$ref' => "#/components/links/#{tag[:ref_name]}" }
+          return
+        end
+        link_obj = {}
+        link_obj['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
+        apply_link_pairs(link_obj, tag[:options])
+        links[tag[:name]] = link_obj
+      end
+
+      # Applies operation callback tags onto the operation hash.
+      #
+      # @param tag [Hash] parsed tag entry
+      # @param op [Hash] OpenAPI operation hash
+      # @return [void]
+      def apply_callback_tag(tag, op)
+        case tag[:type]
+        when :callback
+          cbs = (op['callbacks'] ||= {})
+          ((cbs[tag[:name]] ||= {})[tag[:url]] ||= {})[tag[:method]] ||= {
+            'responses' => { '200' => { 'description' => 'OK' } }
+          }
+        when :callback_ref
+          (op['callbacks'] ||= {})[tag[:name]] = { '$ref' => "#/components/callbacks/#{tag[:ref_name]}" }
+        else
+          attach_operation_callback_body_or_response(tag, last_callback_operation(op['callbacks']))
+        end
+      end
+
+      # Attaches a callback request body or response onto `cb_op`.
+      #
+      # @param tag [Hash] parsed callback tag
+      # @param cb_op [Hash, nil] active callback operation hash
+      # @return [void]
+      def attach_operation_callback_body_or_response(tag, cb_op)
+        return unless cb_op
+
+        if tag[:type] == :callback_request_body
+          ref_schema = { '$ref' => "#/components/schemas/#{tag[:schema_name]}" }
+          rb = { 'content' => { tag[:media_type] => { 'schema' => ref_schema } } }
+          rb['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
+          cb_op['requestBody'] = rb
+        else
+          cb_op['responses'][tag[:status]] = build_response_object(tag[:schema_name], tag[:media_type],
+                                                                   tag[:options], tag[:description])
+        end
+      end
+
+      # Applies metadata, security, and server tags onto the operation context.
+      #
+      # @param tag [Hash] parsed tag entry
+      # @param ctx [Hash] operation builder context
+      # @return [void]
+      def apply_meta_or_server_tag(tag, ctx)
+        case tag[:type]
+        when :security
+          ctx[:security] << (tag[:scheme] ? { tag[:scheme] => tag[:scopes] } : {})
+        when :tag
+          ctx[:tags] << tag[:value]
+        when :op_server
+          srv = { 'url' => tag[:url] }
+          srv['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
+          ctx[:servers] << srv
+        when :op_server_var
+          apply_op_server_var(tag, ctx[:servers])
+        else
+          apply_scalar_meta_tag(tag, ctx)
+        end
+      end
+
+      # Applies scalar metadata tags (`:operationId`, `:summary`, `:description`, `:deprecated`, etc.).
+      #
+      # @param tag [Hash] parsed tag entry
+      # @param ctx [Hash] operation builder context
+      # @return [void]
+      def apply_scalar_meta_tag(tag, ctx)
+        op = ctx[:op]
+        case tag[:type]
+        when :operationId then op['operationId'] = tag[:value]
+        when :summary then op['summary'] = tag[:value]
+        when :description then op['description'] = tag[:value]
+        when :deprecated then op['deprecated'] = true
+        when :external_docs
+          ed = { 'url' => tag[:url] }
+          ed['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
+          op['externalDocs'] = ed
+        when :path_summary
+          ctx[:ir].openapi_spec['paths'][ctx[:path]]['summary'] = tag[:value]
+        else
+          ctx[:ir].openapi_spec['paths'][ctx[:path]]['description'] = tag[:value]
+        end
+      end
+
+      # Attaches an operation-level server variable to the operation's `servers` array.
+      #
+      # @param tag [Hash] parsed `:op_server_var` tag
+      # @param servers [Array<Hash>] operation servers list
+      # @return [void]
+      def apply_op_server_var(tag, servers)
+        server = servers.find { |s| s['url'] == tag[:url] }
+        unless server
+          server = { 'url' => tag[:url] }
+          servers << server
+        end
+        server['variables'] ||= {}
+        pairs, parsed_rest = parse_rest(tag[:rest])
+        var_obj = { 'default' => tag[:default_val] }
+        var_obj['enum'] = pairs['enum'].split(',') if pairs['enum']
+        var_obj['description'] = parsed_rest.strip unless parsed_rest.empty?
+        server['variables'][tag[:var_name]] = var_obj
+      end
+
+      # Auto-extracts `{param}` placeholders from the route path into `params` if not already declared.
+      #
+      # @param path [String] route path template
+      # @param params [Array<Hash>] operation parameters array
+      # @return [void]
+      def extract_implicit_path_params(path, params)
+        path.scan(/\{(\w+)\}/).flatten.each do |path_param|
+          next if params.any? { |p| p['name'] == path_param && p['in'] == 'path' }
+
+          params << {
+            'name' => path_param,
+            'in' => 'path',
+            'required' => true,
+            'schema' => { 'type' => 'string' },
+            'description' => 'Auto-extracted path parameter'
+          }
+        end
+      end
+    end
+
+    # Parser for extracting OpenAPI 3.2.0 metadata, components, and operations from docstring comments.
+    class Parser
+      extend TagHelpers
+      extend ComponentAttacher
+      extend OperationAttacher
+
+      # Primitive JSON Schema types recognized inline without `$ref` wrapping.
+      PRIMITIVE_TYPES = TagHelpers::PRIMITIVE_TYPES
 
       # Parses docstring comments from Ripper tokens and populates the IR.
       #
@@ -168,304 +786,6 @@ module Cdd
         var_obj['enum'] = pairs['enum'].split(',') if pairs['enum']
         var_obj['description'] = parsed_rest.strip unless parsed_rest.empty?
         server['variables'][var_name] = var_obj
-      end
-
-      # Parses `@security_scheme`, `@schema_xml`, `@schema_one_of`, `@schema_any_of`, and `@schema` tags.
-      #
-      # @param comment [String] raw comment line
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [Boolean] true if matched
-      def self.parse_schema_tags?(comment, ir)
-        case comment
-        when /#\s*@security_scheme\s+(\w+)\s+(\w+)(?:\s+(.*))?/
-          parse_security_scheme_tag(::Regexp.last_match(1), ::Regexp.last_match(2), ::Regexp.last_match(3) || '', ir)
-        when /#\s*@schema_xml\s+(\w+)(?:\s+(.*))?/
-          parse_schema_xml_tag(::Regexp.last_match(1), ::Regexp.last_match(2) || '', ir)
-        when /#\s*@(schema_one_of|schema_any_of)\s+(\w+)\s+(.*)/
-          comp_key = ::Regexp.last_match(1) == 'schema_one_of' ? 'oneOf' : 'anyOf'
-          parse_composition_tag(comp_key, ::Regexp.last_match(2), ::Regexp.last_match(3), ir)
-        when /#\s*@schema\s+(\w+)(?:\s+(.*))?/
-          parse_object_schema_tag(::Regexp.last_match(1), ::Regexp.last_match(2) || '', ir)
-        else
-          return false
-        end
-        true
-      end
-
-      # Parses a `@security_scheme` tag into `components.securitySchemes`.
-      #
-      # @param scheme_name [String] security scheme key
-      # @param type [String] security scheme type
-      # @param rest [String] options and description
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_security_scheme_tag(scheme_name, type, rest, ir)
-        pairs, parsed_rest = parse_rest(rest)
-        ir.openapi_spec['components'] ||= {}
-        ir.openapi_spec['components']['securitySchemes'] ||= {}
-        scheme = { 'type' => type }.merge(pairs)
-        scheme['description'] = parsed_rest.strip unless parsed_rest.strip.empty?
-        ir.openapi_spec['components']['securitySchemes'][scheme_name] = scheme
-      end
-
-      # Parses a `@schema_xml` tag into a schema's `xml` metadata object.
-      #
-      # @param schema_name [String] target schema name
-      # @param rest [String] key:value XML options
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_schema_xml_tag(schema_name, rest, ir)
-        pairs = {}
-        while rest =~ /^([a-zA-Z]+):(\S+)\s+(.*)$/
-          pairs[::Regexp.last_match(1)] = ::Regexp.last_match(2)
-          rest = ::Regexp.last_match(3)
-        end
-        pairs[::Regexp.last_match(1)] = ::Regexp.last_match(2) if rest =~ /^([a-zA-Z]+):(\S+)$/
-
-        ir.openapi_spec['components'] ||= {}
-        ir.openapi_spec['components']['schemas'] ||= {}
-        ir.openapi_spec['components']['schemas'][schema_name] ||= { 'type' => 'object' }
-        xml_hash = (ir.openapi_spec['components']['schemas'][schema_name]['xml'] ||= {})
-        apply_coerced_pairs(xml_hash, pairs)
-      end
-
-      # Parses `@schema_one_of` and `@schema_any_of` tags into `components.schemas`.
-      #
-      # @param comp_key [String] `'oneOf'` or `'anyOf'`
-      # @param schema_name [String] schema name
-      # @param rest [String] comma-separated refs and optional discriminator options
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_composition_tag(comp_key, schema_name, rest, ir)
-        ir.openapi_spec['components'] ||= {}
-        ir.openapi_spec['components']['schemas'] ||= {}
-        if rest =~ /^([a-zA-Z0-9_,\s]+)\s+discriminator:(\w+)(?:\s+mapping:([^\s]+))?(?:\s+defaultMapping:(\w+))?$/
-          m = ::Regexp.last_match
-          refs = m[1].split(/\s*,\s*/).map { |r| { '$ref' => "#/components/schemas/#{r}" } }
-          disc = { 'propertyName' => m[2] }
-          if m[3]
-            disc['mapping'] = m[3].split(/\s*,\s*/).to_h do |pair|
-              k, v = pair.split(':')
-              [k, "#/components/schemas/#{v}"]
-            end
-          end
-          disc['defaultMapping'] = "#/components/schemas/#{m[4]}" if m[4]
-          ir.openapi_spec['components']['schemas'][schema_name] = { comp_key => refs, 'discriminator' => disc }
-        else
-          refs = rest.split(/\s*,\s*/).map { |r| { '$ref' => "#/components/schemas/#{r}" } }
-          ir.openapi_spec['components']['schemas'][schema_name] ||= { comp_key => refs }
-        end
-      end
-
-      # Parses a `@schema` tag into `components.schemas`.
-      #
-      # @param schema_name [String] schema name
-      # @param rest [String] options and description
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_object_schema_tag(schema_name, rest, ir)
-        pairs, parsed_rest = parse_rest(rest)
-        ir.openapi_spec['components'] ||= {}
-        ir.openapi_spec['components']['schemas'] ||= {}
-        schema = (ir.openapi_spec['components']['schemas'][schema_name] ||= { 'type' => 'object', 'properties' => {} })
-        pairs.each { |k, v| schema[k] = v }
-        schema['description'] = parsed_rest.strip unless parsed_rest.strip.empty?
-      end
-
-      # Parses reusable `@component_*` tags into `ir.openapi_spec['components']`.
-      #
-      # @param comment [String] raw comment line
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [Boolean] true if matched
-      def self.parse_component_tags?(comment, ir)
-        case comment
-        when /#\s*@component_param\s+(\w+)\s+\[(\w+)\]\s+in:(\w+)(?:\s+(.*))?/
-          parse_component_param(::Regexp.last_match(1), ::Regexp.last_match(2),
-                                ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
-        when /#\s*@component_request_body\s+(\w+)\s+\[(\w+)\]\s+(\S+)(?:\s+(.*))?/
-          parse_component_request_body(::Regexp.last_match(1), ::Regexp.last_match(2),
-                                       ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
-        when /#\s*@component_header\s+(\w+)\s+\[(\w+)\](?:\s+(.*))?/
-          parse_component_header(::Regexp.last_match(1), ::Regexp.last_match(2), ::Regexp.last_match(3) || '', ir)
-        when /#\s*@component_link\s+(\w+)(?:\s+(.*))?/
-          parse_component_link(::Regexp.last_match(1), ::Regexp.last_match(2) || '', ir)
-        when /#\s*@component_response\s+(\w+)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
-          parse_component_response(::Regexp.last_match(1), ::Regexp.last_match(2),
-                                   ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
-        else
-          return parse_component_callback_tags?(comment, ir)
-        end
-        true
-      end
-
-      # Parses `@component_param` into `components.parameters`.
-      #
-      # @param name [String] parameter component key
-      # @param schema_type [String] type or schema reference
-      # @param loc [String] parameter location (`query`, `header`, `path`, `cookie`)
-      # @param rest [String] trailing options and description
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_component_param(name, schema_type, loc, rest, ir)
-        pairs, parsed_rest = parse_rest(rest)
-        param = { 'name' => name, 'in' => loc, 'schema' => schema_or_ref(schema_type) }
-        apply_coerced_pairs(param, pairs)
-        param['description'] = parsed_rest.strip unless parsed_rest.strip.empty?
-        ir.openapi_spec['components'] ||= {}
-        (ir.openapi_spec['components']['parameters'] ||= {})[name] = param
-      end
-
-      # Parses `@component_request_body` into `components.requestBodies`.
-      #
-      # @param name [String] requestBody component key
-      # @param schema_name [String] referenced schema name
-      # @param media_type [String] media type string
-      # @param rest [String] trailing options and description
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_component_request_body(name, schema_name, media_type, rest, ir)
-        pairs, parsed_rest = parse_rest(rest)
-        rb = { 'content' => { media_type => { 'schema' => { '$ref' => "#/components/schemas/#{schema_name}" } } } }
-        apply_coerced_pairs(rb, pairs)
-        rb['description'] = parsed_rest.strip unless parsed_rest.empty?
-        ir.openapi_spec['components'] ||= {}
-        (ir.openapi_spec['components']['requestBodies'] ||= {})[name] = rb
-      end
-
-      # Parses `@component_header` into `components.headers`.
-      #
-      # @param name [String] header component key
-      # @param schema_type [String] type or schema reference
-      # @param rest [String] trailing options and description
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_component_header(name, schema_type, rest, ir)
-        pairs, parsed_rest = parse_rest(rest)
-        hdr = { 'schema' => schema_or_ref(schema_type) }
-        apply_coerced_pairs(hdr, pairs)
-        hdr['description'] = parsed_rest.strip unless parsed_rest.empty?
-        ir.openapi_spec['components'] ||= {}
-        (ir.openapi_spec['components']['headers'] ||= {})[name] = hdr
-      end
-
-      # Parses `@component_link` into `components.links`.
-      #
-      # @param name [String] link component key
-      # @param rest [String] trailing options and description
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_component_link(name, rest, ir)
-        pairs, parsed_rest = parse_rest(rest)
-        link_obj = {}
-        apply_link_pairs(link_obj, pairs)
-        link_obj['description'] = parsed_rest.strip unless parsed_rest.empty?
-        ir.openapi_spec['components'] ||= {}
-        (ir.openapi_spec['components']['links'] ||= {})[name] = link_obj
-      end
-
-      # Parses `@component_response` into `components.responses`.
-      #
-      # @param name [String] response component key
-      # @param schema_name [String, nil] optional schema name
-      # @param media_type [String, nil] optional media type
-      # @param rest [String] trailing options and description
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.parse_component_response(name, schema_name, media_type, rest, ir)
-        pairs, parsed_rest = parse_rest(rest)
-        resp = build_response_object(schema_name, media_type, pairs, parsed_rest)
-        ir.openapi_spec['components'] ||= {}
-        (ir.openapi_spec['components']['responses'] ||= {})[name] = resp
-      end
-
-      # Builds an OpenAPI Response object from schema, media_type, options, and description.
-      #
-      # @param schema_name [String, nil] schema reference name
-      # @param media_type [String, nil] content media type
-      # @param pairs [Hash] option key-value pairs
-      # @param desc_text [String, nil] response description
-      # @return [Hash] OpenAPI Response hash
-      def self.build_response_object(schema_name, media_type, pairs, desc_text)
-        clean_desc = desc_text.to_s.strip
-        resp = { 'description' => clean_desc.empty? ? 'Response' : clean_desc }
-        if media_type && schema_name
-          resp['content'] = { media_type => { 'schema' => { '$ref' => "#/components/schemas/#{schema_name}" } } }
-          apply_coerced_pairs(resp['content'][media_type], pairs)
-        else
-          apply_coerced_pairs(resp, pairs)
-        end
-        resp
-      end
-
-      # Parses `@component_callback*` tags into `components.callbacks`.
-      #
-      # @param comment [String] raw comment line
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [Boolean] true if matched
-      def self.parse_component_callback_tags?(comment, ir)
-        case comment
-        when /#\s*@component_callback\s+(\w+)\s+(\S+)\s+(get|put|post|delete|options|head|patch|trace|query)/i
-          name = ::Regexp.last_match(1)
-          url = ::Regexp.last_match(2)
-          method = ::Regexp.last_match(3).downcase
-          ir.openapi_spec['components'] ||= {}
-          cbs = (ir.openapi_spec['components']['callbacks'] ||= {})
-          ((cbs[name] ||= {})[url] ||= {})[method] ||= { 'responses' => { '200' => { 'description' => 'OK' } } }
-        when /#\s*@component_callback_request_body\s+\[(\w+)\]\s+(\S+)(?:\s+(.*))?/
-          attach_component_callback_request_body(::Regexp.last_match(1), ::Regexp.last_match(2),
-                                                 (::Regexp.last_match(3) || '').strip, ir)
-        when /#\s*@component_callback_response\s+(\d+|default)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
-          attach_component_callback_response(::Regexp.last_match(1), ::Regexp.last_match(2),
-                                             ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
-        else
-          return false
-        end
-        true
-      end
-
-      # Attaches a request body to the most recently declared component callback operation.
-      #
-      # @param schema_name [String] schema name
-      # @param media_type [String] media type
-      # @param rest [String] description text
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.attach_component_callback_request_body(schema_name, media_type, rest, ir)
-        cb_op = last_callback_operation(ir.openapi_spec.dig('components', 'callbacks'))
-        return unless cb_op
-
-        rb = { 'content' => { media_type => { 'schema' => { '$ref' => "#/components/schemas/#{schema_name}" } } } }
-        rb['description'] = rest unless rest.empty?
-        cb_op['requestBody'] = rb
-      end
-
-      # Attaches a response to the most recently declared component callback operation.
-      #
-      # @param status [String] HTTP status code
-      # @param schema_name [String, nil] schema name
-      # @param media_type [String, nil] media type
-      # @param rest [String] options and description
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.attach_component_callback_response(status, schema_name, media_type, rest, ir)
-        cb_op = last_callback_operation(ir.openapi_spec.dig('components', 'callbacks'))
-        return unless cb_op
-
-        pairs, parsed_rest = parse_rest(rest)
-        cb_op['responses'][status] = build_response_object(schema_name, media_type, pairs, parsed_rest)
-      end
-
-      # Finds the last operation hash inside a callbacks map.
-      #
-      # @param callbacks [Hash, nil] callbacks map
-      # @return [Hash, nil] the last callback operation hash or nil
-      def self.last_callback_operation(callbacks)
-        return nil unless callbacks
-
-        cb_name = callbacks.keys.last
-        cb_url = callbacks[cb_name].keys.last
-        cb_method = callbacks[cb_name][cb_url].keys.last
-        callbacks[cb_name][cb_url][cb_method]
       end
 
       # Parses operation-level tags and appends them to `current_tags`.
@@ -615,275 +935,6 @@ module Cdd
           return false
         end
         true
-      end
-
-      # Assembles an OpenAPI operation hash from accumulated tags when `@route` or `@webhook` is encountered.
-      #
-      # @param is_webhook [Boolean] true if `@webhook`, false if `@route`
-      # @param method [String] lowercase HTTP method
-      # @param path [String] route path or webhook name
-      # @param current_tags [Array<Hash>] accumulated operation tags
-      # @param ir [Cdd::IR] Intermediate Representation
-      # @return [void]
-      def self.build_operation_from_tags(is_webhook, method, path, current_tags, ir)
-        root_key = is_webhook ? 'webhooks' : 'paths'
-        ir.openapi_spec[root_key] ||= {}
-        ir.openapi_spec[root_key][path] ||= {}
-
-        ctx = {
-          op: { 'responses' => { '200' => { 'description' => 'OK' } } },
-          params: [],
-          security: [],
-          tags: [],
-          servers: [],
-          path: path,
-          ir: ir
-        }
-
-        current_tags.each { |tag| apply_operation_tag(tag, ctx) }
-        extract_implicit_path_params(path, ctx[:params])
-
-        ctx[:op]['parameters'] = ctx[:params] unless ctx[:params].empty?
-        ctx[:op]['security'] = ctx[:security] unless ctx[:security].empty?
-        ctx[:op]['tags'] = ctx[:tags] unless ctx[:tags].empty?
-        ctx[:op]['servers'] = ctx[:servers] unless ctx[:servers].empty?
-
-        ir.openapi_spec[root_key][path][method] = ctx[:op]
-        current_tags.clear
-      end
-
-      # Applies a single accumulated tag hash onto the operation builder context.
-      #
-      # @param tag [Hash] parsed tag entry
-      # @param ctx [Hash] operation builder context
-      # @return [void]
-      def self.apply_operation_tag(tag, ctx)
-        case tag[:type]
-        when :param, :param_ref, :param_example_ref
-          apply_param_tag(tag, ctx[:params])
-        when :request_body, :request_body_ref, :request_body_example_ref, :request_body_encoding
-          apply_request_body_tag(tag, ctx[:op])
-        when :response, :response_ref, :response_example_ref
-          apply_response_body_tag(tag, ctx[:op])
-        when :response_header, :response_header_ref, :link, :link_ref
-          apply_header_or_link_tag(tag, ctx[:op])
-        when :callback, :callback_ref, :callback_request_body, :callback_response
-          apply_callback_tag(tag, ctx[:op])
-        else
-          apply_meta_or_server_tag(tag, ctx)
-        end
-      end
-
-      # Applies `@param`, `@param_ref`, and `@param_example_ref` tags onto `params`.
-      #
-      # @param tag [Hash] parsed tag entry
-      # @param params [Array<Hash>] operation parameters list
-      # @return [void]
-      def self.apply_param_tag(tag, params)
-        case tag[:type]
-        when :param
-          p = { 'name' => tag[:name], 'in' => tag[:in], 'schema' => schema_or_ref(tag[:schema_type]) }
-          apply_coerced_pairs(p, tag[:options])
-          p['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
-          params << p
-        when :param_ref
-          params << { '$ref' => "#/components/parameters/#{tag[:name]}" }
-        else
-          target = params.find { |param| param['name'] == tag[:param_name] }
-          return unless target
-
-          (target['examples'] ||= {})[tag[:example_name]] = { '$ref' => "#/components/examples/#{tag[:ref_name]}" }
-        end
-      end
-
-      # Applies `@request_body*` tags onto `op`.
-      #
-      # @param tag [Hash] parsed tag entry
-      # @param op [Hash] OpenAPI operation hash
-      # @return [void]
-      def self.apply_request_body_tag(tag, op)
-        case tag[:type]
-        when :request_body
-          ref_schema = { '$ref' => "#/components/schemas/#{tag[:schema_name]}" }
-          rb = { 'content' => { tag[:media_type] => { 'schema' => ref_schema } } }
-          apply_coerced_pairs(rb, tag[:options])
-          rb['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
-          op['requestBody'] = rb
-        when :request_body_ref
-          op['requestBody'] = { '$ref' => "#/components/requestBodies/#{tag[:name]}" }
-        when :request_body_example_ref
-          media = op.dig('requestBody', 'content', tag[:media_type])
-          return unless media
-
-          (media['examples'] ||= {})[tag[:example_name]] = { '$ref' => "#/components/examples/#{tag[:ref_name]}" }
-        else
-          media = op.dig('requestBody', 'content', tag[:media_type])
-          return unless media
-
-          enc = {}
-          apply_coerced_pairs(enc, tag[:options])
-          enc['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
-          (media['encoding'] ||= {})[tag[:property]] = enc
-        end
-      end
-
-      # Applies `@response`, `@response_ref`, and `@response_example_ref` tags onto `op`.
-      #
-      # @param tag [Hash] parsed tag entry
-      # @param op [Hash] OpenAPI operation hash
-      # @return [void]
-      def self.apply_response_body_tag(tag, op)
-        case tag[:type]
-        when :response
-          op['responses'][tag[:status]] = build_response_object(tag[:schema_name], tag[:media_type],
-                                                                tag[:options], tag[:description])
-        when :response_ref
-          op['responses'][tag[:status]] = { '$ref' => "#/components/responses/#{tag[:name]}" }
-        else
-          media = op.dig('responses', tag[:status], 'content', tag[:media_type])
-          return unless media
-
-          (media['examples'] ||= {})[tag[:example_name]] = { '$ref' => "#/components/examples/#{tag[:ref_name]}" }
-        end
-      end
-
-      # Applies `@response_header*` and `@link*` tags onto `op`.
-      #
-      # @param tag [Hash] parsed tag entry
-      # @param op [Hash] OpenAPI operation hash
-      # @return [void]
-      def self.apply_header_or_link_tag(tag, op)
-        resp = (op['responses'][tag[:status]] ||= { 'description' => 'Response' })
-        case tag[:type]
-        when :response_header
-          hdr = { 'schema' => schema_or_ref(tag[:schema_type]) }
-          hdr['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
-          apply_coerced_pairs(hdr, tag[:options])
-          (resp['headers'] ||= {})[tag[:name]] = hdr
-        when :response_header_ref
-          (resp['headers'] ||= {})[tag[:name]] = { '$ref' => "#/components/headers/#{tag[:ref_name]}" }
-        when :link
-          link_obj = {}
-          link_obj['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
-          apply_link_pairs(link_obj, tag[:options])
-          (resp['links'] ||= {})[tag[:name]] = link_obj
-        else
-          (resp['links'] ||= {})[tag[:name]] = { '$ref' => "#/components/links/#{tag[:ref_name]}" }
-        end
-      end
-
-      # Applies operation callback tags onto the operation hash.
-      #
-      # @param tag [Hash] parsed tag entry
-      # @param op [Hash] OpenAPI operation hash
-      # @return [void]
-      def self.apply_callback_tag(tag, op)
-        case tag[:type]
-        when :callback
-          cbs = (op['callbacks'] ||= {})
-          ((cbs[tag[:name]] ||= {})[tag[:url]] ||= {})[tag[:method]] ||= {
-            'responses' => { '200' => { 'description' => 'OK' } }
-          }
-        when :callback_ref
-          (op['callbacks'] ||= {})[tag[:name]] = { '$ref' => "#/components/callbacks/#{tag[:ref_name]}" }
-        when :callback_request_body
-          cb_op = last_callback_operation(op['callbacks'])
-          if cb_op
-            ref_schema = { '$ref' => "#/components/schemas/#{tag[:schema_name]}" }
-            rb = { 'content' => { tag[:media_type] => { 'schema' => ref_schema } } }
-            rb['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
-            cb_op['requestBody'] = rb
-          end
-        else
-          cb_op = last_callback_operation(op['callbacks'])
-          if cb_op
-            cb_op['responses'][tag[:status]] = build_response_object(tag[:schema_name], tag[:media_type],
-                                                                     tag[:options], tag[:description])
-          end
-        end
-      end
-
-      # Applies metadata, security, and server tags onto the operation context.
-      #
-      # @param tag [Hash] parsed tag entry
-      # @param ctx [Hash] operation builder context
-      # @return [void]
-      def self.apply_meta_or_server_tag(tag, ctx)
-        case tag[:type]
-        when :security
-          ctx[:security] << (tag[:scheme] ? { tag[:scheme] => tag[:scopes] } : {})
-        when :tag
-          ctx[:tags] << tag[:value]
-        when :op_server
-          srv = { 'url' => tag[:url] }
-          srv['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
-          ctx[:servers] << srv
-        when :op_server_var
-          apply_op_server_var(tag, ctx[:servers])
-        else
-          apply_scalar_meta_tag(tag, ctx)
-        end
-      end
-
-      # Applies scalar metadata tags (`:operationId`, `:summary`, `:description`, `:deprecated`, etc.).
-      #
-      # @param tag [Hash] parsed tag entry
-      # @param ctx [Hash] operation builder context
-      # @return [void]
-      def self.apply_scalar_meta_tag(tag, ctx)
-        op = ctx[:op]
-        case tag[:type]
-        when :operationId then op['operationId'] = tag[:value]
-        when :summary then op['summary'] = tag[:value]
-        when :description then op['description'] = tag[:value]
-        when :deprecated then op['deprecated'] = true
-        when :external_docs
-          ed = { 'url' => tag[:url] }
-          ed['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
-          op['externalDocs'] = ed
-        when :path_summary
-          ctx[:ir].openapi_spec['paths'][ctx[:path]]['summary'] = tag[:value]
-        else
-          ctx[:ir].openapi_spec['paths'][ctx[:path]]['description'] = tag[:value]
-        end
-      end
-
-      # Attaches an operation-level server variable to the operation's `servers` array.
-      #
-      # @param tag [Hash] parsed `:op_server_var` tag
-      # @param servers [Array<Hash>] operation servers list
-      # @return [void]
-      def self.apply_op_server_var(tag, servers)
-        server = servers.find { |s| s['url'] == tag[:url] }
-        unless server
-          server = { 'url' => tag[:url] }
-          servers << server
-        end
-        server['variables'] ||= {}
-        pairs, parsed_rest = parse_rest(tag[:rest])
-        var_obj = { 'default' => tag[:default_val] }
-        var_obj['enum'] = pairs['enum'].split(',') if pairs['enum']
-        var_obj['description'] = parsed_rest.strip unless parsed_rest.empty?
-        server['variables'][tag[:var_name]] = var_obj
-      end
-
-      # Auto-extracts `{param}` placeholders from the route path into `params` if not already declared.
-      #
-      # @param path [String] route path template
-      # @param params [Array<Hash>] operation parameters array
-      # @return [void]
-      def self.extract_implicit_path_params(path, params)
-        path.scan(/\{(\w+)\}/).flatten.each do |path_param|
-          next if params.any? { |p| p['name'] == path_param && p['in'] == 'path' }
-
-          params << {
-            'name' => path_param,
-            'in' => 'path',
-            'required' => true,
-            'schema' => { 'type' => 'string' },
-            'description' => 'Auto-extracted path parameter'
-          }
-        end
       end
     end
   end

@@ -145,8 +145,19 @@ module Cdd
     def self.from_openapi_hash(hash)
       ir = new(hash)
       components = hash['components']
-      schemas = components['schemas'] if components.is_a?(Hash)
-      ir.classes = schemas.keys if schemas.is_a?(Hash)
+      if components.is_a?(Hash)
+        ir.classes = components['schemas'].keys if components['schemas'].is_a?(Hash)
+        ir.mocks = components['examples'].keys if components['examples'].is_a?(Hash)
+      end
+      if hash['paths'].is_a?(Hash)
+        hash['paths'].each do |path, methods|
+          methods.each_key do |verb|
+            next if %w[$ref summary description servers parameters].include?(verb)
+
+            ir.routes |= ["#{verb.upcase} #{path}"]
+          end
+        end
+      end
       ir
     end
 
@@ -468,6 +479,205 @@ module Cdd
           xml: s['xml'],
           example: s['example'],
           description: s['description']
+        )
+      end
+    end
+
+    # Builds a typed `Parameter` from a raw OpenAPI parameter Hash.
+    #
+    # @param raw [Hash] raw OpenAPI parameter hash
+    # @return [Cdd::IR::Parameter] typed parameter object
+    def self.build_parameter(raw)
+      Parameter.new(
+        name: raw['name'],
+        in_location: raw['in'],
+        schema: raw['schema'],
+        required: raw['required'] || false,
+        description: raw['description'],
+        style: raw['style'],
+        explode: raw['explode'],
+        allow_reserved: raw['allowReserved'],
+        allow_empty_value: raw['allowEmptyValue'],
+        deprecated: raw['deprecated'],
+        examples: raw['examples']
+      )
+    end
+
+    # Builds a typed `MediaType` from a raw OpenAPI mediaType Hash.
+    #
+    # @param raw [Hash] raw OpenAPI media type hash
+    # @return [Cdd::IR::MediaType] typed media type object
+    def self.build_media_type(raw)
+      encodings = (raw['encoding'] || {}).transform_values do |enc|
+        Encoding.new(
+          content_type: enc['contentType'],
+          headers: enc['headers'],
+          style: enc['style'],
+          explode: enc['explode'],
+          allow_reserved: enc['allowReserved'],
+          description: enc['description']
+        )
+      end
+      MediaType.new(
+        schema: raw['schema'],
+        example: raw['example'],
+        examples: raw['examples'],
+        encoding: encodings
+      )
+    end
+
+    # Builds a typed `RequestBody` from a raw OpenAPI requestBody Hash.
+    #
+    # @param raw [Hash, nil] raw OpenAPI request body hash
+    # @return [Cdd::IR::RequestBody, nil] typed request body or nil
+    def self.build_request_body(raw)
+      return nil unless raw.is_a?(Hash)
+
+      content = (raw['content'] || {}).transform_values { |mt| build_media_type(mt) }
+      RequestBody.new(
+        description: raw['description'],
+        content: content,
+        required: raw['required']
+      )
+    end
+
+    # Builds a typed `Response` from a status string and raw OpenAPI response Hash.
+    #
+    # @param status [String] HTTP status code
+    # @param raw [Hash] raw OpenAPI response hash
+    # @return [Cdd::IR::Response] typed response object
+    def self.build_response(status, raw)
+      headers = (raw['headers'] || {}).transform_values do |h|
+        Header.new(
+          description: h['description'],
+          schema: h['schema'],
+          required: h['required'],
+          deprecated: h['deprecated'],
+          example: h['example'],
+          examples: h['examples']
+        )
+      end
+      links = (raw['links'] || {}).transform_values do |l|
+        Link.new(
+          operation_ref: l['operationRef'],
+          operation_id: l['operationId'],
+          parameters: l['parameters'],
+          request_body: l['requestBody'],
+          description: l['description'],
+          server: l['server']
+        )
+      end
+      content = (raw['content'] || {}).transform_values { |mt| build_media_type(mt) }
+      Response.new(
+        status: status,
+        description: raw['description'],
+        headers: headers,
+        content: content,
+        links: links
+      )
+    end
+
+    # Builds a typed `Operation` from a method, path, and raw OpenAPI operation Hash.
+    #
+    # @param http_method [String] HTTP verb
+    # @param path [String] route path
+    # @param raw [Hash] raw OpenAPI operation hash
+    # @return [Cdd::IR::Operation] typed operation object
+    def self.build_operation(http_method, path, raw)
+      params = (raw['parameters'] || []).map { |p| build_parameter(p) }
+      responses = (raw['responses'] || {}).to_h { |st, r| [st, build_response(st, r)] }
+      Operation.new(
+        http_method: http_method,
+        path: path,
+        operation_id: raw['operationId'],
+        summary: raw['summary'],
+        description: raw['description'],
+        tags: raw['tags'] || [],
+        parameters: params,
+        request_body: build_request_body(raw['requestBody']),
+        responses: responses,
+        callbacks: raw['callbacks'],
+        security: raw['security'],
+        servers: raw['servers'],
+        deprecated: raw['deprecated'],
+        external_docs: raw['externalDocs']
+      )
+    end
+
+    # Builds typed `PathItem` value objects from the current OpenAPI spec.
+    #
+    # @return [Array<Cdd::IR::PathItem>] list of typed PathItem objects
+    def typed_paths
+      (@openapi_spec['paths'] || {}).map do |path, raw|
+        ops = {}
+        raw.each do |k, v|
+          next if %w[$ref summary description servers parameters].include?(k) || !v.is_a?(Hash)
+
+          ops[k] = self.class.build_operation(k, path, v)
+        end
+        PathItem.new(
+          path: path,
+          summary: raw['summary'],
+          description: raw['description'],
+          operations: ops,
+          parameters: (raw['parameters'] || []).map { |p| self.class.build_parameter(p) },
+          servers: raw['servers'],
+          ref: raw['$ref']
+        )
+      end
+    end
+
+    # Builds typed `SecurityScheme` value objects from the current OpenAPI spec.
+    #
+    # @return [Array<Cdd::IR::SecurityScheme>] list of typed SecurityScheme objects
+    def typed_security_schemes
+      schemes = @openapi_spec.dig('components', 'securitySchemes')
+      return [] unless schemes.is_a?(Hash)
+
+      schemes.map do |name, raw|
+        raw_flows = raw['flows']
+        flows = if raw_flows.is_a?(Hash)
+                  OAuthFlows.new(
+                    implicit: raw_flows['implicit'],
+                    password: raw_flows['password'],
+                    client_credentials: raw_flows['clientCredentials'],
+                    authorization_code: raw_flows['authorizationCode'],
+                    device_authorization: raw_flows['deviceAuthorization']
+                  )
+                end
+        SecurityScheme.new(
+          name: name,
+          type: raw['type'],
+          description: raw['description'],
+          param_name: raw['name'],
+          in_location: raw['in'],
+          scheme: raw['scheme'],
+          bearer_format: raw['bearerFormat'],
+          flows: flows,
+          open_id_connect_url: raw['openIdConnectUrl'],
+          oauth2_metadata_url: raw['oauth2MetadataUrl']
+        )
+      end
+    end
+
+    # Builds typed `Example` value objects from the current OpenAPI spec.
+    #
+    # @return [Array<Cdd::IR::Example>] list of typed Example objects
+    def typed_examples
+      examples = @openapi_spec.dig('components', 'examples')
+      return [] unless examples.is_a?(Hash)
+
+      examples.map do |name, raw|
+        schema_ref = raw['summary'].to_s[/Example for (\w+)/, 1]
+        Example.new(
+          name: name,
+          schema_ref: schema_ref,
+          summary: raw['summary'],
+          description: raw['description'],
+          value: raw['value'],
+          data_value: raw['dataValue'],
+          serialized_value: raw['serializedValue'],
+          external_value: raw['externalValue']
         )
       end
     end

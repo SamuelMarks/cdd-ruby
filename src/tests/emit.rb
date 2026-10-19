@@ -53,8 +53,13 @@ module Cdd
         (ir.arazzo_spec['workflows'] || []).each do |wf|
           wf_id = wf['workflowId']
           out << "  def test_workflow_#{wf_id}\n"
-          out << "    orch = WorkflowsOrchestrator.new\n"
+          out << "    stub_client = Object.new\n"
+          out << "    def stub_client.method_missing(_m, *_a, **_kw); {}; end\n"
+          out << "    def stub_client.respond_to_missing?(_m, _p = false); true; end\n"
+          out << "    orch = WorkflowsOrchestrator.new({ 'default' => stub_client })\n"
           out << "    assert_respond_to orch, :#{wf_id}\n"
+          out << "    res = orch.#{wf_id}({})\n"
+          out << "    assert_kind_of Hash, res\n"
           out << "  end\n\n"
         end
         "#{out}end\n"
@@ -104,11 +109,10 @@ module Cdd
       # @param is_server [Boolean, nil] true when generating Sinatra `Rack::Test` assertions
       # @return [String] Ruby test method code
       def self.emit_single_operation_test(path, method, op, is_server)
-        op_id = op['operationId'] ||
-                "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_').gsub(/_+/, '_').sub(/^_/, '').sub(/_$/, '')}"
+        op_id = Cdd::TokenScanner.operation_id_for(method, path, op)
         out = "  # @api_test #{method.upcase} #{path}\n  def test_#{op_id}\n"
         out += is_server ? emit_server_operation_body(path, method, op) : emit_client_operation_body(op_id, op)
-        "#{out}    end\n  end\n\n"
+        "#{out}  end\n\n"
       end
 
       # Emits the `Rack::Test` request and status assertion body for a server route test.
@@ -118,33 +122,39 @@ module Cdd
       # @param op [Hash] OpenAPI operation hash
       # @return [String] test body lines
       def self.emit_server_operation_body(path, method, op)
+        out, p_path = partition_test_route_params(path, op['parameters'] || [])
+        default_json = "{ id: 1, name: 'test', photoUrls: ['http://example.com'], status: 'available' }.to_json"
+        body_str = op['requestBody'] ? default_json : '{}'
+        if %w[post put patch].include?(method.downcase)
+          out += "    header 'Content-Type', 'application/json'\n"
+          out += "    #{method.downcase} sinatra_path, #{body_str}\n"
+        else
+          out += "    #{method.downcase} '#{p_path}'\n"
+        end
+        codes_str = '%w[200 201 204 400 401 403 404 405 501]'
+        "#{out}    assert_includes #{codes_str}, last_response.status.to_s\n"
+      end
+
+      # Builds `sinatra_path` substitutions and resolved GET/DELETE path with query parameters.
+      #
+      # @param path [String] OpenAPI path string
+      # @param parameters [Array<Hash>] operation parameters
+      # @return [Array(String, String)] `[out_lines, resolved_query_path]`
+      def self.partition_test_route_params(path, parameters)
         out = "    sinatra_path = '#{path}'.dup\n"
-        params = {}
-        op['parameters']&.each do |param|
+        query_pairs = []
+        resolved_path = path.dup
+        parameters.each do |param|
           val = sample_test_param_val(param)
           if param['in'] == 'path'
             out += "    sinatra_path.gsub!('{#{param['name']}}', '#{val}')\n"
+            resolved_path.gsub!("{#{param['name']}}", val.to_s)
           else
-            params[param['name']] = val
+            query_pairs << "#{param['name']}=#{val}"
           end
         end
-        default_json = "{ id: 1, name: 'test', photoUrls: ['http://example.com'], status: 'available' }.to_json"
-        body_str = op['requestBody'] ? default_json : nil
-        out += "    begin\n"
-        if %w[post put patch].include?(method.downcase)
-          out += "      header 'Content-Type', 'application/json'\n"
-          out += "      #{method.downcase} sinatra_path, #{body_str || '{}'}\n"
-        else
-          qs = params.map { |k, v| "#{k}=#{v}" }.join('&')
-          p_path = qs.empty? ? path.dup : "#{path}?#{qs}"
-          op['parameters']&.each do |param|
-            p_path.gsub!("{#{param['name']}}", sample_test_param_val(param).to_s) if param['in'] == 'path'
-          end
-          out += "      #{method.downcase} '#{p_path}'\n"
-        end
-        codes_str = "['200', '201', '204', '401', '403', '404', '405', '500', '501']"
-        "#{out}      assert #{codes_str}.include?(last_response.status.to_s)\n    " \
-          "rescue StandardError => e\n      skip \"Endpoint error: \#{e.message}\"\n"
+        p_path = query_pairs.empty? ? resolved_path : "#{resolved_path}?#{query_pairs.join('&')}"
+        [out, p_path]
       end
 
       # Emits the `ClientSdk` call and response assertion body for a client operation test.
@@ -171,7 +181,7 @@ module Cdd
         success_code = op['responses'].keys.find { |k| k.to_i >= 200 && k.to_i < 300 } || '200' if op['responses']
         "#{out}    begin\n      res = client.#{op_id}(#{params_str})\n      refute_nil res\n      " \
           "assert_equal '#{success_code}', client.last_response.code\n    " \
-          "rescue Errno::ECONNREFUSED\n      skip 'Petstore server is not available'\n"
+          "rescue Errno::ECONNREFUSED\n      skip 'Petstore server is not available'\n    end\n"
       end
 
       # Returns a sample string value for a route parameter in server tests.
@@ -252,7 +262,7 @@ module Cdd
       # @param needs_db [Boolean, nil] whether ConcreteDAO tests are included
       # @return [String] DAO test methods
       def self.emit_single_dao_test_methods(name, needs_db)
-        class_name = name.to_s.sub(/\A[a-z]/, &:upcase)
+        class_name = Cdd::TokenScanner.classify_name(name)
         out = "  def test_#{class_name.downcase}_dao_factory\n    " \
               "ENV['DATABASE_URL'] = nil\n    ENV['EPHEMERAL_DB'] = nil\n    " \
               "assert_instance_of Dao::Stub#{class_name}Dao, Dao::Factory.#{name.downcase}_dao\n"
@@ -324,35 +334,54 @@ module Cdd
         RUBY
       end
 
-      # Emits `auth_middleware_test.rb` with concrete configuration and environment assertions.
+      # Emits `auth_middleware_test.rb` with concrete Rack::Test HTTP requests and auth assertions.
       #
       # @param options [Hash] generation options
       # @return [String] Ruby test class source code
       def self.emit_auth_middleware_test(options)
         out = <<~RUBY
           class AuthMiddlewareTest < Minitest::Test
-            require 'net/http'
-            require 'uri'
+            require 'rack/test'
             require 'json'
+
+            include Rack::Test::Methods
+
+            def app
+              Sinatra::Application
+            end
 
             def setup
               $cli_options ||= {}
             end
 
+            def teardown
+              $cli_options[:enforce_auth] = nil
+              $cli_options[:start_auth_server] = nil
+              ENV['DATABASE_URL'] = nil
+              ENV['EPHEMERAL_DB'] = 'true'
+            end
+
             def test_mock_mode_auth_rejection
               $cli_options[:enforce_auth] = true
               ENV['EPHEMERAL_DB'] = 'true'
-              assert_equal true, $cli_options[:enforce_auth]
-              assert_equal 'true', ENV['EPHEMERAL_DB']
+              get '/__auth_probe__'
+              assert_includes [401, 404], last_response.status
+
+              header 'Authorization', 'Bearer mock-token-123'
+              get '/__auth_probe__'
+              assert_equal 404, last_response.status
             end
 
             def test_production_mode_auth_rejection
               $cli_options[:enforce_auth] = nil
-              ENV['DATABASE_URL'] = 'postgres://test'
+              ENV['DATABASE_URL'] = 'sqlite3::memory:'
               ENV['EPHEMERAL_DB'] = nil
-              assert_nil $cli_options[:enforce_auth]
-              assert_equal 'postgres://test', ENV['DATABASE_URL']
-              ENV['DATABASE_URL'] = nil
+              get '/__auth_probe__'
+              assert_includes [401, 404], last_response.status
+
+              header 'Authorization', 'Bearer invalid-token'
+              get '/__auth_probe__'
+              assert_includes [403, 404], last_response.status
             end
 
         RUBY
@@ -361,37 +390,59 @@ module Cdd
             def test_integrated_auth_server_lifecycle
               $cli_options[:start_auth_server] = true
               ENV['EPHEMERAL_DB'] = 'true'
-              assert_equal true, $cli_options[:start_auth_server]
-              assert_equal 'true', ENV['EPHEMERAL_DB']
+              header 'Content-Type', 'application/json'
+              post '/auth/refresh', '{}'
+              assert_equal 200, last_response.status
+              assert_equal 'mock-token-123', JSON.parse(last_response.body)['token']
+
+              post '/auth/logout', '{}'
+              assert_equal 200, last_response.status
+              assert_equal 'Logged out', JSON.parse(last_response.body)['message']
             end
           RUBY
         end
         "#{out}end\n\n"
       end
 
-      # Emits `cors_and_validation_test.rb` with concrete Rack::Test and option assertions.
+      # Emits `cors_and_validation_test.rb` with concrete Rack::Test preflight and payload validation assertions.
       #
       # @return [String] Ruby test class source code
       def self.emit_cors_and_validation_test
         <<~RUBY
           class CorsAndValidationTest < Minitest::Test
-            require 'net/http'
-            require 'uri'
+            require 'rack/test'
             require 'json'
+
+            include Rack::Test::Methods
+
+            def app
+              Sinatra::Application
+            end
 
             def setup
               ENV['EPHEMERAL_DB'] = 'true'
               DatabaseConnection.connect! if defined?(DatabaseConnection)
+              $cli_options ||= {}
+            end
+
+            def teardown
+              $cli_options[:strict_validation] = nil
             end
 
             def test_cors_preflight
-              assert_equal 'true', ENV['EPHEMERAL_DB']
+              options '/'
+              assert_equal 200, last_response.status
+              assert_equal '*', last_response.headers['Access-Control-Allow-Origin']
+              assert_includes last_response.headers['Access-Control-Allow-Methods'], 'OPTIONS'
             end
 
             def test_strict_validation
-              $cli_options ||= {}
               $cli_options[:strict_validation] = true
-              assert_equal true, $cli_options[:strict_validation]
+              header 'Content-Type', 'application/json'
+              header 'Authorization', 'Bearer mock-token-123'
+              post '/', '{malformed_json'
+              assert_equal 400, last_response.status
+              assert_equal 'Malformed JSON payload', JSON.parse(last_response.body)['error']
             end
           end
 

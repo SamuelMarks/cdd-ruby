@@ -49,14 +49,23 @@ end
   def test_server_start
     require 'net/http'
     require 'uri'
+    require 'stringio'
 
+    Cdd::Server.instance_variable_set(:@current_server, nil)
     server_thread = Thread.new do
-      Cdd::Server.start('127.0.0.1', '12345')
+      old_stdout = $stdout
+      $stdout = StringIO.new
+      begin
+        Cdd::Server.start('127.0.0.1', 0)
+      ensure
+        $stdout = old_stdout
+      end
     end
 
-    sleep 0.5 # wait for server to start
+    sleep 0.05 until Cdd::Server.current_server && Cdd::Server.current_server.status == :Running
+    port = Cdd::Server.current_server.config[:Port]
 
-    uri = URI.parse('http://127.0.0.1:12345/')
+    uri = URI.parse("http://127.0.0.1:#{port}/")
     http = Net::HTTP.new(uri.host, uri.port)
 
     # Test valid JSON-RPC
@@ -88,7 +97,7 @@ end
     res_get = http.request(req_get)
     assert_equal '405', res_get.code
 
-    Process.kill('INT', Process.pid)
+    Cdd::Server.shutdown
     server_thread.join
   end
 end

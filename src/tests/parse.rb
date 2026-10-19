@@ -20,6 +20,7 @@ module Cdd
 
           method = ::Regexp.last_match(1).downcase
           path = ::Regexp.last_match(2)
+          ir.tests |= ["#{method.upcase} #{path}"]
           ir.openapi_spec['paths'] ||= {}
           ir.openapi_spec['paths'][path] ||= {}
           ir.openapi_spec['paths'][path][method] ||= {

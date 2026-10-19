@@ -12,28 +12,28 @@ module Cdd
       # @return [String] generated `@api_*` docstring lines
       def self.emit(ir)
         spec = ir.openapi_spec
-        info = spec['info'] || {}
-        out = "# @api_title #{info['title'] || 'Generated API'}\n"
-        out += "# @api_version #{info['version'] || '0.0.4'}\n"
+        info = ir.typed_info
+        out = "# @api_title #{info.title}\n"
+        out += "# @api_version #{info.version}\n"
         out += "# @swagger_version #{spec['swagger']}\n" if spec['swagger']
-        out += "# @api_description #{info['description']}\n" if info['description']
+        out += "# @api_description #{info.description}\n" if info.description
         out += "# @api_self #{spec['$self']}\n" if spec['$self']
         out += "# @api_jsonSchemaDialect #{spec['jsonSchemaDialect']}\n" if spec['jsonSchemaDialect']
-        out += emit_servers_and_tags(spec)
+        out += emit_servers_and_tags(ir)
         out + emit_docs_and_webhooks(spec)
       end
 
       # Emits `@api_server` and `@api_tag` docstring lines.
       #
-      # @param spec [Hash] OpenAPI specification hash
+      # @param ir [Cdd::IR] Intermediate Representation
       # @return [String] formatted server and tag lines
-      def self.emit_servers_and_tags(spec)
+      def self.emit_servers_and_tags(ir)
         out = ''
-        spec['servers']&.each do |server|
-          desc = server['description'] ? " #{server['description']}" : ''
-          out += "# @api_server #{server['url']}#{desc}\n"
+        ir.typed_servers.each do |server|
+          desc = server.description ? " #{server.description}" : ''
+          out += "# @api_server #{server.url}#{desc}\n"
         end
-        spec['tags']&.each do |tag|
+        ir.openapi_spec['tags']&.each do |tag|
           desc = tag['description'] ? " #{tag['description']}" : ''
           out += "# @api_tag #{tag['name']}#{desc}\n"
         end

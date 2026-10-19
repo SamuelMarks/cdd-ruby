@@ -22,17 +22,16 @@ module Cdd
       # @return [Hash{String => String}] generated mock files (`filename => content`)
       def self.emit_multiple(ir)
         files = {}
-        examples = ir.openapi_spec.dig('components', 'examples') || {}
-        examples.each do |name, ex|
-          schema = ex['summary'].to_s.split('for ').last || 'Object'
+        ir.typed_examples.each do |ex|
+          schema = ex.schema_ref || 'Object'
           file_name = "#{schema.downcase.gsub(/[^a-z0-9]/, '_')}_mock.rb"
           files[file_name] ||= ''
 
-          if ex['externalValue']
-            files[file_name] += "# @example_external [#{schema}] #{name} #{ex['externalValue']}\n\n"
+          if ex.external_value
+            files[file_name] += "# @example_external [#{schema}] #{ex.name} #{ex.external_value}\n\n"
           else
-            files[file_name] += "# @mock [#{schema}] #{name}\n"
-            JSON.pretty_generate(ex['value']).each_line { |line| files[file_name] += "# #{line}" }
+            files[file_name] += "# @mock [#{schema}] #{ex.name}\n"
+            JSON.pretty_generate(ex.value).each_line { |line| files[file_name] += "# #{line}" }
             files[file_name] += "\n\n"
           end
         end

@@ -35,7 +35,7 @@ module Cdd
         tools_array = []
         openapi['paths']&.each do |path, methods|
           methods.each do |method, details|
-            operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+            operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
             tool = {
               name: operation_id,
               description: details['summary'] || "Call #{method.upcase} #{path}",
@@ -165,7 +165,7 @@ module Cdd
         out = ''
         paths.each do |path, methods|
           methods.each do |method, details|
-            operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+            operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
             summary = details['summary'] ? " - #{details['summary']}" : ''
             out += "  puts '  #{operation_id}#{summary}'\n"
             details['parameters']&.each do |param|
@@ -185,7 +185,7 @@ module Cdd
       def self.emit_mcp_loop(openapi, arazzo = nil)
         info = openapi['info'] || {}
         tools_json = build_mcp_tools(openapi, arazzo).to_json
-        docs_text = "# #{info['title'] || 'API'} Docs\\n\\n#{info['description'] || ''}"
+        docs_text = "# #{info['title'] || 'API'} Docs\n\n#{info['description'] || ''}"
         <<~RUBY
           command = ARGV.shift
           case command
@@ -222,7 +222,7 @@ module Cdd
                   resp[:result] = { resourceTemplates: [] }
                 elsif req['method'] == 'resources/read'
                   uri = req.dig('params', 'uri')
-                  resp[:result] = uri == 'mcp://api/docs' ? { contents: [{ uri: uri, mimeType: 'text/markdown', text: "#{docs_text}" }] } : { contents: [] }
+                  resp[:result] = uri == 'mcp://api/docs' ? { contents: [{ uri: uri, mimeType: 'text/markdown', text: #{docs_text.inspect} }] } : { contents: [] }
                 elsif req['method'] == 'roots/list'
                   resp[:result] = { roots: [] }
                 elsif req['method'] == 'tools/list'
@@ -289,7 +289,7 @@ module Cdd
       # @param details [Hash] OpenAPI operation details
       # @return [String] Ruby `when` branch code
       def self.emit_single_command_branch(path, method, details)
-        operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+        operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
         out = "when '#{operation_id}'\n  puts 'Calling #{method.upcase} #{path}'\n"
         out += "  # External Docs: #{details.dig('externalDocs', 'url')}\n" if details['externalDocs']
         out += "  # Tags: #{details['tags'].join(', ')}\n" if details['tags']
@@ -380,7 +380,7 @@ module Cdd
         sorted_paths = []
         (openapi['paths'] || {}).each do |path, methods|
           methods.each do |method, details|
-            operation_id = details['operationId'] || "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_')}"
+            operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
             param_count = (details['parameters'] || []).size
             sorted_paths << { operation_id: operation_id, score: path.count('/') + param_count }
           end

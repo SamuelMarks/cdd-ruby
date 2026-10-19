@@ -27,22 +27,37 @@ module Cdd
       # @param ir [Cdd::IR] Intermediate Representation
       # @return [void]
       def self.step_function_token(tokens, token, idx, state, ir)
-        if token[1] == :on_kw && token[2] == 'class'
-          name_token = tokens[(idx + 1)..].find { |t| t[1] == :on_const }
-          state[:in_api_client] = !name_token.nil? && name_token[2] == 'ApiClient'
-        elsif token[1] == :on_comment && token[2] =~ /#\s*@api_client\s+([A-Z]+)\s+(\S+)/
+        if token[1] == :on_comment && token[2] =~ /#\s*@api_client\s+([A-Z]+)\s+(\S+)/
           state[:method] = ::Regexp.last_match(1).downcase
           state[:path] = ::Regexp.last_match(2)
           register_client_endpoint(ir, state[:path], state[:method])
-        elsif state[:in_api_client] && token[1] == :on_kw && token[2] == 'def'
+        elsif token[1] == :on_kw
+          handle_keyword_token(tokens, token[2], idx, state, ir)
+        end
+      end
+
+      # Handles `class`, `def`, and `end` keyword tokens for `ApiClient`.
+      #
+      # @param tokens [Array<Array>] Ripper token stream
+      # @param keyword [String] keyword text
+      # @param idx [Integer] token index
+      # @param state [Hash] mutable parser state
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def self.handle_keyword_token(tokens, keyword, idx, state, ir)
+        case keyword
+        when 'class'
+          name_token = tokens[(idx + 1)..].find { |t| t[1] == :on_const }
+          state[:in_api_client] = !name_token.nil? && name_token[2] == 'ApiClient'
+        when 'def'
+          return unless state[:in_api_client]
+
           state[:in_method] = true
           parse_method_signature(tokens, idx, ir, state[:path], state[:method])
-        elsif state[:in_api_client] && token[1] == :on_kw && token[2] == 'end'
-          if state[:in_method]
-            state[:in_method] = false
-          else
-            state[:in_api_client] = false
-          end
+        when 'end'
+          return unless state[:in_api_client]
+
+          state[state[:in_method] ? :in_method : :in_api_client] = false
         end
       end
 

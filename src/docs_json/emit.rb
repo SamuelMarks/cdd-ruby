@@ -71,7 +71,7 @@ module Cdd
         ops.each do |method, op_details|
           next if method.start_with?('x-') || %w[summary description parameters servers].include?(method.downcase)
 
-          op_id = op_details['operationId'] || "#{method.downcase}_#{path.gsub(/[^a-zA-Z0-9]/, '_').sub(/^_/, '')}"
+          op_id = Cdd::TokenScanner.operation_id_for(method.downcase, path, op_details)
           path_map[method.downcase] = format_operation_snippet(op_id, no_imports: no_imports, no_wrapping: no_wrapping)
         end
         path_map

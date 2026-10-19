@@ -53,7 +53,19 @@ class ModulesTest < Minitest::Test
   end
 
   def test_functions_parse
-    Cdd::Functions::Parser.parse(@tokens, @ir)
+    tokens = Ripper.lex(<<~RUBY)
+      class ApiClient
+        # @api_client GET /pets/{pet_id}
+        def get_pet(pet_id: nil, filter: nil)
+        end
+      end
+    RUBY
+    Cdd::Functions::Parser.parse(tokens, @ir)
+    op = @ir.openapi_spec.dig('paths', '/pets/{pet_id}', 'get')
+    refute_nil op
+    assert_equal 2, op['parameters'].size
+    assert_equal({ 'name' => 'pet_id', 'in' => 'path' }, op['parameters'][0])
+    assert_equal({ 'name' => 'filter', 'in' => 'query' }, op['parameters'][1])
   end
 
   def test_functions_emit
@@ -61,7 +73,14 @@ class ModulesTest < Minitest::Test
   end
 
   def test_mocks_parse
-    Cdd::Mocks::Parser.parse(@tokens, @ir)
+    tokens = Ripper.lex(<<~RUBY)
+      # @mock [Pet] samplePet
+      # { "id": 1, "name": "Rex" }
+    RUBY
+    Cdd::Mocks::Parser.parse(tokens, @ir)
+    example = @ir.openapi_spec.dig('components', 'examples', 'samplePet')
+    refute_nil example
+    assert_equal({ 'id' => 1, 'name' => 'Rex' }, example['value'])
   end
 
   def test_mocks_emit
@@ -69,7 +88,13 @@ class ModulesTest < Minitest::Test
   end
 
   def test_openapi_parse
-    Cdd::Openapi::Parser.parse(@tokens, @ir)
+    tokens = Ripper.lex(<<~RUBY)
+      # @api_title Petstore Service
+      # @api_version 2.1.0
+    RUBY
+    Cdd::Openapi::Parser.parse(tokens, @ir)
+    assert_equal 'Petstore Service', @ir.openapi_spec.dig('info', 'title')
+    assert_equal '2.1.0', @ir.openapi_spec.dig('info', 'version')
   end
 
   def test_openapi_emit
@@ -79,7 +104,14 @@ class ModulesTest < Minitest::Test
   end
 
   def test_routes_parse
-    Cdd::Routes::Parser.parse(@tokens, @ir)
+    tokens = Ripper.lex(<<~RUBY)
+      get '/pets/:pet_id' do
+      end
+    RUBY
+    Cdd::Routes::Parser.parse(tokens, @ir)
+    op = @ir.openapi_spec.dig('paths', '/pets/{pet_id}', 'get')
+    refute_nil op
+    assert_equal 'pet_id', op['parameters'].first['name']
   end
 
   def test_routes_emit
@@ -90,7 +122,13 @@ class ModulesTest < Minitest::Test
   end
 
   def test_tests_parse
-    Cdd::Tests::Parser.parse(@tokens, @ir)
+    tokens = Ripper.lex(<<~RUBY)
+      # @api_test GET /pets
+      def test_get_pets
+      end
+    RUBY
+    Cdd::Tests::Parser.parse(tokens, @ir)
+    assert_equal 'OK', @ir.openapi_spec.dig('paths', '/pets', 'get', 'responses', '200', 'description')
   end
 
   def test_tests_emit

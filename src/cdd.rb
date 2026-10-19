@@ -39,13 +39,10 @@ module Cdd
         Cdd::Docstrings::Parser.parse(tokens, ir)
         Cdd::Routes::Parser.parse(tokens, ir)
         Cdd::Openapi::Parser.parse(tokens, ir)
-        Cdd::Arazzo::Parser.parse(tokens, ir)
         Cdd::Mocks::Parser.parse(tokens, ir)
         Cdd::Tests::Parser.parse(tokens, ir)
-
-        Cdd::ServerGen::Parser.parse(tokens, ir)
-        Cdd::ClientSdk::Parser.parse(tokens, ir)
-        Cdd::ClientSdkCli::Parser.parse(tokens, ir)
+        Cdd::ClientSdk::Parser.parse(tokens, ir, skip_arazzo: true)
+        Cdd::ClientSdkCli::Parser.parse(tokens, ir, skip_arazzo: true)
       end
 
       ir
@@ -70,14 +67,36 @@ module Cdd
 
   # The Emitter class takes an OpenAPI or Arazzo specification and outputs Ruby code.
   class Emitter
+    # Reads and parses a JSON specification file, raising `Cdd::ParseError` on invalid JSON.
+    #
+    # @param filepath [String] path to JSON specification file
+    # @return [Object] parsed JSON payload
+    # @raise [Cdd::ParseError] when the file does not contain valid JSON
+    def self.parse_spec_file(filepath)
+      JSON.parse(File.read(filepath))
+    rescue JSON::ParserError => e
+      raise Cdd::ParseError, "Failed to parse specification #{filepath}: #{e.message}"
+    end
+
+    # Validates that a parsed specification is a JSON object (Hash), raising `Cdd::EmitError` otherwise.
+    #
+    # @param spec [Object] parsed specification payload
+    # @return [Hash] validated specification hash
+    # @raise [Cdd::EmitError] when `spec` is not a Hash
+    def self.validate_spec_hash(spec)
+      raise Cdd::EmitError, 'Specification root must be a JSON object (Hash)' unless spec.is_a?(Hash)
+
+      spec
+    end
+
     # Emits Ruby code from an OpenAPI (or Arazzo) definition.
     #
     # @param filepath [String] the OpenAPI or Arazzo JSON file
     # @param original_ruby_filepath [String, nil] optional path to existing ruby file for syncing
     # @return [String] the Ruby source code
     def self.emit(filepath, original_ruby_filepath = nil)
-      spec = JSON.parse(File.read(filepath))
-      return emit_from_arazzo(filepath, original_ruby_filepath) if spec.is_a?(Hash) && spec.key?('arazzo')
+      spec = validate_spec_hash(parse_spec_file(filepath))
+      return emit_from_arazzo(filepath, original_ruby_filepath) if spec.key?('arazzo')
 
       ir = Cdd::IR.new
       if original_ruby_filepath && File.exist?(original_ruby_filepath)
@@ -87,9 +106,7 @@ module Cdd
         ir.openapi_spec = spec
       end
 
-      ruby_code = "# frozen_string_literal: true
-
-"
+      ruby_code = "# frozen_string_literal: true\n\n"
       ruby_code += Cdd::Openapi::Emitter.emit(ir)
       ruby_code += Cdd::Classes::Emitter.emit(ir)
       ruby_code += Cdd::Routes::Emitter.emit(ir)
@@ -106,15 +123,13 @@ module Cdd
     # @param original_ruby_filepath [String, nil] optional path to existing ruby file for syncing
     # @return [String] the Ruby source code
     def self.emit_from_arazzo(filepath, original_ruby_filepath = nil)
-      arazzo = JSON.parse(File.read(filepath))
+      arazzo = parse_spec_file(filepath)
       ir = Cdd::IR.from_arazzo_hash(arazzo)
       if original_ruby_filepath && File.exist?(original_ruby_filepath)
         existing_arazzo = JSON.parse(Cdd::Parser.parse_to_arazzo(original_ruby_filepath))
         ir.arazzo_spec = merge_arazzo_specs(existing_arazzo, arazzo)
       end
-      "# frozen_string_literal: true
-
-#{Cdd::Arazzo::Emitter.emit(ir)}"
+      "# frozen_string_literal: true\n\n#{Cdd::Arazzo::Emitter.emit(ir)}"
     end
 
     # Deep-merges two OpenAPI specifications, giving precedence to target_spec.
@@ -192,8 +207,35 @@ module Cdd
     end
   end
 
-  # Native MCP router for Generator SDK / Core
+  # Native MCP router and shared protocol builder for Generator SDK / Core
   class McpCoreRouter
+    # Default MCP protocol version string.
+    PROTOCOL_VERSION = '2024-11-05'
+
+    # Default MCP server capabilities map.
+    DEFAULT_CAPABILITIES = {
+      tools: { listChanged: true },
+      prompts: { listChanged: true },
+      logging: {},
+      resources: { subscribe: true, listChanged: true },
+      experimental: {},
+      roots: { listChanged: true },
+      sampling: {}
+    }.freeze
+
+    # Builds an MCP `initialize` result payload for the given server name and version.
+    #
+    # @param name [String] server name
+    # @param version [String] server version
+    # @return [Hash] MCP initialize response payload
+    def self.build_init_result(name = 'cdd-ruby-mcp', version = '1.0.0')
+      {
+        capabilities: DEFAULT_CAPABILITIES,
+        serverInfo: { name: name, version: version },
+        protocolVersion: PROTOCOL_VERSION
+      }
+    end
+
     # Gets available tools in the generator
     # @return [Array<Hash>] list of tools
     def get_tools
@@ -339,14 +381,7 @@ module Cdd
       {}
     end
 
-    # Completes a prompt argument
-    # @param _name [String] prompt name
-    # @param _arg_name [String] argument name
-    # @param _value [String] current value
-    # @return [Hash] completion response
-    def complete(_name, _arg_name, _value)
-      { completion: { values: [], total: 0, hasMore: false } }
-    end
+    alias complete complete_prompt
   end
 end
 

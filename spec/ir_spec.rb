@@ -95,4 +95,120 @@ class IrTest < Minitest::Test
     assert_nil cfg[:unknown_key]
     assert_equal({ subcommand: 'to_sdk', input: 'spec.json' }, cfg.to_h)
   end
+
+  def test_typed_paths_security_schemes_examples_and_errors
+    spec = {
+      'openapi' => '3.2.0',
+      'paths' => {
+        '/pets/{petId}' => {
+          'summary' => 'Pet endpoint',
+          'parameters' => [{ 'name' => 'petId', 'in' => 'path', 'required' => true, 'schema' => { 'type' => 'string' } }],
+          'get' => {
+            'operationId' => 'getPet',
+            'responses' => { '200' => { 'description' => 'Found' } }
+          },
+          'post' => {
+            'operationId' => 'updatePet',
+            'summary' => 'Update pet',
+            'tags' => ['pets'],
+            'parameters' => [{ 'name' => 'q', 'in' => 'query' }],
+            'requestBody' => {
+              'description' => 'Pet payload',
+              'required' => true,
+              'content' => {
+                'multipart/form-data' => {
+                  'schema' => { '$ref' => '#/components/schemas/Pet' },
+                  'encoding' => { 'avatar' => { 'contentType' => 'image/png', 'explode' => true } }
+                }
+              }
+            },
+            'responses' => {
+              '200' => {
+                'description' => 'Updated',
+                'headers' => { 'X-Rate' => { 'description' => 'Limit', 'schema' => { 'type' => 'integer' } } },
+                'content' => { 'application/json' => { 'schema' => { '$ref' => '#/components/schemas/Pet' } } },
+                'links' => { 'GetPet' => { 'operationId' => 'getPet', 'description' => 'Fetch pet' } }
+              }
+            }
+          }
+        }
+      },
+      'components' => {
+        'securitySchemes' => {
+          'oauth' => {
+            'type' => 'oauth2',
+            'flows' => { 'implicit' => { 'authorizationUrl' => 'https://auth', 'scopes' => {} } }
+          },
+          'api_key' => { 'type' => 'apiKey', 'name' => 'X-Key', 'in' => 'header' }
+        },
+        'examples' => {
+          'samplePet' => { 'summary' => 'Example for Pet', 'value' => { 'id' => 1 } },
+          'rawEx' => { 'value' => 'plain' }
+        }
+      }
+    }
+
+    ir = Cdd::IR.from_openapi_hash(spec)
+    assert_equal ['GET /pets/{petId}', 'POST /pets/{petId}'], ir.routes
+    assert_equal %w[samplePet rawEx], ir.mocks
+
+    paths = ir.typed_paths
+    assert_equal 1, paths.size
+    assert_equal '/pets/{petId}', paths[0].path
+    assert_equal 1, paths[0].parameters.size
+    assert_nil paths[0].operations['get'].request_body
+    post_op = paths[0].operations['post']
+    assert_equal 'updatePet', post_op.operation_id
+    assert_equal 'image/png', post_op.request_body.content['multipart/form-data'].encoding['avatar'].content_type
+    assert_equal 'Limit', post_op.responses['200'].headers['X-Rate'].description
+    assert_equal 'getPet', post_op.responses['200'].links['GetPet'].operation_id
+
+    schemes = ir.typed_security_schemes
+    assert_equal 2, schemes.size
+    assert_equal 'https://auth', schemes[0].flows.implicit['authorizationUrl']
+    assert_nil schemes[1].flows
+
+    examples = ir.typed_examples
+    assert_equal 2, examples.size
+    assert_equal 'Pet', examples[0].schema_ref
+    assert_nil examples[1].schema_ref
+
+    empty_ir = Cdd::IR.new
+    assert_empty empty_ir.typed_security_schemes
+    assert_empty empty_ir.typed_examples
+
+    assert_equal '1', Cdd::TokenScanner.sample_param_value({ 'schema' => { 'type' => 'integer' } })
+    assert_includes Cdd::TokenScanner.sample_param_value(
+      { 'in' => 'body', 'name' => 'body', 'schema' => { '$ref' => '#/Order' } }
+    ), 'petId'
+    assert_includes Cdd::TokenScanner.sample_param_value(
+      { 'in' => 'body', 'name' => 'body', 'schema' => { 'type' => 'array' } }
+    ), 'user1'
+    assert_includes Cdd::TokenScanner.sample_param_value(
+      { 'in' => 'body', 'name' => 'body', 'schema' => { '$ref' => '#/User' } }
+    ), 'user1'
+    assert_includes Cdd::TokenScanner.sample_param_value(
+      { 'in' => 'body', 'name' => 'body', 'schema' => { '$ref' => '#/Pet' } }
+    ), 'doggie'
+    assert_equal "'available'", Cdd::TokenScanner.sample_param_value({ 'in' => 'query', 'name' => 'status' })
+    assert_equal "'test_tag'", Cdd::TokenScanner.sample_param_value({ 'in' => 'query', 'name' => 'tag' })
+
+    assert_raises(Cdd::EmitError) { Cdd::Emitter.validate_spec_hash([1, 2, 3]) }
+    assert_raises(Cdd::ParseError) { Cdd::Arazzo::Parser.parse_json_tag('{bad') }
+
+    require 'tempfile'
+    bad_file = Tempfile.new(['bad', '.json'])
+    bad_file.write('{not valid json')
+    bad_file.close
+    assert_raises(Cdd::ParseError) { Cdd::Emitter.parse_spec_file(bad_file.path) }
+    bad_file.unlink
+
+    sdk_ir = Cdd::IR.new
+    sdk_code = "class << self\nend\nclass ClientSdk\ndef ( ) # a\nend\ndef no_str\nreq_path = 123\nend\ndef foo\nreq_path = '/custom'\nend\ndef bar\nend\nend\n"
+    Cdd::ClientSdk::Parser.parse(Ripper.lex(sdk_code), sdk_ir)
+    assert_equal 'foo', sdk_ir.openapi_spec.dig('paths', '/custom', 'get', 'operationId')
+
+    rbs_path = File.expand_path('../sig/cdd.rbs', __dir__)
+    refute_includes File.read(rbs_path), 'untyped'
+  end
 end

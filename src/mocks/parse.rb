@@ -55,6 +55,7 @@ module Cdd
       # @param ir [Cdd::IR] Intermediate Representation
       # @return [void]
       def self.register_external_example(schema, ex_name, ext_url, ir)
+        ir.mocks |= [ex_name]
         ir.openapi_spec['components'] ||= {}
         ir.openapi_spec['components']['examples'] ||= {}
         ir.openapi_spec['components']['examples'][ex_name] = {
@@ -71,6 +72,7 @@ module Cdd
       def self.flush_mock(state, ir)
         state[:in_mock] = false
         parsed = JSON.parse(state[:body])
+        ir.mocks |= [state[:example_name]]
         ir.openapi_spec['components'] ||= {}
         ir.openapi_spec['components']['examples'] ||= {}
         ir.openapi_spec['components']['examples'][state[:example_name]] = {

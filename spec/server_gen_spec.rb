@@ -238,5 +238,9 @@ class ServerGenTest < Minitest::Test
       assert File.exist?(File.join(out_dir, 'server.rb'))
     end
     file.unlink
+
+    schemas = { 'Category' => {}, 'Address' => {}, 'Pet' => {} }
+    assert_equal 'Category', Cdd::ServerGen::Emitter.resolve_route_model_name('/api/v1/categories/{id}', schemas)
+    assert_equal 'Address', Cdd::ServerGen::Emitter.resolve_route_model_name('/v2/addresses', schemas)
   end
 end

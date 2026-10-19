@@ -36,6 +36,26 @@ module Cdd
       [:listen, '-l', false]
     ].freeze
 
+    # Alias lookup keys for each configuration attribute.
+    ATTRIBUTE_ALIASES = {
+      subcommand: %i[subcommand],
+      input: %i[input i],
+      output: %i[output o],
+      input_dir: %i[input_dir d],
+      arazzo: %i[arazzo],
+      no_imports: %i[no_imports],
+      no_wrapping: %i[no_wrapping],
+      no_github_actions: %i[no_github_actions],
+      no_installable_package: %i[no_installable_package],
+      tests: %i[tests],
+      mcp: %i[mcp],
+      truth: %i[truth],
+      with_ephemeral: %i[with_ephemeral],
+      with_seed: %i[with_seed],
+      port: %i[port],
+      listen: %i[listen]
+    }.freeze
+
     # Configuration attributes for CLI and SDK invocation.
     # @return [Object, nil]
     attr_accessor :subcommand, :input, :output, :input_dir, :arazzo, :no_imports, :no_wrapping,
@@ -47,22 +67,11 @@ module Cdd
     # @param opts [Hash{Symbol, String => Object}] configuration options
     # @return [Cdd::Config]
     def initialize(opts = {})
-      @subcommand = opts[:subcommand] || opts['subcommand']
-      @input = opts[:input] || opts['input'] || opts[:i] || opts['i']
-      @output = opts[:output] || opts['output'] || opts[:o] || opts['o']
-      @input_dir = opts[:input_dir] || opts['input_dir'] || opts[:d] || opts['d']
-      @arazzo = opts[:arazzo] || opts['arazzo']
-      @no_imports = opts.fetch(:no_imports, opts['no_imports'])
-      @no_wrapping = opts.fetch(:no_wrapping, opts['no_wrapping'])
-      @no_github_actions = opts.fetch(:no_github_actions, opts['no_github_actions'])
-      @no_installable_package = opts.fetch(:no_installable_package, opts['no_installable_package'])
-      @tests = opts.fetch(:tests, opts['tests'])
-      @mcp = opts.fetch(:mcp, opts['mcp'])
-      @truth = opts[:truth] || opts['truth']
-      @with_ephemeral = opts.fetch(:with_ephemeral, opts['with_ephemeral'])
-      @with_seed = opts.fetch(:with_seed, opts['with_seed'])
-      @port = opts[:port] || opts['port']
-      @listen = opts[:listen] || opts['listen']
+      normalized = opts.transform_keys(&:to_sym)
+      ATTRIBUTE_ALIASES.each do |attr, aliases|
+        key = aliases.find { |k| normalized.key?(k) }
+        instance_variable_set(:"@#{attr}", key ? normalized[key] : nil)
+      end
     end
 
     # Reads a configuration attribute by key symbol or string for Hash-like compatibility.
@@ -176,6 +185,264 @@ module Cdd
       }
     ].freeze
 
+    # Common CLI options shared by `from_openapi` targets.
+    FROM_OPENAPI_OPTIONS_TEXT = <<~OPTS.chomp
+      Options:
+        -i, --input <spec>             Path to the OpenAPI specification file
+        -o, --output <dir>             Destination path for generation (default: current directory)
+        -d, --input-dir <dir>          Directory of input specifications
+        --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
+        --no-github-actions            Disable GitHub Actions workflow generation
+        --no-installable-package       Disable installable package generation
+        --tests                        Generate Minitest test scaffolding
+        --mcp                          Include Model Context Protocol support
+        --with-ephemeral               Enable ephemeral code generation
+        --with-seed                    Include seed data in generation
+        -h, --help                     Show this help message
+    OPTS
+
+    # Common CLI options shared by `from_arazzo` targets.
+    FROM_ARAZZO_OPTIONS_TEXT = <<~OPTS.chomp
+      Options:
+        -i, --input <spec>             Path to the Arazzo specification file
+        -o, --output <dir>             Destination path for generation (default: current directory)
+        -h, --help                     Show this help message
+    OPTS
+
+    # Help text templates keyed by subcommand/target identifier.
+    HELP_TEXTS = {
+      main: <<~HELP,
+        cdd-ruby CLI
+        Usage:
+          cdd-ruby [subcommand] [options]
+
+        Subcommands:
+          from_openapi                   Generate code from an OpenAPI specification.
+          to_openapi                     Generate an OpenAPI specification from source code.
+          from_arazzo                    Generate code from an Arazzo 1.1.0 specification.
+          to_arazzo                      Generate an Arazzo 1.1.0 specification from source code.
+          to_docs_json                   Generate JSON documentation with code snippets for an OpenAPI specification.
+          serve_json_rpc                 Expose CLI interface as a JSON-RPC server.
+          mcp                            Run the generator as an MCP server over stdio.
+          sync                           Synchronize an OpenAPI specification with source code.
+
+        Options:
+          -h, --help                     Show this help message
+          -v, --version                  Show version information
+          -p, --port <port>              Port for the JSON-RPC server
+          -l, --listen <address>         Host/IP to listen on for the JSON-RPC server
+
+        Examples:
+          cdd-ruby serve_json_rpc [--wasi] [-p <port>] [-l <listen>]
+          cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
+          cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
+          cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>]
+          cdd-ruby to_openapi -i <path/to/code> [-o <spec.json>]
+          cdd-ruby from_arazzo to_sdk -i <arazzo.json> [-o <target_directory>]
+          cdd-ruby to_arazzo -i <path/to/code> [-o <arazzo.json>]
+          cdd-ruby to_docs_json [--no-imports] [--no-wrapping] -i <spec.json> [-o <docs.json>]
+      HELP
+      from_openapi: <<~HELP,
+        cdd-ruby from_openapi - Generate code from an OpenAPI specification.
+        Usage:
+          cdd-ruby from_openapi [target] [options]
+
+        Targets:
+          to_sdk_cli    Generate a client SDK and a corresponding CLI.
+          to_sdk        Generate a client SDK.
+          to_server     Generate server boilerplate, models, and routing logic.
+
+        #{FROM_OPENAPI_OPTIONS_TEXT}
+      HELP
+      from_openapi_to_sdk_cli: <<~HELP,
+        cdd-ruby from_openapi to_sdk_cli - Generate a client SDK and a corresponding CLI.
+        Usage:
+          cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [options]
+
+        #{FROM_OPENAPI_OPTIONS_TEXT}
+      HELP
+      from_openapi_to_sdk: <<~HELP,
+        cdd-ruby from_openapi to_sdk - Generate a client SDK.
+        Usage:
+          cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [options]
+
+        #{FROM_OPENAPI_OPTIONS_TEXT}
+      HELP
+      from_openapi_to_server: <<~HELP,
+        cdd-ruby from_openapi to_server - Generate server boilerplate, models, and routing logic.
+        Usage:
+          cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>] [options]
+
+        #{FROM_OPENAPI_OPTIONS_TEXT}
+      HELP
+      to_openapi: <<~HELP,
+        cdd-ruby to_openapi - Generate an OpenAPI specification from source code.
+        Usage:
+          cdd-ruby to_openapi -i <path/to/code> [-o <spec.json>]
+
+        Options:
+          -i, --input <path>             Path to the source code directory or file to parse
+          -o, --output <path>            Destination path for the generated OpenAPI spec (default: spec.json)
+          -h, --help                     Show this help message
+      HELP
+      from_arazzo: <<~HELP,
+        cdd-ruby from_arazzo - Generate code from an Arazzo 1.1.0 specification.
+        Usage:
+          cdd-ruby from_arazzo [target] [options]
+
+        Targets:
+          to_sdk_cli    Generate a client SDK CLI workflow runner.
+          to_sdk        Generate a client SDK with workflow orchestration.
+          to_server     Generate server workflow engine and E2E test suites.
+
+        #{FROM_ARAZZO_OPTIONS_TEXT}
+      HELP
+      from_arazzo_to_sdk_cli: <<~HELP,
+        cdd-ruby from_arazzo to_sdk_cli - Generate a client SDK CLI workflow runner.
+        Usage:
+          cdd-ruby from_arazzo to_sdk_cli -i <arazzo.json> [-o <target_directory>] [options]
+
+        #{FROM_ARAZZO_OPTIONS_TEXT}
+      HELP
+      from_arazzo_to_sdk: <<~HELP,
+        cdd-ruby from_arazzo to_sdk - Generate a client SDK with workflow orchestration.
+        Usage:
+          cdd-ruby from_arazzo to_sdk -i <arazzo.json> [-o <target_directory>] [options]
+
+        #{FROM_ARAZZO_OPTIONS_TEXT}
+      HELP
+      from_arazzo_to_server: <<~HELP,
+        cdd-ruby from_arazzo to_server - Generate server workflow engine and E2E test suites.
+        Usage:
+          cdd-ruby from_arazzo to_server -i <arazzo.json> [-o <target_directory>] [options]
+
+        #{FROM_ARAZZO_OPTIONS_TEXT}
+      HELP
+      to_arazzo: <<~HELP,
+        cdd-ruby to_arazzo - Generate an Arazzo 1.1.0 specification from source code.
+        Usage:
+          cdd-ruby to_arazzo -i <path/to/code> [-o <arazzo.json>]
+
+        Options:
+          -i, --input <path>             Path to the source code directory or file to parse
+          -o, --output <path>            Destination path for the generated Arazzo spec (default: arazzo.json)
+          -h, --help                     Show this help message
+      HELP
+      to_docs_json: <<~HELP,
+        cdd-ruby to_docs_json - Generate JSON documentation with code snippets for an OpenAPI specification.
+        Usage:
+          cdd-ruby to_docs_json [options] -i <spec.json> [-o <docs.json>]
+
+        Options:
+          -i, --input <spec>             Path to the OpenAPI specification file
+          -o, --output <path>            Destination path for the generated JSON docs (default: docs.json)
+          --no-imports                   Disable import statements in the generated documentation
+          --no-wrapping                  Disable line wrapping in the generated documentation
+          -h, --help                     Show this help message
+      HELP
+      serve_json_rpc: <<~HELP,
+        cdd-ruby serve_json_rpc - Expose CLI interface as a JSON-RPC server.
+        Usage:
+          cdd-ruby serve_json_rpc [options]
+
+        Options:
+          -p, --port <port>              Port to listen on (default: 8080)
+          -l, --listen <address>         Address to bind to (default: 127.0.0.2)
+          -h, --help                     Show this help message
+      HELP
+      mcp: <<~HELP,
+        cdd-ruby mcp - Run the generator as an MCP server over stdio.
+        Usage:
+          cdd-ruby mcp [options]
+
+        Options:
+          -h, --help                     Show this help message
+      HELP
+      sync: <<~HELP
+        cdd-ruby sync - Synchronize an OpenAPI specification with source code.
+        Usage:
+          cdd-ruby sync [options] -i <filepath> --truth <class|activerecord|function>
+
+        Options:
+          -i, --input <filepath>         Path to the input file
+          --truth <type>                 The source of truth for the synchronization (class, activerecord, function)
+          -h, --help                     Show this help message
+      HELP
+    }.freeze
+
+    # Help printer methods mixed into `Cdd::CLI` singleton class.
+    module HelpPrinter
+      # Prints the CLI help block registered under `key`.
+      #
+      # @param key [Symbol] help entry key in `HELP_TEXTS`
+      # @return [void]
+      def print_help_for(key)
+        puts HELP_TEXTS.fetch(key)
+      end
+
+      # Prints the top-level CLI help message.
+      # @return [void]
+      def print_help = print_help_for(:main)
+
+      # Prints help for `from_openapi`.
+      # @return [void]
+      def print_from_openapi_help = print_help_for(:from_openapi)
+
+      # Prints help for `from_openapi to_sdk_cli`.
+      # @return [void]
+      def print_from_openapi_to_sdk_cli_help = print_help_for(:from_openapi_to_sdk_cli)
+
+      # Prints help for `from_openapi to_sdk`.
+      # @return [void]
+      def print_from_openapi_to_sdk_help = print_help_for(:from_openapi_to_sdk)
+
+      # Prints help for `from_openapi to_server`.
+      # @return [void]
+      def print_from_openapi_to_server_help = print_help_for(:from_openapi_to_server)
+
+      # Prints help for `to_openapi`.
+      # @return [void]
+      def print_to_openapi_help = print_help_for(:to_openapi)
+
+      # Prints help for `from_arazzo`.
+      # @return [void]
+      def print_from_arazzo_help = print_help_for(:from_arazzo)
+
+      # Prints help for `from_arazzo to_sdk_cli`.
+      # @return [void]
+      def print_from_arazzo_to_sdk_cli_help = print_help_for(:from_arazzo_to_sdk_cli)
+
+      # Prints help for `from_arazzo to_sdk`.
+      # @return [void]
+      def print_from_arazzo_to_sdk_help = print_help_for(:from_arazzo_to_sdk)
+
+      # Prints help for `from_arazzo to_server`.
+      # @return [void]
+      def print_from_arazzo_to_server_help = print_help_for(:from_arazzo_to_server)
+
+      # Prints help for `to_arazzo`.
+      # @return [void]
+      def print_to_arazzo_help = print_help_for(:to_arazzo)
+
+      # Prints help for `to_docs_json`.
+      # @return [void]
+      def print_to_docs_json_help = print_help_for(:to_docs_json)
+
+      # Prints help for `serve_json_rpc`.
+      # @return [void]
+      def print_serve_json_rpc_help = print_help_for(:serve_json_rpc)
+
+      # Prints help for `mcp`.
+      # @return [void]
+      def print_mcp_help = print_help_for(:mcp)
+
+      # Prints help for `sync`.
+      # @return [void]
+      def print_sync_help = print_help_for(:sync)
+    end
+
+    extend HelpPrinter
+
     class << self
       # Helper to get arguments from options or environment variables.
       #
@@ -186,309 +453,6 @@ module Cdd
       # @return [Object, nil] the value
       def get_arg(options, key, env_key, default = nil)
         options.key?(key) ? options[key] : (ENV[env_key] || default)
-      end
-
-      # Prints the top-level CLI help message.
-      #
-      # @return [void]
-      def print_help
-        puts <<~HELP
-          cdd-ruby CLI
-          Usage:
-            cdd-ruby [subcommand] [options]
-
-          Subcommands:
-            from_openapi                   Generate code from an OpenAPI specification.
-            to_openapi                     Generate an OpenAPI specification from source code.
-            from_arazzo                    Generate code from an Arazzo 1.1.0 specification.
-            to_arazzo                      Generate an Arazzo 1.1.0 specification from source code.
-            to_docs_json                   Generate JSON documentation with code snippets for an OpenAPI specification.
-            serve_json_rpc                 Expose CLI interface as a JSON-RPC server.
-            mcp                            Run the generator as an MCP server over stdio.
-            sync                           Synchronize an OpenAPI specification with source code.
-
-          Options:
-            -h, --help                     Show this help message
-            -v, --version                  Show version information
-            -p, --port <port>              Port for the JSON-RPC server
-            -l, --listen <address>         Host/IP to listen on for the JSON-RPC server
-
-          Examples:
-            cdd-ruby serve_json_rpc [--wasi] [-p <port>] [-l <listen>]
-            cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
-            cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [--no-github-actions] [--no-installable-package] [--tests] [--mcp]
-            cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>]
-            cdd-ruby to_openapi -i <path/to/code> [-o <spec.json>]
-            cdd-ruby from_arazzo to_sdk -i <arazzo.json> [-o <target_directory>]
-            cdd-ruby to_arazzo -i <path/to/code> [-o <arazzo.json>]
-            cdd-ruby to_docs_json [--no-imports] [--no-wrapping] -i <spec.json> [-o <docs.json>]
-        HELP
-      end
-
-      # Prints help for `from_openapi`.
-      #
-      # @return [void]
-      def print_from_openapi_help
-        puts <<~HELP
-          cdd-ruby from_openapi - Generate code from an OpenAPI specification.
-          Usage:
-            cdd-ruby from_openapi [target] [options]
-
-          Targets:
-            to_sdk_cli    Generate a client SDK and a corresponding CLI.
-            to_sdk        Generate a client SDK.
-            to_server     Generate server boilerplate, models, and routing logic.
-
-          Options:
-            -i, --input <spec>             Path to the OpenAPI specification file
-            -o, --output <dir>             Destination path for generation (default: current directory)
-            -d, --input-dir <dir>          Directory of input specifications
-            --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
-            --no-github-actions            Disable GitHub Actions workflow generation
-            --no-installable-package       Disable installable package generation
-            --tests                        Generate Minitest test scaffolding
-            --mcp                          Include Model Context Protocol support
-            --with-ephemeral               Enable ephemeral code generation
-            --with-seed                    Include seed data in generation
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `from_openapi to_sdk_cli`.
-      #
-      # @return [void]
-      def print_from_openapi_to_sdk_cli_help
-        puts <<~HELP
-          cdd-ruby from_openapi to_sdk_cli - Generate a client SDK and a corresponding CLI.
-          Usage:
-            cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [options]
-
-          Options:
-            -i, --input <spec>             Path to the OpenAPI specification file
-            -o, --output <dir>             Destination path for generation (default: current directory)
-            -d, --input-dir <dir>          Directory of input specifications
-            --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
-            --no-github-actions            Disable GitHub Actions workflow generation
-            --no-installable-package       Disable installable package generation
-            --tests                        Generate Minitest test scaffolding
-            --mcp                          Include Model Context Protocol support
-            --with-ephemeral               Enable ephemeral code generation
-            --with-seed                    Include seed data in generation
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `from_openapi to_sdk`.
-      #
-      # @return [void]
-      def print_from_openapi_to_sdk_help
-        puts <<~HELP
-          cdd-ruby from_openapi to_sdk - Generate a client SDK.
-          Usage:
-            cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [options]
-
-          Options:
-            -i, --input <spec>             Path to the OpenAPI specification file
-            -o, --output <dir>             Destination path for generation (default: current directory)
-            -d, --input-dir <dir>          Directory of input specifications
-            --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
-            --no-github-actions            Disable GitHub Actions workflow generation
-            --no-installable-package       Disable installable package generation
-            --tests                        Generate Minitest test scaffolding
-            --mcp                          Include Model Context Protocol support
-            --with-ephemeral               Enable ephemeral code generation
-            --with-seed                    Include seed data in generation
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `from_openapi to_server`.
-      #
-      # @return [void]
-      def print_from_openapi_to_server_help
-        puts <<~HELP
-          cdd-ruby from_openapi to_server - Generate server boilerplate, models, and routing logic.
-          Usage:
-            cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>] [options]
-
-          Options:
-            -i, --input <spec>             Path to the OpenAPI specification file
-            -o, --output <dir>             Destination path for generation (default: current directory)
-            -d, --input-dir <dir>          Directory of input specifications
-            --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
-            --no-github-actions            Disable GitHub Actions workflow generation
-            --no-installable-package       Disable installable package generation
-            --tests                        Generate Minitest test scaffolding
-            --mcp                          Include Model Context Protocol support
-            --with-ephemeral               Enable ephemeral code generation
-            --with-seed                    Include seed data in generation
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `to_openapi`.
-      #
-      # @return [void]
-      def print_to_openapi_help
-        puts <<~HELP
-          cdd-ruby to_openapi - Generate an OpenAPI specification from source code.
-          Usage:
-            cdd-ruby to_openapi -i <path/to/code> [-o <spec.json>]
-
-          Options:
-            -i, --input <path>             Path to the source code directory or file to parse
-            -o, --output <path>            Destination path for the generated OpenAPI spec (default: spec.json)
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `from_arazzo`.
-      #
-      # @return [void]
-      def print_from_arazzo_help
-        puts <<~HELP
-          cdd-ruby from_arazzo - Generate code from an Arazzo 1.1.0 specification.
-          Usage:
-            cdd-ruby from_arazzo [target] [options]
-
-          Targets:
-            to_sdk_cli    Generate a client SDK CLI workflow runner.
-            to_sdk        Generate a client SDK with workflow orchestration.
-            to_server     Generate server workflow engine and E2E test suites.
-
-          Options:
-            -i, --input <spec>             Path to the Arazzo specification file
-            -o, --output <dir>             Destination path for generation (default: current directory)
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `from_arazzo to_sdk_cli`.
-      #
-      # @return [void]
-      def print_from_arazzo_to_sdk_cli_help
-        puts <<~HELP
-          cdd-ruby from_arazzo to_sdk_cli - Generate a client SDK CLI workflow runner.
-          Usage:
-            cdd-ruby from_arazzo to_sdk_cli -i <arazzo.json> [-o <target_directory>] [options]
-
-          Options:
-            -i, --input <spec>             Path to the Arazzo specification file
-            -o, --output <dir>             Destination path for generation (default: current directory)
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `from_arazzo to_sdk`.
-      #
-      # @return [void]
-      def print_from_arazzo_to_sdk_help
-        puts <<~HELP
-          cdd-ruby from_arazzo to_sdk - Generate a client SDK with workflow orchestration.
-          Usage:
-            cdd-ruby from_arazzo to_sdk -i <arazzo.json> [-o <target_directory>] [options]
-
-          Options:
-            -i, --input <spec>             Path to the Arazzo specification file
-            -o, --output <dir>             Destination path for generation (default: current directory)
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `from_arazzo to_server`.
-      #
-      # @return [void]
-      def print_from_arazzo_to_server_help
-        puts <<~HELP
-          cdd-ruby from_arazzo to_server - Generate server workflow engine and E2E test suites.
-          Usage:
-            cdd-ruby from_arazzo to_server -i <arazzo.json> [-o <target_directory>] [options]
-
-          Options:
-            -i, --input <spec>             Path to the Arazzo specification file
-            -o, --output <dir>             Destination path for generation (default: current directory)
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `to_arazzo`.
-      #
-      # @return [void]
-      def print_to_arazzo_help
-        puts <<~HELP
-          cdd-ruby to_arazzo - Generate an Arazzo 1.1.0 specification from source code.
-          Usage:
-            cdd-ruby to_arazzo -i <path/to/code> [-o <arazzo.json>]
-
-          Options:
-            -i, --input <path>             Path to the source code directory or file to parse
-            -o, --output <path>            Destination path for the generated Arazzo spec (default: arazzo.json)
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `to_docs_json`.
-      #
-      # @return [void]
-      def print_to_docs_json_help
-        puts <<~HELP
-          cdd-ruby to_docs_json - Generate JSON documentation with code snippets for an OpenAPI specification.
-          Usage:
-            cdd-ruby to_docs_json [options] -i <spec.json> [-o <docs.json>]
-
-          Options:
-            -i, --input <spec>             Path to the OpenAPI specification file
-            -o, --output <path>            Destination path for the generated JSON docs (default: docs.json)
-            --no-imports                   Disable import statements in the generated documentation
-            --no-wrapping                  Disable line wrapping in the generated documentation
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `serve_json_rpc`.
-      #
-      # @return [void]
-      def print_serve_json_rpc_help
-        puts <<~HELP
-          cdd-ruby serve_json_rpc - Expose CLI interface as a JSON-RPC server.
-          Usage:
-            cdd-ruby serve_json_rpc [options]
-
-          Options:
-            -p, --port <port>              Port to listen on (default: 8080)
-            -l, --listen <address>         Address to bind to (default: 127.0.0.2)
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `mcp`.
-      #
-      # @return [void]
-      def print_mcp_help
-        puts <<~HELP
-          cdd-ruby mcp - Run the generator as an MCP server over stdio.
-          Usage:
-            cdd-ruby mcp [options]
-
-          Options:
-            -h, --help                     Show this help message
-        HELP
-      end
-
-      # Prints help for `sync`.
-      #
-      # @return [void]
-      def print_sync_help
-        puts <<~HELP
-          cdd-ruby sync - Synchronize an OpenAPI specification with source code.
-          Usage:
-            cdd-ruby sync [options] -i <filepath> --truth <class|activerecord|function>
-
-          Options:
-            -i, --input <filepath>         Path to the input file
-            --truth <type>                 The source of truth for the synchronization (class, activerecord, function)
-            -h, --help                     Show this help message
-        HELP
       end
 
       # Generates code from an OpenAPI specification.
@@ -622,6 +586,9 @@ module Cdd
         options = {}
         parse_options(argv, options)
         dispatch_command(command, argv, options)
+      rescue Cdd::ValidationError => e
+        puts e.message unless e.message.empty?
+        1
       end
 
       # Dispatches the parsed `command` to its handler.
@@ -649,7 +616,7 @@ module Cdd
         else
           puts "Error: Unknown or incomplete command: #{command}"
           print_help
-          1
+          raise Cdd::ValidationError, ''
         end
       end
 
@@ -688,6 +655,7 @@ module Cdd
       # @param req [Hash] parsed JSON-RPC request
       # @return [Hash] JSON-RPC response envelope
       def dispatch_mcp_request(req)
+        router = Cdd::McpCoreRouter.new
         resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }
         case req['method']
         when 'initialize' then resp[:result] = mcp_init_result
@@ -695,14 +663,14 @@ module Cdd
         when 'tools/call' then resp = handle_mcp_tool_call(req, resp)
         when 'prompts/list', 'prompts/get', 'resources/list', 'resources/read'
           resp[:result] = handle_mcp_prompt_or_resource(req)
-        when 'resources/templates/list' then resp[:result] = { resourceTemplates: [] }
-        when 'roots/list' then resp[:result] = { roots: [] }
+        when 'resources/templates/list' then resp[:result] = { resourceTemplates: router.get_resource_templates }
+        when 'roots/list' then resp[:result] = { roots: router.get_roots }
         when 'resources/subscribe', 'resources/unsubscribe', 'logging/setLevel', 'ping'
           resp[:result] = {}
         when 'sampling/createMessage'
-          resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
+          resp[:result] = router.sample_message
         when 'completion/complete'
-          resp[:result] = { completion: { values: [], total: 0, hasMore: false } }
+          resp[:result] = router.complete_prompt(nil, nil, nil)
         else
           resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32_601, message: 'Method not found' } }
         end
@@ -713,19 +681,7 @@ module Cdd
       #
       # @return [Hash] MCP capabilities and serverInfo
       def mcp_init_result
-        {
-          capabilities: {
-            tools: { listChanged: true },
-            prompts: { listChanged: true },
-            logging: {},
-            resources: { subscribe: true, listChanged: true },
-            experimental: {},
-            roots: { listChanged: true },
-            sampling: {}
-          },
-          serverInfo: { name: 'cdd-ruby-mcp', version: '1.0.0' },
-          protocolVersion: '2024-11-05'
-        }
+        Cdd::McpCoreRouter.build_init_result('cdd-ruby-mcp', '1.0.0')
       end
 
       # Handles MCP prompt and resource list/read methods.
@@ -819,13 +775,14 @@ module Cdd
       #
       # @param options [Hash] parsed CLI options
       # @return [Integer] exit code
+      # @raise [Cdd::ValidationError] when `-i` or `--truth` is missing
       def handle_sync_command(options)
         input = get_arg(options, :i, 'CDD_INPUT')
         truth = get_arg(options, :truth, 'CDD_TRUTH')
         if input.nil? || truth.nil?
-          puts 'Error: Missing -i <filepath> or --truth <class|activerecord|function>'
-          return 1
+          raise Cdd::ValidationError, 'Error: Missing -i <filepath> or --truth <class|activerecord|function>'
         end
+
         require_relative 'sync'
         Cdd::Sync.sync(input, truth)
         puts 'Synchronization complete.'
@@ -849,13 +806,12 @@ module Cdd
       #
       # @param options [Hash] parsed CLI options
       # @return [Integer] exit code
+      # @raise [Cdd::ValidationError] when `-i` is missing
       def handle_to_openapi_command(options)
         file = get_arg(options, :i, 'CDD_INPUT')
         out = get_arg(options, :o, 'CDD_OUTPUT', 'spec.json')
-        if file.nil?
-          puts 'Error: Missing -i <filepath> or --input <filepath>'
-          return 1
-        end
+        raise Cdd::ValidationError, 'Error: Missing -i <filepath> or --input <filepath>' if file.nil?
+
         result = Cdd::Parser.parse(resolve_target_ruby_files(file))
         write_or_print_output(out, result)
         0
@@ -865,13 +821,12 @@ module Cdd
       #
       # @param options [Hash] parsed CLI options
       # @return [Integer] exit code
+      # @raise [Cdd::ValidationError] when `-i` is missing
       def handle_to_arazzo_command(options)
         file = get_arg(options, :i, 'CDD_INPUT')
         out = get_arg(options, :o, 'CDD_OUTPUT', 'arazzo.json')
-        if file.nil?
-          puts 'Error: Missing -i <filepath> or --input <filepath>'
-          return 1
-        end
+        raise Cdd::ValidationError, 'Error: Missing -i <filepath> or --input <filepath>' if file.nil?
+
         result = Cdd::Parser.parse_to_arazzo(resolve_target_ruby_files(file))
         write_or_print_output(out, result)
         0
@@ -881,15 +836,14 @@ module Cdd
       #
       # @param options [Hash] parsed CLI options
       # @return [Integer] exit code
+      # @raise [Cdd::ValidationError] when `-i` is missing
       def handle_to_docs_json_command(options)
         input = get_arg(options, :i, 'CDD_INPUT')
         out = get_arg(options, :o, 'CDD_OUTPUT', 'docs.json')
         no_imports = get_arg(options, :no_imports, 'CDD_NO_IMPORTS', false)
         no_wrapping = get_arg(options, :no_wrapping, 'CDD_NO_WRAPPING', false)
-        if input.nil?
-          puts 'Error: Missing -i <filepath>'
-          return 1
-        end
+        raise Cdd::ValidationError, 'Error: Missing -i <filepath>' if input.nil?
+
         result = Cdd::DocsJson::Emitter.emit(input, no_imports: no_imports, no_wrapping: no_wrapping)
         write_or_print_output(out, result)
         0
@@ -924,13 +878,14 @@ module Cdd
       # @param options [Hash] parsed CLI options
       # @param parent_cmd [String] parent CLI command name
       # @return [Integer] exit code
+      # @raise [Cdd::ValidationError] when `-i` / `-d` is missing or `subcommand` is unknown
       def handle_from_openapi_command(subcommand, options, parent_cmd = 'from_openapi')
         input = get_arg(options, :i, 'CDD_INPUT')
         input_dir = get_arg(options, :input_dir, 'CDD_INPUT_DIR')
         unless input || input_dir
-          puts 'Error: Missing -i <filepath> or -d <dir> or --input-dir <dir>'
-          return 1
+          raise Cdd::ValidationError, 'Error: Missing -i <filepath> or -d <dir> or --input-dir <dir>'
         end
+
         emitter_options = {
           input: input,
           input_dir: input_dir,
@@ -948,8 +903,7 @@ module Cdd
         when 'to_sdk' then puts Cdd::Emitter.emit_sdk(emitter_options)
         when 'to_server' then puts Cdd::Emitter.emit_server(emitter_options)
         else
-          puts "Unknown #{parent_cmd} subcommand: #{subcommand}"
-          return 1
+          raise Cdd::ValidationError, "Unknown #{parent_cmd} subcommand: #{subcommand}"
         end
         0
       end

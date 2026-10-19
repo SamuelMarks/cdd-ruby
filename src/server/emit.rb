@@ -11,8 +11,287 @@ require_relative '../arazzo/emit'
 module Cdd
   # Server generation and parsing module.
   module ServerGen
+    # Route, webhook, MCP, and entrypoint generation helpers mixed into `ServerGen::Emitter`.
+    module RouteEmitter
+      # Emits `routes/webhook_routes.rb`.
+      #
+      # @param out_dir [String] server output directory
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @return [void]
+      def emit_webhook_routes_file(out_dir, openapi)
+        has_webhooks = openapi['webhooks'] && !openapi['webhooks'].empty?
+        has_callbacks = openapi.dig('components', 'callbacks') && !openapi['components']['callbacks'].empty?
+        wh_code = "# frozen_string_literal: true\n\nrequire 'sinatra'\nrequire 'json'\n" \
+                  "require 'net/http'\nrequire 'uri'\n\n"
+        if has_webhooks || has_callbacks
+          wh_code += <<~RUBY
+            # Administrative Webhook Trigger API
+            post '/_mock/trigger-webhook/:name' do
+              content_type :json
+              begin
+                req = JSON.parse(request.body.read)
+                target_url = req['target_url'] || params[:target_url]
+                halt 400, { error: 'Missing target_url' }.to_json unless target_url
+                uri = URI(target_url)
+                payload = { event: params[:name], data: 'mock_payload' }.to_json
+                http_req = Net::HTTP::Post.new(uri)
+                http_req['Content-Type'] = 'application/json'
+                http_req.body = payload
+                Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
+                  http.request(http_req)
+                end
+                { message: 'Webhook Dispatched' }.to_json
+              rescue StandardError => e
+                halt 500, { error: e.message }.to_json
+              end
+            end
+          RUBY
+        end
+        File.write(File.join(out_dir, 'routes', 'webhook_routes.rb'), wh_code)
+      end
+
+      # Emits domain route files (`routes/<model>_routes.rb`) for all OpenAPI paths.
+      #
+      # @param out_dir [String] server output directory
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @param schemas [Hash] OpenAPI schemas map
+      # @return [void]
+      def emit_domain_routes_files(out_dir, openapi, schemas)
+        domain_routes_map = {}
+        openapi['paths']&.each do |path, methods|
+          sinatra_path = path.gsub(/\{([^}]+)\}/, ':\1')
+          model_name = resolve_route_model_name(path, schemas)
+          file_key = model_name ? model_name.downcase : 'general'
+          domain_routes_map[file_key] ||= "# frozen_string_literal: true\n\nrequire 'sinatra'\nrequire 'json'\n\n"
+          methods.each do |method, details|
+            domain_routes_map[file_key] += build_domain_route_block(sinatra_path, method, details, model_name)
+          end
+        end
+        domain_routes_map.each do |key, code|
+          File.write(File.join(out_dir, 'routes', "#{key}_routes.rb"), code)
+        end
+      end
+
+      # Matches a route path segment to a known schema model name.
+      #
+      # @param path [String] OpenAPI route path
+      # @param schemas [Hash] OpenAPI schemas map
+      # @return [String, nil] matched model name or nil
+      def resolve_route_model_name(path, schemas)
+        possible_resources = path.split('/').reject do |p|
+          p.empty? || p.include?('{') || %w[api v1 v2 v3 v4].include?(p.downcase)
+        end
+        model_hint = possible_resources.first.to_s.downcase
+        candidates = [
+          model_hint,
+          model_hint.sub(/ies\z/, 'y'),
+          model_hint.sub(/es\z/, ''),
+          model_hint.sub(/s\z/, '')
+        ].uniq
+        schemas.keys.find { |k| candidates.include?(k.downcase) }
+      end
+
+      # Builds a single Sinatra route handler block and its operation docstrings.
+      #
+      # @param sinatra_path [String] Sinatra route pattern
+      # @param method [String] HTTP verb
+      # @param details [Hash] OpenAPI operation details
+      # @param model_name [String, nil] associated model name if any
+      # @return [String] Sinatra route block code
+      def build_domain_route_block(sinatra_path, method, details, model_name)
+        r_code, path_param = build_route_header_comments(method, details)
+        r_code += "#{method.downcase} '#{sinatra_path}' do\n  content_type :json\n"
+        r_code += if model_name
+                    build_dao_backed_route_body(method.downcase, model_name, path_param)
+                  else
+                    "  halt 501, { message: 'Not implemented' }.to_json\n"
+                  end
+        "#{r_code}end\n\n"
+      end
+
+      # Builds operation comment lines and extracts the first path parameter name.
+      #
+      # @param method [String] HTTP verb
+      # @param details [Hash] OpenAPI operation details
+      # @return [Array(String, String, nil)] `[comment_lines, first_path_param]`
+      def build_route_header_comments(method, details)
+        r_code = "# Operation: #{details['operationId'] || method.upcase}\n"
+        %w[summary description deprecated].each do |key|
+          r_code += "# #{key.capitalize}: #{details[key]}\n" if details[key]
+        end
+        path_param = nil
+        (details['parameters'] || []).each do |param|
+          req = param['required'] ? 'required' : 'optional'
+          r_code += "# Param [#{param['in']}]: #{param['name']} (#{req})\n"
+          path_param ||= param['name'] if param['in'] == 'path'
+        end
+        if details['requestBody']
+          r_code += "# Request Body: expected\n"
+          details['requestBody']['content']&.each_key { |mt| r_code += "# Content-Type: #{mt}\n" }
+        end
+        [r_code, path_param]
+      end
+
+      # Builds the DAO-backed `begin ... rescue ... end` block inside a domain route handler.
+      #
+      # @param verb [String] lowercase HTTP method
+      # @param model_name [String] schema model name
+      # @param path_param [String, nil] primary path parameter name
+      # @return [String] DAO dispatch code
+      def build_dao_backed_route_body(verb, model_name, path_param)
+        out = "  begin\n    dao = Dao::Factory.#{model_name.downcase}_dao\n"
+        out += case verb
+               when 'get'
+                 if path_param
+                   "    record = dao.get(params[:#{path_param}])\n    " \
+                     "halt 404, { error: 'Not found' }.to_json unless record\n    record.to_json\n"
+                 else
+                   "    dao.list.to_json\n"
+                 end
+               when 'post'
+                 "    req_body = JSON.parse(request.body.read) rescue {}\n    dao.create(req_body).to_json\n"
+               when 'put', 'patch'
+                 if path_param
+                   "    req_body = JSON.parse(request.body.read) rescue {}\n    " \
+                     "dao.update(params[:#{path_param}], req_body).to_json\n"
+                 else
+                   "    { message: 'Not implemented (missing ID)' }.to_json\n"
+                 end
+               when 'delete'
+                 if path_param
+                   "    dao.delete(params[:#{path_param}])\n    status 204\n    ''\n"
+                 else
+                   "    { message: 'Not implemented (missing ID)' }.to_json\n"
+                 end
+               else
+                 "    { message: 'Not implemented' }.to_json\n"
+               end
+        "#{out}  rescue NotImplementedError\n    halt 501, { message: 'Not implemented' }.to_json\n  " \
+          "rescue StandardError => e\n    halt 400, { error: e.message }.to_json\n  end\n"
+      end
+
+      # Emits `routes/mcp_routes.rb` using `ClientSdkCli::Emitter.build_mcp_tools`.
+      #
+      # @param out_dir [String] server output directory
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @return [void]
+      def emit_mcp_routes_file(out_dir, openapi)
+        tools_json = Cdd::ClientSdkCli::Emitter.build_mcp_tools(openapi).to_json
+        mcp_code = <<~RUBY
+          # frozen_string_literal: true
+
+          require 'sinatra'
+          require 'json'
+
+          set :mcp_connections, []
+          get '/mcp/sse' do
+            content_type 'text/event-stream'
+            stream(:keep_open) do |out|
+              settings.mcp_connections << out
+              out << "event: endpoint\\ndata: /mcp/message\\n\\n"
+              out.callback { settings.mcp_connections.delete(out) }
+            end
+          end
+
+          post '/mcp/message' do
+            begin
+              req = JSON.parse(request.body.read)
+            rescue JSON::ParserError
+              status 202
+              resp = { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } }
+              settings.mcp_connections.each { |out| out << "event: message\\ndata: \#{resp.to_json}\\n\\n" }
+              return
+            end
+            if req['id'].nil?
+              return
+            end
+            resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }
+            if req['method'] == 'initialize'
+              resp[:result] = { capabilities: { tools: { listChanged: true }, logging: {}, experimental: {}, roots: { listChanged: true }, sampling: {} }, serverInfo: { name: 'mcp-server', version: '1.0.0' }, protocolVersion: '2024-11-05', instructions: '' }
+            elsif req['method'] == 'ping' || req['method'] == 'logging/setLevel'
+              resp[:result] = {}
+            elsif req['method'] == 'roots/list'
+              resp[:result] = { roots: [] }
+            elsif req['method'] == 'resources/templates/list'
+              resp[:result] = { resourceTemplates: [] }
+            elsif req['method'] == 'sampling/createMessage'
+              resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
+            elsif req['method'] == 'completion/complete'
+              resp[:result] = { completion: { values: [], total: 0, hasMore: false } }
+            elsif req['method'] == 'tools/list'
+              resp[:result] = { tools: #{tools_json} }
+            elsif req['method'] == 'tools/call'
+              resp[:result] = { content: [{ type: 'text', text: 'Calling tool ' + req.dig('params', 'name').to_s }] }
+            else
+              resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32601, message: 'Method not found' } }
+            end
+            settings.mcp_connections.each { |out| out << "event: message\\ndata: \#{resp.to_json}\\n\\n" }
+            status 202
+          end
+        RUBY
+        File.write(File.join(out_dir, 'routes', 'mcp_routes.rb'), mcp_code)
+      end
+
+      # Emits `server.rb` and returns its content.
+      #
+      # @param out_dir [String] server output directory
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @return [String] generated `server.rb` content
+      def emit_server_entrypoint(out_dir, openapi)
+        server_code = "# frozen_string_literal: true\n\n$cli_options ||= {}\n"
+        server_code += "require_relative 'config/cli_parser'\n"
+        server_code += "$cli_options = CliParser.parse(ARGV) if ARGV.any?\n\n"
+        server_code += "require 'sinatra'\nrequire 'json'\n\nset :server, :puma\n\n"
+        if openapi['info']
+          server_code += "# API Title: #{openapi['info']['title']}\n" if openapi['info']['title']
+          server_code += "# Version: #{openapi['info']['version']}\n" if openapi['info']['version']
+          if openapi['info']['description']
+            server_code += "# Description: #{openapi['info']['description'].gsub("\n", "\n# ")}\n"
+          end
+        end
+        server_code += "\nDir.glob(File.join(__dir__, 'models', '*.rb')).each { |f| require f }\n"
+        server_code += "Dir.glob(File.join(__dir__, 'daos', '*.rb')).each { |f| require f }\n"
+        server_code += "\nrequire_relative 'config/database' " \
+                       "if File.exist?(File.join(__dir__, 'config', 'database.rb'))\n"
+        server_code += "require_relative 'config/seeder' if File.exist?(File.join(__dir__, 'config', 'seeder.rb'))\n\n"
+        server_code += "if defined?(DatabaseConnection) && (ENV['DATABASE_URL'] || ENV['EPHEMERAL_DB'] == 'true')\n"
+        server_code += "  DatabaseConnection.connect!\n"
+        server_code += "  Seeder.seed_database if $cli_options[:seed] && defined?(Seeder)\nend\n\n"
+        server_code += "Dir.glob(File.join(__dir__, 'middlewares', '*.rb')).each { |f| require f }\n"
+        server_code += "Dir.glob(File.join(__dir__, 'workflows', '*.rb')).each { |f| require f }\n"
+        server_code += "Dir.glob(File.join(__dir__, 'routes', '*.rb')).each { |f| require f }\n"
+        File.write(File.join(out_dir, 'server.rb'), server_code)
+        server_code
+      end
+
+      # Emits `tests/*.rb` and `mocks/*.rb` into `options[:output]` when `options[:tests]` is set.
+      #
+      # @param options [Hash] server generation options
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @param arazzo [Hash, nil] optional parsed Arazzo specification
+      # @return [void]
+      def emit_server_tests_and_mocks(options, openapi, arazzo = nil)
+        ir = Cdd::IR.new(openapi, arazzo)
+        FileUtils.mkdir_p(File.join(options[:output], 'tests'))
+        test_files = Cdd::Tests::Emitter.emit_multiple(ir, options.merge(server: true))
+        test_files.each do |filename, t_code|
+          full_test_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire 'minitest/autorun'\n" \
+                           "require_relative '../server'\n\n#{t_code}"
+          File.write(File.join(options[:output], 'tests', filename), full_test_code)
+        end
+
+        FileUtils.mkdir_p(File.join(options[:output], 'mocks'))
+        mock_files = Cdd::Mocks::Emitter.emit_multiple(ir)
+        mock_files.each do |filename, m_code|
+          File.write(File.join(options[:output], 'mocks', filename), "# frozen_string_literal: true\n\n#{m_code}")
+        end
+      end
+    end
+
     # Emitter for generating a complete Sinatra server, DAOs, models, middlewares, workflows, and tests.
     class Emitter
+      extend RouteEmitter
+
       # Emits a complete Sinatra server application and optional test/mock suites from an OpenAPI or Arazzo spec.
       #
       # @param options [Hash] generation options (`:input`, `:input_dir`, `:output`, `:with_ephemeral`, `:arazzo`, etc.)
@@ -77,7 +356,7 @@ module Cdd
       # @param name [String] raw schema name
       # @return [String] PascalCase class name
       def self.classify_name(name)
-        name.to_s.sub(/\A[a-z]/, &:upcase)
+        Cdd::TokenScanner.classify_name(name)
       end
 
       # Emits `config/cli_parser.rb`.
@@ -438,11 +717,13 @@ module Cdd
               auth_header = request.env['HTTP_AUTHORIZATION'] || request.env['HTTP_API_KEY']
               halt 401, { error: 'Unauthorized' }.to_json unless auth_header
               token = auth_header.gsub('Bearer ', '')
-              begin
-                user = Dao::Factory.user_dao.list.find { |u| u.respond_to?(:password) && u.password == token }
-                halt 403, { error: 'Forbidden: Invalid Token' }.to_json unless user
+              users = begin
+                Dao::Factory.user_dao.list
               rescue StandardError
+                []
               end
+              user = users.find { |u| u.respond_to?(:password) && u.password == token }
+              halt 403, { error: 'Forbidden: Invalid Token' }.to_json unless user
           RUBY
         end
         "#{auth_code}  end\nend\n"
@@ -481,303 +762,44 @@ module Cdd
           require 'json'
 
           # Integrated Identity Provider (IdP) module
-          if $cli_options[:start_auth_server]
-            post '/auth/register' do
-              content_type :json
-              begin
-                req = JSON.parse(request.body.read)
+          post '/auth/register' do
+            halt 404 unless $cli_options[:start_auth_server]
+            content_type :json
+            begin
+              req = JSON.parse(request.body.read)
           #{reg_line}
-              rescue StandardError => e
-                halt 400, { error: e.message }.to_json
-              end
+            rescue StandardError => e
+              halt 400, { error: e.message }.to_json
             end
+          end
 
-            post '/auth/login' do
-              content_type :json
-              begin
-                req = JSON.parse(request.body.read)
+          post '/auth/login' do
+            halt 404 unless $cli_options[:start_auth_server]
+            content_type :json
+            begin
+              req = JSON.parse(request.body.read)
           #{login_line}
-                else
-                  halt 401, { error: 'Invalid Credentials' }.to_json
-                end
-              rescue StandardError => e
-                halt 400, { error: e.message }.to_json
+              else
+                halt 401, { error: 'Invalid Credentials' }.to_json
               end
+            rescue StandardError => e
+              halt 400, { error: e.message }.to_json
             end
+          end
 
-            post '/auth/refresh' do
-              content_type :json
-              { token: 'mock-token-123' }.to_json
-            end
+          post '/auth/refresh' do
+            halt 404 unless $cli_options[:start_auth_server]
+            content_type :json
+            { token: 'mock-token-123' }.to_json
+          end
 
-            post '/auth/logout' do
-              content_type :json
-              { message: 'Logged out' }.to_json
-            end
+          post '/auth/logout' do
+            halt 404 unless $cli_options[:start_auth_server]
+            content_type :json
+            { message: 'Logged out' }.to_json
           end
         RUBY
         File.write(File.join(out_dir, 'routes', 'auth_routes.rb'), auth_routes)
-      end
-
-      # Emits `routes/webhook_routes.rb`.
-      #
-      # @param out_dir [String] server output directory
-      # @param openapi [Hash] parsed OpenAPI specification
-      # @return [void]
-      def self.emit_webhook_routes_file(out_dir, openapi)
-        has_webhooks = openapi['webhooks'] && !openapi['webhooks'].empty?
-        has_callbacks = openapi.dig('components', 'callbacks') && !openapi['components']['callbacks'].empty?
-        wh_code = "# frozen_string_literal: true\n\nrequire 'sinatra'\nrequire 'json'\n" \
-                  "require 'net/http'\nrequire 'uri'\n\n"
-        if has_webhooks || has_callbacks
-          wh_code += <<~RUBY
-            # Administrative Webhook Trigger API
-            post '/_mock/trigger-webhook/:name' do
-              content_type :json
-              begin
-                req = JSON.parse(request.body.read)
-                target_url = req['target_url'] || params[:target_url]
-                halt 400, { error: 'Missing target_url' }.to_json unless target_url
-                uri = URI(target_url)
-                payload = { event: params[:name], data: 'mock_payload' }.to_json
-                http_req = Net::HTTP::Post.new(uri)
-                http_req['Content-Type'] = 'application/json'
-                http_req.body = payload
-                Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
-                  http.request(http_req)
-                end
-                { message: 'Webhook Dispatched' }.to_json
-              rescue StandardError => e
-                halt 500, { error: e.message }.to_json
-              end
-            end
-          RUBY
-        end
-        File.write(File.join(out_dir, 'routes', 'webhook_routes.rb'), wh_code)
-      end
-
-      # Emits domain route files (`routes/<model>_routes.rb`) for all OpenAPI paths.
-      #
-      # @param out_dir [String] server output directory
-      # @param openapi [Hash] parsed OpenAPI specification
-      # @param schemas [Hash] OpenAPI schemas map
-      # @return [void]
-      def self.emit_domain_routes_files(out_dir, openapi, schemas)
-        domain_routes_map = {}
-        openapi['paths']&.each do |path, methods|
-          sinatra_path = path.gsub(/\{([^}]+)\}/, ':\1')
-          model_name = resolve_route_model_name(path, schemas)
-          file_key = model_name ? model_name.downcase : 'general'
-          domain_routes_map[file_key] ||= "# frozen_string_literal: true\n\nrequire 'sinatra'\nrequire 'json'\n\n"
-          methods.each do |method, details|
-            domain_routes_map[file_key] += build_domain_route_block(sinatra_path, method, details, model_name)
-          end
-        end
-        domain_routes_map.each do |key, code|
-          File.write(File.join(out_dir, 'routes', "#{key}_routes.rb"), code)
-        end
-      end
-
-      # Matches a route path segment to a known schema model name.
-      #
-      # @param path [String] OpenAPI route path
-      # @param schemas [Hash] OpenAPI schemas map
-      # @return [String, nil] matched model name or nil
-      def self.resolve_route_model_name(path, schemas)
-        possible_resources = path.split('/').reject do |p|
-          p.empty? || p.include?('{') || %w[api v1 v2 v3 v4].include?(p.downcase)
-        end
-        model_hint = possible_resources.first.to_s
-        singular = model_hint.end_with?('s') ? model_hint[0...-1] : model_hint
-        schemas.keys.find { |k| k.downcase == singular.downcase || k.downcase == model_hint.downcase }
-      end
-
-      # Builds a single Sinatra route handler block and its operation docstrings.
-      #
-      # @param sinatra_path [String] Sinatra route pattern
-      # @param method [String] HTTP verb
-      # @param details [Hash] OpenAPI operation details
-      # @param model_name [String, nil] associated model name if any
-      # @return [String] Sinatra route block code
-      def self.build_domain_route_block(sinatra_path, method, details, model_name)
-        r_code = "# Operation: #{details['operationId'] || method.upcase}\n"
-        r_code += "# Summary: #{details['summary']}\n" if details['summary']
-        r_code += "# Description: #{details['description']}\n" if details['description']
-        r_code += "# Deprecated: true\n" if details['deprecated']
-
-        path_param = nil
-        details['parameters']&.each do |param|
-          req = param['required'] ? 'required' : 'optional'
-          r_code += "# Param [#{param['in']}]: #{param['name']} (#{req})\n"
-          path_param ||= param['name'] if param['in'] == 'path'
-        end
-        if details['requestBody']
-          r_code += "# Request Body: expected\n"
-          details['requestBody']['content']&.each_key { |mt| r_code += "# Content-Type: #{mt}\n" }
-        end
-
-        r_code += "#{method.downcase} '#{sinatra_path}' do\n  content_type :json\n"
-        r_code += if model_name
-                    build_dao_backed_route_body(method.downcase, model_name, path_param)
-                  else
-                    "  halt 501, { message: 'Not implemented' }.to_json\n"
-                  end
-        "#{r_code}end\n\n"
-      end
-
-      # Builds the DAO-backed `begin ... rescue ... end` block inside a domain route handler.
-      #
-      # @param verb [String] lowercase HTTP method
-      # @param model_name [String] schema model name
-      # @param path_param [String, nil] primary path parameter name
-      # @return [String] DAO dispatch code
-      def self.build_dao_backed_route_body(verb, model_name, path_param)
-        out = "  begin\n    dao = Dao::Factory.#{model_name.downcase}_dao\n"
-        out += case verb
-               when 'get'
-                 if path_param
-                   "    record = dao.get(params[:#{path_param}])\n    " \
-                     "halt 404, { error: 'Not found' }.to_json unless record\n    record.to_json\n"
-                 else
-                   "    dao.list.to_json\n"
-                 end
-               when 'post'
-                 "    req_body = JSON.parse(request.body.read) rescue {}\n    dao.create(req_body).to_json\n"
-               when 'put', 'patch'
-                 if path_param
-                   "    req_body = JSON.parse(request.body.read) rescue {}\n    " \
-                     "dao.update(params[:#{path_param}], req_body).to_json\n"
-                 else
-                   "    { message: 'Not implemented (missing ID)' }.to_json\n"
-                 end
-               when 'delete'
-                 if path_param
-                   "    dao.delete(params[:#{path_param}])\n    status 204\n    ''\n"
-                 else
-                   "    { message: 'Not implemented (missing ID)' }.to_json\n"
-                 end
-               else
-                 "    { message: 'Not implemented' }.to_json\n"
-               end
-        "#{out}  rescue NotImplementedError\n    halt 501, { message: 'Not implemented' }.to_json\n  " \
-          "rescue StandardError => e\n    halt 400, { error: e.message }.to_json\n  end\n"
-      end
-
-      # Emits `routes/mcp_routes.rb` using `ClientSdkCli::Emitter.build_mcp_tools`.
-      #
-      # @param out_dir [String] server output directory
-      # @param openapi [Hash] parsed OpenAPI specification
-      # @return [void]
-      def self.emit_mcp_routes_file(out_dir, openapi)
-        tools_json = Cdd::ClientSdkCli::Emitter.build_mcp_tools(openapi).to_json
-        mcp_code = <<~RUBY
-          # frozen_string_literal: true
-
-          require 'sinatra'
-          require 'json'
-
-          set :mcp_connections, []
-          get '/mcp/sse' do
-            content_type 'text/event-stream'
-            stream(:keep_open) do |out|
-              settings.mcp_connections << out
-              out << "event: endpoint\\ndata: /mcp/message\\n\\n"
-              out.callback { settings.mcp_connections.delete(out) }
-            end
-          end
-
-          post '/mcp/message' do
-            begin
-              req = JSON.parse(request.body.read)
-            rescue JSON::ParserError
-              status 202
-              resp = { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } }
-              settings.mcp_connections.each { |out| out << "event: message\\ndata: \#{resp.to_json}\\n\\n" }
-              return
-            end
-            if req['id'].nil?
-              return
-            end
-            resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }
-            if req['method'] == 'initialize'
-              resp[:result] = { capabilities: { tools: { listChanged: true }, logging: {}, experimental: {}, roots: { listChanged: true }, sampling: {} }, serverInfo: { name: 'mcp-server', version: '1.0.0' }, protocolVersion: '2024-11-05', instructions: '' }
-            elsif req['method'] == 'ping' || req['method'] == 'logging/setLevel'
-              resp[:result] = {}
-            elsif req['method'] == 'roots/list'
-              resp[:result] = { roots: [] }
-            elsif req['method'] == 'resources/templates/list'
-              resp[:result] = { resourceTemplates: [] }
-            elsif req['method'] == 'sampling/createMessage'
-              resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
-            elsif req['method'] == 'completion/complete'
-              resp[:result] = { completion: { values: [], total: 0, hasMore: false } }
-            elsif req['method'] == 'tools/list'
-              resp[:result] = { tools: #{tools_json} }
-            elsif req['method'] == 'tools/call'
-              resp[:result] = { content: [{ type: 'text', text: 'Calling tool ' + req.dig('params', 'name').to_s }] }
-            else
-              resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32601, message: 'Method not found' } }
-            end
-            settings.mcp_connections.each { |out| out << "event: message\\ndata: \#{resp.to_json}\\n\\n" }
-            status 202
-          end
-        RUBY
-        File.write(File.join(out_dir, 'routes', 'mcp_routes.rb'), mcp_code)
-      end
-
-      # Emits `server.rb` and returns its content.
-      #
-      # @param out_dir [String] server output directory
-      # @param openapi [Hash] parsed OpenAPI specification
-      # @return [String] generated `server.rb` content
-      def self.emit_server_entrypoint(out_dir, openapi)
-        server_code = "# frozen_string_literal: true\n\n$cli_options ||= {}\n"
-        server_code += "require_relative 'config/cli_parser'\n"
-        server_code += "$cli_options = CliParser.parse(ARGV) if ARGV.any?\n\n"
-        server_code += "require 'sinatra'\nrequire 'json'\n\nset :server, :puma\n\n"
-        if openapi['info']
-          server_code += "# API Title: #{openapi['info']['title']}\n" if openapi['info']['title']
-          server_code += "# Version: #{openapi['info']['version']}\n" if openapi['info']['version']
-          if openapi['info']['description']
-            server_code += "# Description: #{openapi['info']['description'].gsub("\n", "\n# ")}\n"
-          end
-        end
-        server_code += "\nDir.glob(File.join(__dir__, 'models', '*.rb')).each { |f| require f }\n"
-        server_code += "Dir.glob(File.join(__dir__, 'daos', '*.rb')).each { |f| require f }\n"
-        server_code += "\nrequire_relative 'config/database' " \
-                       "if File.exist?(File.join(__dir__, 'config', 'database.rb'))\n"
-        server_code += "require_relative 'config/seeder' if File.exist?(File.join(__dir__, 'config', 'seeder.rb'))\n\n"
-        server_code += "if defined?(DatabaseConnection) && (ENV['DATABASE_URL'] || ENV['EPHEMERAL_DB'] == 'true')\n"
-        server_code += "  DatabaseConnection.connect!\n"
-        server_code += "  Seeder.seed_database if $cli_options[:seed] && defined?(Seeder)\nend\n\n"
-        server_code += "Dir.glob(File.join(__dir__, 'middlewares', '*.rb')).each { |f| require f }\n"
-        server_code += "Dir.glob(File.join(__dir__, 'workflows', '*.rb')).each { |f| require f }\n"
-        server_code += "Dir.glob(File.join(__dir__, 'routes', '*.rb')).each { |f| require f }\n"
-        File.write(File.join(out_dir, 'server.rb'), server_code)
-        server_code
-      end
-
-      # Emits `tests/*.rb` and `mocks/*.rb` into `options[:output]` when `options[:tests]` is set.
-      #
-      # @param options [Hash] server generation options
-      # @param openapi [Hash] parsed OpenAPI specification
-      # @param arazzo [Hash, nil] optional parsed Arazzo specification
-      # @return [void]
-      def self.emit_server_tests_and_mocks(options, openapi, arazzo = nil)
-        ir = Cdd::IR.new(openapi, arazzo)
-        FileUtils.mkdir_p(File.join(options[:output], 'tests'))
-        test_files = Cdd::Tests::Emitter.emit_multiple(ir, options.merge(server: true))
-        test_files.each do |filename, t_code|
-          full_test_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire 'minitest/autorun'\n" \
-                           "require_relative '../server'\n\n#{t_code}"
-          File.write(File.join(options[:output], 'tests', filename), full_test_code)
-        end
-
-        FileUtils.mkdir_p(File.join(options[:output], 'mocks'))
-        mock_files = Cdd::Mocks::Emitter.emit_multiple(ir)
-        mock_files.each do |filename, m_code|
-          File.write(File.join(options[:output], 'mocks', filename), "# frozen_string_literal: true\n\n#{m_code}")
-        end
       end
     end
   end

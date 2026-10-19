@@ -150,6 +150,10 @@ class ArazzoRuntimeExpressionTest < Minitest::Test
       ctx
     )
     assert Cdd::Arazzo::CriterionEvaluator.evaluate(
+      { 'context' => '$statusCode', 'condition' => "'a || b' == 'a || b' && \"x && y\" == \"x && y\"", 'type' => 'simple' },
+      ctx
+    )
+    assert Cdd::Arazzo::CriterionEvaluator.evaluate(
       { 'condition' => '$statusCode == 404 || $statusCode == 200', 'type' => 'simple' },
       ctx
     )

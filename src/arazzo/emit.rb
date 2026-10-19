@@ -17,7 +17,7 @@ module Cdd
         spec = ir.arazzo_spec
         return '' unless spec.is_a?(Hash) && (spec['workflows']&.any? || spec['sourceDescriptions']&.any?)
 
-        lines = emit_root_lines(spec)
+        lines = emit_root_lines(ir)
         lines.concat(emit_source_lines(spec['sourceDescriptions'] || []))
         lines.concat(emit_component_lines(spec['components']))
         lines.push(
@@ -36,11 +36,13 @@ module Cdd
 
       # Emits root-level `@arazzo` metadata and vendor extension lines.
       #
-      # @param spec [Hash] raw Arazzo specification hash
+      # @param ir [Cdd::IR] Intermediate Representation
       # @return [Array<String>] YARD header comment lines
-      def self.emit_root_lines(spec)
-        lines = ["# @arazzo #{spec['arazzo'] || '1.1.0'}"]
-        lines << "# @arazzo_self #{spec['$self']}" if spec['$self']
+      def self.emit_root_lines(ir)
+        typed = ir.typed_arazzo
+        spec = ir.arazzo_spec
+        lines = ["# @arazzo #{typed.arazzo}"]
+        lines << "# @arazzo_self #{typed.self_uri}" if typed.self_uri
         lines.concat(emit_info_lines(spec['info'] || {}))
         lines.concat(emit_extension_lines('@arazzo_ext', spec))
       end

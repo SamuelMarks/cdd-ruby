@@ -34,8 +34,7 @@ module Cdd
       # @param op [Hash] OpenAPI operation hash
       # @return [String] Ruby method code
       def self.emit_client_method(path, method, op)
-        op_id = op['operationId'] ||
-                "#{method}_#{path.gsub(/[^a-zA-Z0-9]/, '_').gsub(/_+/, '_').sub(/^_/, '').sub(/_$/, '')}"
+        op_id = Cdd::TokenScanner.operation_id_for(method, path, op)
         out = "  # @api_client #{method.upcase} #{path}\n"
         out += "  # summary: #{op['summary']}\n" if op['summary']
 

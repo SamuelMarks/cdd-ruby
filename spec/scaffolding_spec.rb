@@ -68,6 +68,12 @@ class ScaffoldingTest < Minitest::Test
       Cdd::Scaffolding.generate({ output: dir }, 'server')
     end
 
-    Cdd::Scaffolding.generate({ output: Dir.pwd, no_github_actions: true, no_installable_package: true }, 'client')
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, '.rubocop.yml'), '')
+      File.write(File.join(dir, 'README.md'), '')
+      FileUtils.mkdir_p(File.join(dir, '.github', 'workflows'))
+      File.write(File.join(dir, '.github', 'workflows', 'ci.yml'), '')
+      Cdd::Scaffolding.generate({ output: dir, no_github_actions: false, no_installable_package: false }, 'client')
+    end
   end
 end
