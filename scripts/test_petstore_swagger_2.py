@@ -8,27 +8,45 @@ import urllib.request
 import urllib.error
 import random
 
-for ruby_bin in ('/opt/homebrew/opt/ruby/bin', '/usr/local/opt/ruby/bin'):
+for ruby_bin in ("/opt/homebrew/opt/ruby/bin", "/usr/local/opt/ruby/bin"):
     if os.path.isdir(ruby_bin):
-        os.environ['PATH'] = f"{ruby_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+        os.environ["PATH"] = f"{ruby_bin}{os.pathsep}{os.environ.get('PATH', '')}"
 
 scripts_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(scripts_dir, '..'))
-sdk_dir = os.path.abspath(os.path.join(project_root, '..', 'cdd-ruby-client-v2'))
-petstore_json = os.path.join(project_root, 'spec', 'fixtures', 'petstore.json')
+project_root = os.path.abspath(os.path.join(scripts_dir, ".."))
+sdk_dir = os.path.abspath(os.path.join(project_root, "..", "cdd-ruby-client-v2"))
+petstore_json = os.path.join(project_root, "spec", "fixtures", "petstore.json")
 
 shutil.rmtree(sdk_dir, ignore_errors=True)
 
 os.chdir(project_root)
-if subprocess.run(["bundle", "exec", "ruby", "bin/cdd-ruby", "from_openapi", "to_sdk", "-i", petstore_json, "-o", sdk_dir]).returncode != 0:
+if (
+    subprocess.run(
+        [
+            "bundle",
+            "exec",
+            "ruby",
+            "bin/cdd-ruby",
+            "from_openapi",
+            "to_sdk",
+            "-i",
+            petstore_json,
+            "-o",
+            sdk_dir,
+        ]
+    ).returncode
+    != 0
+):
     print("Failed to generate SDK for Swagger 2.0")
     sys.exit(1)
 
-base_path = '/api'
-active_port = int(os.environ.get('SWAGGER_MOCK_PORT', '8080'))
+base_path = "/api"
+active_port = int(os.environ.get("SWAGGER_MOCK_PORT", "8080"))
 server_ready = False
 try:
-    req = urllib.request.Request(f"http://127.0.0.1:{active_port}{base_path}/pet/findByStatus?status=available")
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{active_port}{base_path}/pet/findByStatus?status=available"
+    )
     with urllib.request.urlopen(req, timeout=2) as response:
         if response.status == 200:
             server_ready = True
@@ -46,10 +64,10 @@ else:
     port = random.randint(8000, 8999)
     container_name = f"cdd_petstore_swagger2_{int(time.time())}"
 
-    python_bin = shutil.which('python3') or shutil.which('python')
+    python_bin = shutil.which("python3") or shutil.which("python")
 
     if python_bin:
-        print('Starting mock server using Python...')
+        print("Starting mock server using Python...")
         mock_script = """import sys, json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 class MockServerRequestHandler(BaseHTTPRequestHandler):
@@ -65,17 +83,33 @@ class MockServerRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"Not Found")
 HTTPServer(('127.0.0.1', int(sys.argv[1])), MockServerRequestHandler).serve_forever()
 """
-        with open('scripts/mock_server_swagger.py', 'w') as f:
+        with open("scripts/mock_server_swagger.py", "w") as f:
             f.write(mock_script)
-        server_process = subprocess.Popen([python_bin, "scripts/mock_server_swagger.py", str(port)])
+        server_process = subprocess.Popen(
+            [python_bin, "scripts/mock_server_swagger.py", str(port)]
+        )
     else:
-        print('Attempting to start Swagger 2.0 container...')
-        subprocess.run(["docker", "run", "--rm", "-d", "-p", f"{port}:8080", "--name", container_name, "swaggerapi/petstore"])
+        print("Attempting to start Swagger 2.0 container...")
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-d",
+                "-p",
+                f"{port}:8080",
+                "--name",
+                container_name,
+                "swaggerapi/petstore",
+            ]
+        )
         docker_used = True
 
     for _ in range(60):
         try:
-            req = urllib.request.Request(f"http://127.0.0.1:{port}{base_path}/pet/findByStatus?status=available")
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}{base_path}/pet/findByStatus?status=available"
+            )
             with urllib.request.urlopen(req) as response:
                 if response.status == 200:
                     server_ready = True
@@ -85,17 +119,19 @@ HTTPServer(('127.0.0.1', int(sys.argv[1])), MockServerRequestHandler).serve_fore
         time.sleep(2)
 
     if not server_ready:
-        print('Container failed to respond.')
+        print("Container failed to respond.")
         if docker_used:
-            subprocess.run(["docker", "stop", container_name], stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["docker", "stop", container_name], stderr=subprocess.DEVNULL
+            )
         else:
             server_process.terminate()
         sys.exit(1)
 
 if os.path.exists(sdk_dir):
     os.chdir(sdk_dir)
-    os.makedirs('spec', exist_ok=True)
-    with open('spec/client_spec.rb', 'w') as f:
+    os.makedirs("spec", exist_ok=True)
+    with open("spec/client_spec.rb", "w") as f:
         f.write(f"""require_relative '../lib/client'
 
 RSpec.describe ClientSdk do
@@ -107,22 +143,34 @@ RSpec.describe ClientSdk do
   end
 end
 """)
-    with open('Gemfile', 'a+') as f:
+    with open("Gemfile", "a+") as f:
         f.seek(0)
-        if 'rspec' not in f.read():
+        if "rspec" not in f.read():
             f.write("\ngem 'rspec'\n")
-    
+
     subprocess.run(["bundle", "install"])
     if subprocess.run(["bundle", "exec", "rspec"]).returncode != 0:
-        print('RSpec failed!')
-        if not (active_port == port and server_ready and docker_used == False and server_process is None):
+        print("RSpec failed!")
+        if not (
+            active_port == port
+            and server_ready
+            and docker_used == False
+            and server_process is None
+        ):
             if docker_used:
-                subprocess.run(["docker", "stop", container_name], stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["docker", "stop", container_name], stderr=subprocess.DEVNULL
+                )
             else:
                 server_process.terminate()
         sys.exit(1)
 
-if not (active_port == port and server_ready and docker_used == False and server_process is None):
+if not (
+    active_port == port
+    and server_ready
+    and docker_used == False
+    and server_process is None
+):
     if docker_used:
         subprocess.run(["docker", "stop", container_name], stderr=subprocess.DEVNULL)
     else:
@@ -131,10 +179,17 @@ if not (active_port == port and server_ready and docker_used == False and server
 
 shutil.rmtree(sdk_dir, ignore_errors=True)
 
+
 def remove_if_exists(path):
     if os.path.exists(path):
         os.remove(path)
 
+
 os.chdir(project_root)
-if not (active_port == port and server_ready and docker_used == False and server_process is None):
-    remove_if_exists('scripts/mock_server_swagger.py')
+if not (
+    active_port == port
+    and server_ready
+    and docker_used == False
+    and server_process is None
+):
+    remove_if_exists("scripts/mock_server_swagger.py")

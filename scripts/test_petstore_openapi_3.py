@@ -8,27 +8,45 @@ import urllib.request
 import urllib.error
 import random
 
-for ruby_bin in ('/opt/homebrew/opt/ruby/bin', '/usr/local/opt/ruby/bin'):
+for ruby_bin in ("/opt/homebrew/opt/ruby/bin", "/usr/local/opt/ruby/bin"):
     if os.path.isdir(ruby_bin):
-        os.environ['PATH'] = f"{ruby_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+        os.environ["PATH"] = f"{ruby_bin}{os.pathsep}{os.environ.get('PATH', '')}"
 
 scripts_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(scripts_dir, '..'))
-sdk_dir = os.path.abspath(os.path.join(project_root, '..', 'cdd-ruby-client-v3'))
-petstore_json = os.path.join(project_root, 'spec', 'fixtures', 'petstore_oas3.json')
+project_root = os.path.abspath(os.path.join(scripts_dir, ".."))
+sdk_dir = os.path.abspath(os.path.join(project_root, "..", "cdd-ruby-client-v3"))
+petstore_json = os.path.join(project_root, "spec", "fixtures", "petstore_oas3.json")
 
 shutil.rmtree(sdk_dir, ignore_errors=True)
 
 os.chdir(project_root)
-if subprocess.run(["bundle", "exec", "ruby", "bin/cdd-ruby", "from_openapi", "to_sdk", "-i", petstore_json, "-o", sdk_dir]).returncode != 0:
+if (
+    subprocess.run(
+        [
+            "bundle",
+            "exec",
+            "ruby",
+            "bin/cdd-ruby",
+            "from_openapi",
+            "to_sdk",
+            "-i",
+            petstore_json,
+            "-o",
+            sdk_dir,
+        ]
+    ).returncode
+    != 0
+):
     print("Failed to generate SDK for OpenAPI 3.2.0")
     sys.exit(1)
 
-base_path = '/api/v3'
-active_port = int(os.environ.get('OAS3_MOCK_PORT', '8081'))
+base_path = "/api/v3"
+active_port = int(os.environ.get("OAS3_MOCK_PORT", "8081"))
 server_ready = False
 try:
-    req = urllib.request.Request(f"http://127.0.0.1:{active_port}{base_path}/pet/findByStatus?status=available")
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{active_port}{base_path}/pet/findByStatus?status=available"
+    )
     with urllib.request.urlopen(req, timeout=2) as response:
         if response.status == 200:
             server_ready = True
@@ -46,11 +64,11 @@ else:
     port = random.randint(8000, 8999)
     container_name = f"cdd_petstore_jvm_v3_{int(time.time())}"
 
-    java_bin = shutil.which('javac')
-    python_bin = shutil.which('python3') or shutil.which('python')
+    java_bin = shutil.which("javac")
+    python_bin = shutil.which("python3") or shutil.which("python")
 
     if java_bin:
-        print('Starting mock server using JVM...')
+        print("Starting mock server using JVM...")
         mock_code = """import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -87,12 +105,14 @@ public class MockServerOAS3 {
     }
 }
 """
-        with open('scripts/MockServerOAS3.java', 'w') as f:
+        with open("scripts/MockServerOAS3.java", "w") as f:
             f.write(mock_code)
         subprocess.run(["javac", "scripts/MockServerOAS3.java"])
-        server_process = subprocess.Popen(["java", "-cp", "scripts", "MockServerOAS3", str(port)])
+        server_process = subprocess.Popen(
+            ["java", "-cp", "scripts", "MockServerOAS3", str(port)]
+        )
     elif python_bin:
-        print('Starting mock server using Python...')
+        print("Starting mock server using Python...")
         mock_script = """import sys, json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 class MockServerRequestHandler(BaseHTTPRequestHandler):
@@ -108,17 +128,33 @@ class MockServerRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"Not Found")
 HTTPServer(('127.0.0.1', int(sys.argv[1])), MockServerRequestHandler).serve_forever()
 """
-        with open('scripts/mock_server_oas3.py', 'w') as f:
+        with open("scripts/mock_server_oas3.py", "w") as f:
             f.write(mock_script)
-        server_process = subprocess.Popen([python_bin, "scripts/mock_server_oas3.py", str(port)])
+        server_process = subprocess.Popen(
+            [python_bin, "scripts/mock_server_oas3.py", str(port)]
+        )
     else:
-        print('Attempting to start JVM container...')
-        subprocess.run(["docker", "run", "--rm", "-d", "-p", f"{port}:8080", "--name", container_name, "openapitools/openapi-petstore:latest"])
+        print("Attempting to start JVM container...")
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-d",
+                "-p",
+                f"{port}:8080",
+                "--name",
+                container_name,
+                "openapitools/openapi-petstore:latest",
+            ]
+        )
         docker_used = True
 
     for _ in range(60):
         try:
-            req = urllib.request.Request(f"http://127.0.0.1:{port}{base_path}/pet/findByStatus?status=available")
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}{base_path}/pet/findByStatus?status=available"
+            )
             with urllib.request.urlopen(req) as response:
                 if response.status == 200:
                     server_ready = True
@@ -128,17 +164,19 @@ HTTPServer(('127.0.0.1', int(sys.argv[1])), MockServerRequestHandler).serve_fore
         time.sleep(2)
 
     if not server_ready:
-        print('Container failed to respond.')
+        print("Container failed to respond.")
         if docker_used:
-            subprocess.run(["docker", "stop", container_name], stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["docker", "stop", container_name], stderr=subprocess.DEVNULL
+            )
         else:
             server_process.terminate()
         sys.exit(1)
 
 if os.path.exists(sdk_dir):
     os.chdir(sdk_dir)
-    os.makedirs('spec', exist_ok=True)
-    with open('spec/client_spec.rb', 'w') as f:
+    os.makedirs("spec", exist_ok=True)
+    with open("spec/client_spec.rb", "w") as f:
         f.write(f"""require_relative '../lib/client'
 
 RSpec.describe ClientSdk do
@@ -150,22 +188,34 @@ RSpec.describe ClientSdk do
   end
 end
 """)
-    with open('Gemfile', 'a+') as f:
+    with open("Gemfile", "a+") as f:
         f.seek(0)
-        if 'rspec' not in f.read():
+        if "rspec" not in f.read():
             f.write("\ngem 'rspec'\n")
-    
+
     subprocess.run(["bundle", "install"])
     if subprocess.run(["bundle", "exec", "rspec"]).returncode != 0:
-        print('RSpec failed!')
-        if not (active_port == port and server_ready and docker_used == False and server_process is None):
+        print("RSpec failed!")
+        if not (
+            active_port == port
+            and server_ready
+            and docker_used == False
+            and server_process is None
+        ):
             if docker_used:
-                subprocess.run(["docker", "stop", container_name], stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["docker", "stop", container_name], stderr=subprocess.DEVNULL
+                )
             else:
                 server_process.terminate()
         sys.exit(1)
 
-if not (active_port == port and server_ready and docker_used == False and server_process is None):
+if not (
+    active_port == port
+    and server_ready
+    and docker_used == False
+    and server_process is None
+):
     if docker_used:
         subprocess.run(["docker", "stop", container_name], stderr=subprocess.DEVNULL)
     else:
@@ -174,13 +224,20 @@ if not (active_port == port and server_ready and docker_used == False and server
 
 shutil.rmtree(sdk_dir, ignore_errors=True)
 
+
 def remove_if_exists(path):
     if os.path.exists(path):
         os.remove(path)
 
+
 os.chdir(project_root)
-if not (active_port == port and server_ready and docker_used == False and server_process is None):
-    remove_if_exists('scripts/MockServerOAS3.java')
-    remove_if_exists('scripts/MockServerOAS3.class')
-    remove_if_exists('scripts/MockServerOAS3$MyHandler.class')
-    remove_if_exists('scripts/mock_server_oas3.py')
+if not (
+    active_port == port
+    and server_ready
+    and docker_used == False
+    and server_process is None
+):
+    remove_if_exists("scripts/MockServerOAS3.java")
+    remove_if_exists("scripts/MockServerOAS3.class")
+    remove_if_exists("scripts/MockServerOAS3$MyHandler.class")
+    remove_if_exists("scripts/mock_server_oas3.py")

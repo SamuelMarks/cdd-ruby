@@ -243,9 +243,82 @@ module Cdd
             -i, --input <spec>             Path to the OpenAPI specification file
             -o, --output <dir>             Destination path for generation (default: current directory)
             -d, --input-dir <dir>          Directory of input specifications
+            --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
             --no-github-actions            Disable GitHub Actions workflow generation
             --no-installable-package       Disable installable package generation
-            --tests                        Generate RSpec test scaffolding
+            --tests                        Generate Minitest test scaffolding
+            --mcp                          Include Model Context Protocol support
+            --with-ephemeral               Enable ephemeral code generation
+            --with-seed                    Include seed data in generation
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for `from_openapi to_sdk_cli`.
+      #
+      # @return [void]
+      def print_from_openapi_to_sdk_cli_help
+        puts <<~HELP
+          cdd-ruby from_openapi to_sdk_cli - Generate a client SDK and a corresponding CLI.
+          Usage:
+            cdd-ruby from_openapi to_sdk_cli -i <spec.json> [-o <target_directory>] [options]
+
+          Options:
+            -i, --input <spec>             Path to the OpenAPI specification file
+            -o, --output <dir>             Destination path for generation (default: current directory)
+            -d, --input-dir <dir>          Directory of input specifications
+            --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
+            --no-github-actions            Disable GitHub Actions workflow generation
+            --no-installable-package       Disable installable package generation
+            --tests                        Generate Minitest test scaffolding
+            --mcp                          Include Model Context Protocol support
+            --with-ephemeral               Enable ephemeral code generation
+            --with-seed                    Include seed data in generation
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for `from_openapi to_sdk`.
+      #
+      # @return [void]
+      def print_from_openapi_to_sdk_help
+        puts <<~HELP
+          cdd-ruby from_openapi to_sdk - Generate a client SDK.
+          Usage:
+            cdd-ruby from_openapi to_sdk -i <spec.json> [-o <target_directory>] [options]
+
+          Options:
+            -i, --input <spec>             Path to the OpenAPI specification file
+            -o, --output <dir>             Destination path for generation (default: current directory)
+            -d, --input-dir <dir>          Directory of input specifications
+            --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
+            --no-github-actions            Disable GitHub Actions workflow generation
+            --no-installable-package       Disable installable package generation
+            --tests                        Generate Minitest test scaffolding
+            --mcp                          Include Model Context Protocol support
+            --with-ephemeral               Enable ephemeral code generation
+            --with-seed                    Include seed data in generation
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for `from_openapi to_server`.
+      #
+      # @return [void]
+      def print_from_openapi_to_server_help
+        puts <<~HELP
+          cdd-ruby from_openapi to_server - Generate server boilerplate, models, and routing logic.
+          Usage:
+            cdd-ruby from_openapi to_server -i <spec.json> [-o <target_directory>] [options]
+
+          Options:
+            -i, --input <spec>             Path to the OpenAPI specification file
+            -o, --output <dir>             Destination path for generation (default: current directory)
+            -d, --input-dir <dir>          Directory of input specifications
+            --arazzo <spec>                Path to an optional Arazzo 1.1.0 workflow specification file
+            --no-github-actions            Disable GitHub Actions workflow generation
+            --no-installable-package       Disable installable package generation
+            --tests                        Generate Minitest test scaffolding
             --mcp                          Include Model Context Protocol support
             --with-ephemeral               Enable ephemeral code generation
             --with-seed                    Include seed data in generation
@@ -282,6 +355,54 @@ module Cdd
             to_sdk_cli    Generate a client SDK CLI workflow runner.
             to_sdk        Generate a client SDK with workflow orchestration.
             to_server     Generate server workflow engine and E2E test suites.
+
+          Options:
+            -i, --input <spec>             Path to the Arazzo specification file
+            -o, --output <dir>             Destination path for generation (default: current directory)
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for `from_arazzo to_sdk_cli`.
+      #
+      # @return [void]
+      def print_from_arazzo_to_sdk_cli_help
+        puts <<~HELP
+          cdd-ruby from_arazzo to_sdk_cli - Generate a client SDK CLI workflow runner.
+          Usage:
+            cdd-ruby from_arazzo to_sdk_cli -i <arazzo.json> [-o <target_directory>] [options]
+
+          Options:
+            -i, --input <spec>             Path to the Arazzo specification file
+            -o, --output <dir>             Destination path for generation (default: current directory)
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for `from_arazzo to_sdk`.
+      #
+      # @return [void]
+      def print_from_arazzo_to_sdk_help
+        puts <<~HELP
+          cdd-ruby from_arazzo to_sdk - Generate a client SDK with workflow orchestration.
+          Usage:
+            cdd-ruby from_arazzo to_sdk -i <arazzo.json> [-o <target_directory>] [options]
+
+          Options:
+            -i, --input <spec>             Path to the Arazzo specification file
+            -o, --output <dir>             Destination path for generation (default: current directory)
+            -h, --help                     Show this help message
+        HELP
+      end
+
+      # Prints help for `from_arazzo to_server`.
+      #
+      # @return [void]
+      def print_from_arazzo_to_server_help
+        puts <<~HELP
+          cdd-ruby from_arazzo to_server - Generate server workflow engine and E2E test suites.
+          Usage:
+            cdd-ruby from_arazzo to_server -i <arazzo.json> [-o <target_directory>] [options]
 
           Options:
             -i, --input <spec>             Path to the Arazzo specification file
@@ -434,15 +555,16 @@ module Cdd
         end
       end
 
-      # Prints subcommand-specific help for `command`.
+      # Prints subcommand-specific help for `command` (and optional `target`).
       #
       # @param command [String, nil] CLI subcommand
+      # @param target [String, nil] optional target subcommand
       # @return [Integer] exit code `0`
-      def dispatch_help(command)
+      def dispatch_help(command, target = nil)
         case command
-        when 'from_openapi' then print_from_openapi_help
+        when 'from_openapi' then dispatch_from_openapi_help(target)
         when 'to_openapi' then print_to_openapi_help
-        when 'from_arazzo' then print_from_arazzo_help
+        when 'from_arazzo' then dispatch_from_arazzo_help(target)
         when 'to_arazzo' then print_to_arazzo_help
         when 'to_docs_json' then print_to_docs_json_help
         when 'serve_json_rpc' then print_serve_json_rpc_help
@@ -451,6 +573,32 @@ module Cdd
         else print_help
         end
         0
+      end
+
+      # Prints target-specific or general help for `from_openapi`.
+      #
+      # @param target [String, nil] target subcommand (`to_sdk_cli`, `to_sdk`, `to_server`)
+      # @return [void]
+      def dispatch_from_openapi_help(target)
+        case target
+        when 'to_sdk_cli' then print_from_openapi_to_sdk_cli_help
+        when 'to_sdk' then print_from_openapi_to_sdk_help
+        when 'to_server' then print_from_openapi_to_server_help
+        else print_from_openapi_help
+        end
+      end
+
+      # Prints target-specific or general help for `from_arazzo`.
+      #
+      # @param target [String, nil] target subcommand (`to_sdk_cli`, `to_sdk`, `to_server`)
+      # @return [void]
+      def dispatch_from_arazzo_help(target)
+        case target
+        when 'to_sdk_cli' then print_from_arazzo_to_sdk_cli_help
+        when 'to_sdk' then print_from_arazzo_to_sdk_help
+        when 'to_server' then print_from_arazzo_to_server_help
+        else print_from_arazzo_help
+        end
       end
 
       # Runs the main CLI command dispatcher.
@@ -469,7 +617,7 @@ module Cdd
         end
 
         command = argv.shift
-        return dispatch_help(command) if argv.include?('-h') || argv.include?('--help')
+        return dispatch_help(command, argv.first) if argv.include?('-h') || argv.include?('--help')
 
         options = {}
         parse_options(argv, options)

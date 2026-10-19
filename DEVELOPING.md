@@ -6,10 +6,10 @@ Run `make install_base` to get bundler and ruby.wasm packagers.
 Run `make install_deps` to install dependencies.
 
 ## Testing
-Run `make test` locally to ensure 100% test coverage.
+Run `make test` locally to run the Minitest suite and RuboCop linter with 100% test coverage.
 
 ## Documentation
-Run `make build_docs` to output YARD documentation to `docs` dir.
+Run `make docs` (or `make build_docs`) to output YARD documentation to the `doc/` directory with 100% documentation coverage.
 
 ## Architecture
-See `ARCHITECTURE.md` for our overarching goals using Ripper and AST representations for Compiler Driven Development (CDD).
+See `ARCHITECTURE.md` for our overarching goals using `Ripper.lex` and `Cdd::IR` representations for Compiler Driven Development (CDD).

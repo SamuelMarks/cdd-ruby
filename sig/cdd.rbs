@@ -211,13 +211,22 @@ module Cdd
     def self.get_arg: (Hash[Symbol, untyped] options, Symbol key, String env_key, ?untyped default) -> untyped
     def self.print_help: () -> void
     def self.print_from_openapi_help: () -> void
+    def self.print_from_openapi_to_sdk_cli_help: () -> void
+    def self.print_from_openapi_to_sdk_help: () -> void
+    def self.print_from_openapi_to_server_help: () -> void
     def self.print_to_openapi_help: () -> void
     def self.print_from_arazzo_help: () -> void
+    def self.print_from_arazzo_to_sdk_cli_help: () -> void
+    def self.print_from_arazzo_to_sdk_help: () -> void
+    def self.print_from_arazzo_to_server_help: () -> void
     def self.print_to_arazzo_help: () -> void
     def self.print_to_docs_json_help: () -> void
     def self.print_serve_json_rpc_help: () -> void
     def self.print_mcp_help: () -> void
     def self.print_sync_help: () -> void
+    def self.dispatch_help: (String? command, ?String? target) -> Integer
+    def self.dispatch_from_openapi_help: (String? target) -> void
+    def self.dispatch_from_arazzo_help: (String? target) -> void
     def self.generate_from_openapi: (Config config) -> Integer
     def self.generate_to_openapi: (Config config) -> Integer
     def self.generate_from_arazzo: (Config config) -> Integer

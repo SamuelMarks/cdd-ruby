@@ -5,89 +5,41 @@
 [![Doc Coverage](https://img.shields.io/badge/docs-100.00%25-brightgreen.svg)]()
 <!-- COVERAGE_BADGES_END -->
 
-The **cdd-ruby** tool acts as a dedicated compiler and transpiler. Its fundamental architecture follows standard compiler design principles, divided into three distinct phases: **Frontend (Parsing)**, **Intermediate Representation (IR)**, and **Backend (Emitting)**.
+The `cdd-ruby` framework implements a **Compiler Driven Development (CDD)** workflow in Ruby, centered around an **Intermediate Representation (IR)** (`Cdd::IR`) that connects OpenAPI 3.2.0, Arazzo 1.1.0, and idiomatic Ruby source code.
 
-This decoupled design ensures that any format capable of being parsed into the IR can subsequently be emitted into any supported output format, whether that is a server-side route, a client-side SDK, a database ORM, or an OpenAPI specification.
+## High-Level Data Flow
 
-## 🏗 High-Level Overview
-
-```mermaid
-graph TD
-    %% Styling Definitions
-    classDef frontend fill:#57caff,stroke:#4285f4,stroke-width:2px,color:#20344b,font-family:Roboto Mono
-    classDef core fill:#ffd427,stroke:#f9ab00,stroke-width:3px,color:#20344b,font-family:Google Sans,font-weight:bold
-    classDef backend fill:#5cdb6d,stroke:#34a853,stroke-width:2px,color:#20344b,font-family:Roboto Mono
-    classDef endpoint fill:#ffffff,stroke:#20344b,stroke-width:1px,color:#20344b,font-family:Google Sans
-
-    subgraph Frontend [Parsers]
-        A[OpenAPI .yaml/.json]:::endpoint --> P1(OpenAPI Parser):::frontend
-        B[Ruby Models / Source]:::endpoint --> P2(Ruby Parser):::frontend
-        C[Server Routes / Frameworks]:::endpoint --> P3(Framework Parser):::frontend
-        D[Client SDKs / ORMs]:::endpoint --> P4(Ext Parser):::frontend
-    end
-
-    subgraph Core [Intermediate Representation]
-        IR((CDD IR)):::core
-    end
-
-    subgraph Backend [Emitters]
-        E1(OpenAPI Emitter):::backend --> X[OpenAPI .yaml/.json]:::endpoint
-        E2(Ruby Emitter):::backend --> Y[Ruby Models / Structs]:::endpoint
-        E3(Server Emitter):::backend --> Z[Server Routes / Controllers]:::endpoint
-        E4(Client Emitter):::backend --> W[Client SDKs / API Calls]:::endpoint
-        E5(Data Emitter):::backend --> V[ORM Models / CLI Parsers]:::endpoint
-    end
-
-    P1 --> IR
-    P2 --> IR
-    P3 --> IR
-    P4 --> IR
-
-    IR --> E1
-    IR --> E2
-    IR --> E3
-    IR --> E4
-    IR --> E5
+```text
+[Ruby Source Code] <===(Parse / Emit)===> [Intermediate Representation (Cdd::IR)] <===(Parse / Emit)===> [OpenAPI 3.2.0 / Arazzo 1.1.0]
 ```
 
-## 🧩 Core Components
+## Directory Structure
 
-### 1. The Frontend (Parsers)
+All compiler components live under `src/` with symmetric `parse.rb` and `emit.rb` pairs:
 
-The Frontend's responsibility is to read an input source and translate it into the universal CDD Intermediate Representation (IR).
+- `src/cdd.rb`: Core entry point (`Cdd::Parser`, `Cdd::Emitter`, `Cdd::McpServer`).
+- `src/cli.rb`: CLI argument parser (`Cdd::CLI`, `Cdd::Config`) and MCP stdio server dispatcher.
+- `src/ir.rb`: Strongly-typed `Data.define` Intermediate Representation (`Cdd::IR`) for OpenAPI 3.2.0 and Arazzo 1.1.0 models.
+- `src/error.rb`: Domain error hierarchy (`Cdd::Error`, `Cdd::ParseError`, `Cdd::EmitError`, `Cdd::ValidationError`, `Cdd::ArazzoValidationError`, `Cdd::RuntimeExpressionError`, `Cdd::RpcError`, `Cdd::McpError`, `Cdd::UnsupportedEnvironmentError`).
+- `src/token_scanner.rb`: Shared `Ripper.lex` token scanning utilities (`Cdd::TokenScanner`).
+- `src/server.rb`: JSON-RPC 2.0 server (`Cdd::Server`) over WEBrick HTTP or WASI stdio.
+- `src/sync.rb`: In-place specification synchronizer (`Cdd::Sync`).
+- `src/scaffolding.rb`: Project packaging, Gemspec, Gemfile, and GitHub Actions generator (`Cdd::Scaffolding`).
+- `src/arazzo/`: Arazzo 1.1.0 workflow parser, `WorkflowsOrchestrator` emitter, and runtime expression/criterion/selector/replacement evaluators (`runtime_expression.rb`).
+- `src/classes/`: Data models and OpenAPI component schema transformations.
+- `src/client_sdk/`: `Net::HTTP` `ClientSdk` and `ClientSdkMcpAdapter` generator and parser.
+- `src/client_sdk_cli/`: `OptionParser` `sdk_cli.rb` CLI generator and parser.
+- `src/docs_json/`: Runnable SDK snippet generator (`to_docs_json`) and parser.
+- `src/docstrings/`: YARD and `@route` / `@schema` / `@param` / `@response` docstring parser and emitter.
+- `src/functions/`: `ApiClient` function parser and emitter.
+- `src/mocks/`: `@mock` and `@example_external` parser and emitter.
+- `src/openapi/`: Top-level `@api_*` OpenAPI metadata parser and emitter.
+- `src/routes/`: Sinatra route block and component docstring parser and emitter.
+- `src/server/`: Sinatra server, ActiveRecord DAO, Faker seeder, and middleware generator and parser.
+- `src/tests/`: Minitest unit/integration and E2E workflow test generator and parser.
 
-* **Static Analysis (AST-Driven)**: For `Ruby` source code, the tool **does not** use dynamic reflection or execute the code. Instead, it reads the source files, generates an Abstract Syntax Tree (AST), and navigates the tree to extract classes, structs, functions, type signatures, API client definitions, server routes, and docstrings.
-* **OpenAPI Parsing**: For OpenAPI and JSON Schema inputs, the parser normalizes the structure, resolving internal `$ref`s and extracting properties, endpoints (client or server perspectives), and metadata into the IR.
+## Core Principles
 
-### 2. Intermediate Representation (IR)
-
-The Intermediate Representation is the crucial "glue" of the architecture. It is a normalized, language-agnostic data structure that represents concepts like:
-* **Models**: Entities containing typed properties, required fields, defaults, and descriptions.
-* **Endpoints / Operations**: HTTP verbs, paths, path/query/body parameters, and responses. In the IR, an operation is an abstract concept that can represent *either* a Server Route receiving a request *or* an API Client dispatching a request.
-* **Workflows (Arazzo 1.1.0)**: Multi-step API orchestrations (`Workflow`, `Step`, `Criterion`, `Selector`, `PayloadReplacement`, `SuccessAction`, `FailureAction`, `SourceDescription`, and all 18 `$` runtime expression roots) enabling bidirectional conversion (`Ruby <-> Arazzo`) across Client SDKs, CLIs, and Server E2E harnesses.
-* **Metadata**: Tooling hints, docstrings, and validations.
-
-By standardizing on a single IR (heavily inspired by OpenAPI / JSON Schema primitives), the system guarantees that parsing logic and emitting logic remain completely decoupled.
-
-### 3. The Backend (Emitters)
-
-The Backend's responsibility is to take the universal IR and generate valid target output. Emitters can be written to support various environments (e.g., Client vs Server, Web vs CLI).
-
-* **Code Generation**: Emitters iterate over the IR and generate idiomatic `Ruby` source code. 
-  * A **Server Emitter** creates routing controllers and request-validation logic.
-  * A **Client Emitter** creates API wrappers, fetch functions, and response-parsing logic.
-* **Database & CLI Generation**: Emitters can also target ORM models or command-line parsers by mapping IR properties to database columns or CLI arguments.
-* **Specification Generation**: Emitters translating back to OpenAPI serialize the IR into standard OpenAPI 3.x JSON or YAML, rigorously formatting descriptions, type constraints, and endpoint schemas based on what was parsed from the source code.
-
-## 🔄 Extensibility
-
-Because of the IR-centric design, adding support for a new `Ruby` framework (e.g., a new Client library, Web framework, or ORM) requires minimal effort:
-1. **To support parsing a new framework**: Write a parser that converts the framework's AST/DSL into the CDD IR. Once written, the framework can automatically be exported to OpenAPI, Client SDKs, CLI parsers, or any other existing output target.
-2. **To support emitting a new framework**: Write an emitter that converts the CDD IR into the framework's DSL/AST. Once written, the framework can automatically be generated from OpenAPI or any other supported input.
-
-## 🛡 Design Principles
-
-1. **A Single Source of Truth**: Developers should be able to maintain their definitions in whichever format is most ergonomic for their team (OpenAPI files, Native Code, Client libraries, ORM models) and generate the rest.
-2. **Zero-Execution Parsing**: Ensure security and resilience by strictly statically analyzing inputs. The compiler must never need to run the target code to understand its structure.
-3. **Lossless Conversion**: Maximize the retention of metadata (e.g., type annotations, docstrings, default values, validators) during the transition `Source -> IR -> Target`.
-4. **Symmetric Operations**: An Endpoint in the IR holds all the information necessary to generate both the Server-side controller that fulfills it, and the Client-side SDK method that calls it.
+1. **Static Analysis Only**: No dynamic `eval` or `ObjectSpace` execution of untrusted target source files; all Ruby parsing is performed via `Ripper.lex` token streams.
+2. **Bidirectional Preservation**: Round-tripping preserves schemas, routes, parameters, security schemes, callbacks, webhooks, links, and Arazzo 1.1.0 workflows across `Source -> IR -> Target`.
+3. **Symmetric Operations**: Every endpoint and workflow in `Cdd::IR` holds all metadata required to emit server routes, client SDK methods, CLI commands, and Minitest assertions.

@@ -47,12 +47,6 @@ repos:
         language: system
         pass_filenames: false
 
-      - id: ground-ml-framework-snapshots
-        name: Ground against ../ml-framework-snapshots
-        entry: python3 scripts/ground_ml_snapshots.py
-        language: system
-        pass_filenames: false
-
       - id: update-badges
         name: Update Badges
         entry: python3 scripts/update_coverage.py
