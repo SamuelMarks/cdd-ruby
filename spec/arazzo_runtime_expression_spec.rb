@@ -165,6 +165,8 @@ class ArazzoRuntimeExpressionTest < Minitest::Test
       { 'condition' => '1.5 < 2.5 && true == true && false == false && null == nil && raw == raw' },
       ctx
     )
+    assert Cdd::Arazzo::CriterionEvaluator.values_match?('10.5', '>', '2')
+    refute Cdd::Arazzo::CriterionEvaluator.values_match?('not_a_num', '<', 5)
     assert Cdd::Arazzo::CriterionEvaluator.evaluate({ 'condition' => '$inputs.username' }, ctx)
     assert Cdd::Arazzo::CriterionEvaluator.evaluate(
       Cdd::IR.build_criterion({ 'context' => '$url', 'condition' => '^https://api', 'type' => 'regex' }),

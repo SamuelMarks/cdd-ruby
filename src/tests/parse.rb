@@ -12,9 +12,10 @@ module Cdd
       #
       # @param tokens [Array<Array>] Ripper lexed token array
       # @param ir [Cdd::IR] Intermediate Representation
+      # @param skip_arazzo [Boolean] whether to skip running `Cdd::Arazzo::Parser`
       # @return [void]
-      def self.parse(tokens, ir)
-        Cdd::Arazzo::Parser.parse(tokens, ir)
+      def self.parse(tokens, ir, skip_arazzo: false)
+        Cdd::Arazzo::Parser.parse(tokens, ir) unless skip_arazzo
         tokens.each do |token|
           next unless (token[1] == :on_comment) && (token[2] =~ /#\s*@api_test\s+([A-Z]+)\s+(\S+)/)
 

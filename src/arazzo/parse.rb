@@ -127,7 +127,7 @@ module Cdd
         source = tokens.map { |t| t[2] }.join
         return unless source.match?(/class\s+\w*(?:Workflow|Orchestrator)|def\s+(?:workflow_|test_\w*workflow)/)
 
-        source.scan(/def\s+([a-zA-Z0-9_]+)(?:\(([^)]*)\))?(.*?)^\s*end/m) do |m_name, _args, body|
+        source.scan(/^([ \t]*)def\s+([a-zA-Z0-9_]+)(?:\(([^)]*)\))?(.*?)^\1end\b/m) do |_indent, m_name, _args, body|
           next if m_name == 'initialize'
 
           steps = infer_steps_from_method_body(body)

@@ -657,20 +657,17 @@ module Cdd
       def dispatch_mcp_request(req)
         router = Cdd::McpCoreRouter.new
         resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }
-        case req['method']
-        when 'initialize' then resp[:result] = mcp_init_result
-        when 'tools/list' then resp[:result] = { tools: MCP_TOOLS }
-        when 'tools/call' then resp = handle_mcp_tool_call(req, resp)
-        when 'prompts/list', 'prompts/get', 'resources/list', 'resources/read'
+        common_res = router.dispatch_common_method(req['method'].to_s)
+        if common_res
+          resp[:result] = common_res
+        elsif req['method'] == 'initialize'
+          resp[:result] = mcp_init_result
+        elsif req['method'] == 'tools/list'
+          resp[:result] = { tools: MCP_TOOLS }
+        elsif req['method'] == 'tools/call'
+          resp = handle_mcp_tool_call(req, resp)
+        elsif %w[prompts/list prompts/get resources/list resources/read].include?(req['method'])
           resp[:result] = handle_mcp_prompt_or_resource(req)
-        when 'resources/templates/list' then resp[:result] = { resourceTemplates: router.get_resource_templates }
-        when 'roots/list' then resp[:result] = { roots: router.get_roots }
-        when 'resources/subscribe', 'resources/unsubscribe', 'logging/setLevel', 'ping'
-          resp[:result] = {}
-        when 'sampling/createMessage'
-          resp[:result] = router.sample_message
-        when 'completion/complete'
-          resp[:result] = router.complete_prompt(nil, nil, nil)
         else
           resp = { jsonrpc: '2.0', id: req['id'], error: { code: -32_601, message: 'Method not found' } }
         end

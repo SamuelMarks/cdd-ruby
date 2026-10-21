@@ -2,6 +2,9 @@
 
 # Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
+  # Current semantic version of the CDD Ruby compiler.
+  VERSION = '0.0.4'
+
   # Base error class for all CDD domain errors.
   class Error < StandardError; end
 

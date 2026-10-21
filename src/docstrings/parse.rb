@@ -23,7 +23,7 @@ module Cdd
         rest.split.each do |part|
           if part.start_with?('description:')
             new_rest << part.sub(/^description:/, '')
-          elsif part.include?(':')
+          elsif part =~ /\A[a-zA-Z0-9_.-]+:\S+\z/
             k, v = part.split(':', 2)
             pairs[k] = v
           else

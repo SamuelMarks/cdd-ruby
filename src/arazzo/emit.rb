@@ -43,21 +43,22 @@ module Cdd
         spec = ir.arazzo_spec
         lines = ["# @arazzo #{typed.arazzo}"]
         lines << "# @arazzo_self #{typed.self_uri}" if typed.self_uri
-        lines.concat(emit_info_lines(spec['info'] || {}))
-        lines.concat(emit_extension_lines('@arazzo_ext', spec))
+        lines.concat(emit_info_lines(typed.info, spec['info'] || {}))
+        lines.concat(emit_extension_lines('@arazzo_ext', typed.extensions))
       end
 
       # Emits `@arazzo_info_*` tag lines from the `info` object.
       #
-      # @param info [Hash] Arazzo info object
+      # @param typed_info [Cdd::IR::ArazzoInfo] typed Arazzo info object
+      # @param raw_info [Hash] raw Arazzo info hash
       # @return [Array<String>] YARD comment lines
-      def self.emit_info_lines(info)
+      def self.emit_info_lines(typed_info, raw_info)
         lines = []
-        lines << "# @arazzo_info_title #{info['title']}" if info['title']
-        lines << "# @arazzo_info_summary #{info['summary']}" if info['summary']
-        lines << "# @arazzo_info_description #{info['description']}" if info['description']
-        lines << "# @arazzo_info_version #{info['version']}" if info['version']
-        lines.concat(emit_extension_lines('@arazzo_info_ext', info))
+        lines << "# @arazzo_info_title #{typed_info.title}" if raw_info['title']
+        lines << "# @arazzo_info_summary #{typed_info.summary}" if typed_info.summary
+        lines << "# @arazzo_info_description #{typed_info.description}" if typed_info.description
+        lines << "# @arazzo_info_version #{typed_info.version}" if raw_info['version']
+        lines.concat(emit_extension_lines('@arazzo_info_ext', typed_info.extensions))
       end
 
       # Emits `@arazzo_source` tag lines for all `sourceDescriptions`.

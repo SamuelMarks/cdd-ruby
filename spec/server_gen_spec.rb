@@ -110,6 +110,10 @@ class ServerGenTest < Minitest::Test
       assert seeder_code.include?('module Seeder')
       assert server_code.include?("if defined?(DatabaseConnection) && (ENV['DATABASE_URL'] || ENV['EPHEMERAL_DB'] == 'true')")
       assert test_code.include?('class DatabaseConnectionTest')
+      assert RubyVM::InstructionSequence.compile(test_code)
+      Dir.glob(File.join(out_dir, '**', '*.rb')).each do |rb_file|
+        assert RubyVM::InstructionSequence.compile(File.read(rb_file)), "Invalid syntax in #{rb_file}"
+      end
     end
   end
 
@@ -242,5 +246,18 @@ class ServerGenTest < Minitest::Test
     schemas = { 'Category' => {}, 'Address' => {}, 'Pet' => {} }
     assert_equal 'Category', Cdd::ServerGen::Emitter.resolve_route_model_name('/api/v1/categories/{id}', schemas)
     assert_equal 'Address', Cdd::ServerGen::Emitter.resolve_route_model_name('/v2/addresses', schemas)
+    assert_equal 'categories', Cdd::TokenScanner.pluralize('Category')
+    assert_equal 'addresses', Cdd::TokenScanner.pluralize('Address')
+    assert_equal 'days', Cdd::TokenScanner.pluralize('Day')
+    sample_schema = {
+      'properties' => {
+        'id' => { 'type' => 'integer' },
+        'active' => { 'type' => 'boolean' },
+        'tags' => { 'type' => 'array' },
+        'title' => { 'type' => 'string' }
+      }
+    }
+    assert_includes Cdd::TokenScanner.sample_body_hash_literal(sample_schema, symbol_keys: true), 'id: 1, active: true'
+    assert_includes Cdd::TokenScanner.sample_body_hash_literal(sample_schema, symbol_keys: false), "'id' => 1"
   end
 end

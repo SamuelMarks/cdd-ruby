@@ -209,6 +209,49 @@ class IrTest < Minitest::Test
     assert_equal 'foo', sdk_ir.openapi_spec.dig('paths', '/custom', 'get', 'operationId')
 
     rbs_path = File.expand_path('../sig/cdd.rbs', __dir__)
-    refute_includes File.read(rbs_path), 'untyped'
+    rbs_content = File.read(rbs_path)
+    refute_includes rbs_content, 'untyped'
+    assert_rbs_matches_runtime(rbs_content)
+  end
+
+  def assert_rbs_matches_runtime(rbs_content)
+    require_relative '../src/cli'
+    require_relative '../src/server'
+    require_relative '../src/sync'
+    require_relative '../src/scaffolding'
+
+    current_path = []
+    rbs_methods = Hash.new { |h, k| h[k] = { singleton: [], instance: [] } }
+
+    rbs_content.each_line do |line|
+      case line
+      when /\A\s*(?:module|class)\s+([A-Za-z0-9_]+)/
+        current_path << Regexp.last_match(1)
+      when /\A\s*end\s*\z/
+        current_path.pop
+      when /\A\s*def\s+self\.([A-Za-z0-9_?!\[\]=]+):/
+        rbs_methods[current_path.join('::')][:singleton] << Regexp.last_match(1).to_sym
+      when /\A\s*def\s+([A-Za-z0-9_?!\[\]=]+):/
+        m_name = Regexp.last_match(1)
+        rbs_methods[current_path.join('::')][:instance] << m_name.to_sym unless m_name == 'initialize'
+      when /\A\s*attr_reader\s+([A-Za-z0-9_]+):/
+        rbs_methods[current_path.join('::')][:instance] << Regexp.last_match(1).to_sym
+      when /\A\s*attr_accessor\s+([A-Za-z0-9_]+):/
+        attr = Regexp.last_match(1)
+        rbs_methods[current_path.join('::')][:instance].push(attr.to_sym, :"#{attr}=")
+      end
+    end
+
+    rbs_methods.each do |mod_name, methods|
+      mod = Object.const_get(mod_name)
+      actual_singleton = mod.singleton_methods(false)
+      actual_singleton -= %i[inspect [] new members] if mod.is_a?(Class) && mod.superclass == Data
+      actual_instance = mod.is_a?(Class) && mod.superclass == Data ? mod.members : mod.instance_methods(false) - [:initialize]
+
+      assert_empty(methods[:singleton] - actual_singleton, "#{mod_name} has stale RBS singleton methods")
+      assert_empty(actual_singleton - methods[:singleton], "#{mod_name} is missing RBS singleton methods")
+      assert_empty(methods[:instance] - actual_instance, "#{mod_name} has stale RBS instance methods")
+      assert_empty(actual_instance - methods[:instance], "#{mod_name} is missing RBS instance methods")
+    end
   end
 end

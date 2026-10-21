@@ -56,6 +56,88 @@ module Cdd
       name.to_s.sub(/\A[a-z]/, &:upcase)
     end
 
+    # Pluralizes a lowercase or PascalCase noun into a lowercase SQL table name.
+    #
+    # @param word [String, Symbol] singular noun or schema name
+    # @return [String] lowercase pluralized table name
+    def self.pluralize(word)
+      down = word.to_s.downcase
+      if down.end_with?('y') && %w[ay ey iy oy uy].none? { |v| down.end_with?(v) }
+        "#{down[0...-1]}ies"
+      elsif %w[s x z ch sh].any? { |suf| down.end_with?(suf) }
+        "#{down}es"
+      else
+        "#{down}s"
+      end
+    end
+
+    # Extracts the first media type schema from an operation's `requestBody` hash.
+    #
+    # @param op [Hash] OpenAPI operation hash
+    # @return [Hash, nil] request body schema hash or nil
+    def self.first_request_body_schema(op)
+      content = op.dig('requestBody', 'content')
+      return nil unless content.is_a?(Hash) && !content.empty?
+
+      content.values.first['schema']
+    end
+
+    # Returns candidate lowercase singular schema names for a plural path segment.
+    #
+    # @param word [String, Symbol] path resource segment
+    # @return [Array<String>] candidate singular forms
+    def self.singularize_candidates(word)
+      down = word.to_s.downcase
+      [
+        down,
+        down.sub(/ies\z/, 'y'),
+        down.sub(/es\z/, ''),
+        down.sub(/s\z/, '')
+      ].uniq
+    end
+
+    # Maps a schema's properties into `[column_name, active_record_type]` pairs (excluding `'id'`).
+    #
+    # @param schema [Hash] OpenAPI schema definition hash
+    # @return [Array<Array(String, String)>] list of `[prop_name, column_type]` pairs
+    def self.table_columns_for_schema(schema)
+      (schema['properties'] || {}).filter_map do |prop_name, prop_details|
+        next nil if prop_name == 'id'
+
+        col_type = case prop_details['type']
+                   when 'integer' then 'integer'
+                   when 'boolean' then 'boolean'
+                   else 'string'
+                   end
+        [prop_name, col_type]
+      end
+    end
+
+    # Builds a sample Ruby Hash literal string from an OpenAPI schema's properties or sensible defaults.
+    #
+    # @param schema [Hash, nil] OpenAPI schema hash
+    # @param symbol_keys [Boolean] whether to format keys as Ruby symbols (`id: 1`) instead of strings (`'id' => 1`)
+    # @return [String] Ruby Hash literal expression
+    def self.sample_body_hash_literal(schema = nil, symbol_keys: false)
+      props = schema.is_a?(Hash) ? schema['properties'] : nil
+      if props.is_a?(Hash) && !props.empty?
+        pairs = props.map do |k, v|
+          val = case v['type']
+                when 'integer', 'number' then '1'
+                when 'boolean' then 'true'
+                when 'array' then "['http://example.com']"
+                else "'test'"
+                end
+          symbol_keys ? "#{k}: #{val}" : "#{single_quote_literal(k)} => #{val}"
+        end
+        "{ #{pairs.join(', ')} }"
+      elsif symbol_keys
+        "{ id: 1, name: 'test', photoUrls: ['http://example.com'], status: 'available' }"
+      else
+        "{ 'id' => 1, 'name' => 'doggie', 'photoUrls' => ['http://example.com'], 'status' => 'available' }"
+      end
+    end
+
     # Returns a sample Ruby literal string for an OpenAPI parameter or request body in generated tests.
     #
     # @param param [Hash] parameter hash with `'name'`, `'in'`, and optional `'schema'`
@@ -72,7 +154,7 @@ module Cdd
         elsif ref.include?('User')
           "{ 'id' => 1, 'username' => 'user1' }"
         else
-          "{ 'id' => 1, 'name' => 'doggie', 'photoUrls' => ['http://example.com'], 'status' => 'available' }"
+          sample_body_hash_literal(param['schema'])
         end
       else
         param['name'] == 'status' ? "'available'" : "'test_#{param['name']}'"

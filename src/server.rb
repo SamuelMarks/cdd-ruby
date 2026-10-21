@@ -32,7 +32,7 @@ module Cdd
     #
     # @return [void]
     def self.shutdown
-      @current_server.shutdown
+      @current_server&.shutdown
     end
 
     # Handles an incoming WEBrick HTTP request and populates the HTTP response.
@@ -96,7 +96,7 @@ module Cdd
       end
 
       case method
-      when 'version' then '0.0.4'
+      when 'version' then Cdd::VERSION
       when 'to_openapi' then Cdd::Parser.parse(params['input'])
       when 'to_arazzo' then Cdd::Parser.parse_to_arazzo(params['input'])
       when 'to_docs_json'

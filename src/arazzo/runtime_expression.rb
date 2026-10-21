@@ -390,11 +390,24 @@ module Cdd
         case op
         when '==' then lhs == rhs || lhs.to_s == rhs.to_s
         when '!=' then lhs != rhs && lhs.to_s != rhs.to_s
-        when '<'  then lhs.to_f < rhs.to_f
-        when '<=' then lhs.to_f <= rhs.to_f
-        when '>'  then lhs.to_f > rhs.to_f
-        else lhs.to_f >= rhs.to_f
+        else
+          l_num = numeric_operand(lhs)
+          r_num = numeric_operand(rhs)
+          return false unless l_num && r_num
+
+          l_num.public_send(op.to_sym, r_num)
         end
+      end
+
+      # Converts a numeric value or numeric string into a `Float`, returning `nil` for non-numeric inputs.
+      #
+      # @param val [Object] raw operand value
+      # @return [Float, nil] numeric value or nil
+      def self.numeric_operand(val)
+        return val.to_f if val.is_a?(Numeric)
+        return val.to_f if val.is_a?(String) && val.strip =~ /\A-?\d+(?:\.\d+)?\z/
+
+        nil
       end
 
       # Evaluates a `jsonpath` criterion condition (including filter expressions like `$[?(@.id == 1)]`).

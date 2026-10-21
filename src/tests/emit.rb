@@ -22,7 +22,7 @@ module Cdd
       # @return [Hash{String => String}] map of test filenames to Ruby source code
       def self.emit_multiple(ir, options = {})
         files = {}
-        workflows = ir.arazzo_spec['workflows'] || []
+        workflows = ir.typed_arazzo.workflows
         files['arazzo_workflows_test.rb'] = emit_arazzo_workflows_test(ir) if workflows.any?
 
         paths = ir.openapi_spec['paths'] || {}
@@ -37,7 +37,8 @@ module Cdd
         files['database_connection_test.rb'] = emit_database_connection_test if needs_db
         files['dao_test.rb'] = emit_dao_tests(schemas, needs_db)
         files['webhook_trigger_test.rb'] = emit_webhook_trigger_test if webhooks_or_callbacks?(ir)
-        files['auth_middleware_test.rb'] = emit_auth_middleware_test(options)
+        has_security = (ir.openapi_spec.dig('components', 'securitySchemes') || {}).any?
+        files['auth_middleware_test.rb'] = emit_auth_middleware_test(options, has_security: has_security)
         files['cors_and_validation_test.rb'] = emit_cors_and_validation_test
         files['seeder_test.rb'] = emit_seeder_test(schemas) if options[:with_seed]
         files['cli_parser_test.rb'] = emit_cli_parser_test
@@ -50,16 +51,18 @@ module Cdd
       # @return [String] Ruby test class source code
       def self.emit_arazzo_workflows_test(ir)
         out = "#{Cdd::Arazzo::Emitter.emit(ir)}\nclass ArazzoWorkflowsTest < Minitest::Test\n"
-        (ir.arazzo_spec['workflows'] || []).each do |wf|
-          wf_id = wf['workflowId']
+        ir.typed_arazzo.workflows.each do |wf|
+          wf_id = wf.workflow_id
           out << "  def test_workflow_#{wf_id}\n"
           out << "    stub_client = Object.new\n"
-          out << "    def stub_client.method_missing(_m, *_a, **_kw); {}; end\n"
+          out << "    def stub_client.called_ops; @called_ops ||= []; end\n"
+          out << "    def stub_client.method_missing(m, *_a, **_kw); called_ops << m; {}; end\n"
           out << "    def stub_client.respond_to_missing?(_m, _p = false); true; end\n"
           out << "    orch = WorkflowsOrchestrator.new({ 'default' => stub_client })\n"
           out << "    assert_respond_to orch, :#{wf_id}\n"
           out << "    res = orch.#{wf_id}({})\n"
           out << "    assert_kind_of Hash, res\n"
+          out << "    assert_operator stub_client.called_ops.size, :>=, 0\n"
           out << "  end\n\n"
         end
         "#{out}end\n"
@@ -123,16 +126,18 @@ module Cdd
       # @return [String] test body lines
       def self.emit_server_operation_body(path, method, op)
         out, p_path = partition_test_route_params(path, op['parameters'] || [])
-        default_json = "{ id: 1, name: 'test', photoUrls: ['http://example.com'], status: 'available' }.to_json"
+        body_schema = Cdd::TokenScanner.first_request_body_schema(op)
+        default_json = "#{Cdd::TokenScanner.sample_body_hash_literal(body_schema, symbol_keys: true)}.to_json"
         body_str = op['requestBody'] ? default_json : '{}'
         if %w[post put patch].include?(method.downcase)
           out += "    header 'Content-Type', 'application/json'\n"
           out += "    #{method.downcase} sinatra_path, #{body_str}\n"
         else
-          out += "    #{method.downcase} '#{p_path}'\n"
+          out += "    #{method.downcase} #{Cdd::TokenScanner.single_quote_literal(p_path)}\n"
         end
-        codes_str = '%w[200 201 204 400 401 403 404 405 501]'
-        "#{out}    assert_includes #{codes_str}, last_response.status.to_s\n"
+        resp_keys = (op['responses'] || {}).keys
+        codes = (resp_keys + %w[200 201 204 400 401 403 404 501]).uniq
+        "#{out}    assert_includes %w[#{codes.join(' ')}], last_response.status.to_s\n"
       end
 
       # Builds `sinatra_path` substitutions and resolved GET/DELETE path with query parameters.
@@ -141,13 +146,15 @@ module Cdd
       # @param parameters [Array<Hash>] operation parameters
       # @return [Array(String, String)] `[out_lines, resolved_query_path]`
       def self.partition_test_route_params(path, parameters)
-        out = "    sinatra_path = '#{path}'.dup\n"
+        out = "    sinatra_path = #{Cdd::TokenScanner.single_quote_literal(path)}.dup\n"
         query_pairs = []
         resolved_path = path.dup
         parameters.each do |param|
           val = sample_test_param_val(param)
           if param['in'] == 'path'
-            out += "    sinatra_path.gsub!('{#{param['name']}}', '#{val}')\n"
+            tok_lit = Cdd::TokenScanner.single_quote_literal("{#{param['name']}}")
+            val_lit = Cdd::TokenScanner.single_quote_literal(val.to_s)
+            out += "    sinatra_path.gsub!(#{tok_lit}, #{val_lit})\n"
             resolved_path.gsub!("{#{param['name']}}", val.to_s)
           else
             query_pairs << "#{param['name']}=#{val}"
@@ -165,23 +172,21 @@ module Cdd
       def self.emit_client_operation_body(op_id, op)
         out = "    client = ClientSdk.new('http://localhost:8080/v2')\n"
         params = (op['parameters'] || []).map do |param|
-          val = if param.dig('schema', 'type') == 'integer'
-                  '1'
-                else
-                  param['name'] == 'status' ? "'available'" : "'test_#{param['name']}'"
-                end
+          raw_val = sample_test_param_val(param)
+          val = raw_val == '1' ? '1' : "'#{raw_val}'"
           "#{param['name']}: #{val}"
         end
         if op['requestBody']
-          params.push('id: 1', "name: 'test'", "photoUrls: ['http://example.com']",
-                      "status: 'available'")
+          body_schema = Cdd::TokenScanner.first_request_body_schema(op)
+          body_lit = Cdd::TokenScanner.sample_body_hash_literal(body_schema, symbol_keys: true)
+          params << body_lit.sub(/\A\{\s*/, '').sub(/\s*\}\z/, '')
         end
         params_str = params.empty? ? '' : "{ #{params.join(', ')} }"
         success_code = '200'
         success_code = op['responses'].keys.find { |k| k.to_i >= 200 && k.to_i < 300 } || '200' if op['responses']
         "#{out}    begin\n      res = client.#{op_id}(#{params_str})\n      refute_nil res\n      " \
           "assert_equal '#{success_code}', client.last_response.code\n    " \
-          "rescue Errno::ECONNREFUSED\n      skip 'Petstore server is not available'\n    end\n"
+          "rescue Errno::ECONNREFUSED\n      skip 'API server is not available'\n    end\n"
       end
 
       # Returns a sample string value for a route parameter in server tests.
@@ -240,15 +245,9 @@ module Cdd
         out += "    ActiveRecord::Base.establish_connection(adapter: 'sqlite3', database: ':memory:')\n"
         out += "    ActiveRecord::Schema.define do\n"
         (schemas || {}).each do |name, schema|
-          out += "      create_table :#{name.downcase}s, force: true do |t|\n"
-          (schema['properties'] || {}).each do |prop_name, prop_details|
-            next if prop_name == 'id'
-
-            type = case prop_details['type']
-                   when 'integer' then 'integer'
-                   when 'boolean' then 'boolean'
-                   else 'string'
-                   end
+          table_name = Cdd::TokenScanner.pluralize(name)
+          out += "      create_table :#{table_name}, force: true do |t|\n"
+          Cdd::TokenScanner.table_columns_for_schema(schema).each do |prop_name, type|
             out += "        t.#{type} :#{prop_name}\n"
           end
           out += "      end\n"
@@ -337,8 +336,11 @@ module Cdd
       # Emits `auth_middleware_test.rb` with concrete Rack::Test HTTP requests and auth assertions.
       #
       # @param options [Hash] generation options
+      # @param has_security [Boolean] whether the OpenAPI specification declares security schemes
       # @return [String] Ruby test class source code
-      def self.emit_auth_middleware_test(options)
+      def self.emit_auth_middleware_test(options, has_security: false)
+        unauth_code = has_security ? 401 : 404
+        forbid_code = has_security ? 403 : 404
         out = <<~RUBY
           class AuthMiddlewareTest < Minitest::Test
             require 'rack/test'
@@ -365,7 +367,7 @@ module Cdd
               $cli_options[:enforce_auth] = true
               ENV['EPHEMERAL_DB'] = 'true'
               get '/__auth_probe__'
-              assert_includes [401, 404], last_response.status
+              assert_equal #{unauth_code}, last_response.status
 
               header 'Authorization', 'Bearer mock-token-123'
               get '/__auth_probe__'
@@ -377,11 +379,11 @@ module Cdd
               ENV['DATABASE_URL'] = 'sqlite3::memory:'
               ENV['EPHEMERAL_DB'] = nil
               get '/__auth_probe__'
-              assert_includes [401, 404], last_response.status
+              assert_equal #{unauth_code}, last_response.status
 
               header 'Authorization', 'Bearer invalid-token'
               get '/__auth_probe__'
-              assert_includes [403, 404], last_response.status
+              assert_equal #{forbid_code}, last_response.status
             end
 
         RUBY

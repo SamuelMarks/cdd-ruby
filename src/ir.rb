@@ -401,7 +401,7 @@ module Cdd
         title: raw_info['title'] || 'Generated Workflows',
         summary: raw_info['summary'],
         description: raw_info['description'],
-        version: raw_info['version'] || '0.0.4',
+        version: raw_info['version'] || Cdd::VERSION,
         extensions: self.class.extract_extensions(raw_info)
       )
       sources = (@arazzo_spec['sourceDescriptions'] || []).map do |src|
@@ -430,7 +430,7 @@ module Cdd
       raw = @openapi_spec['info'] || {}
       Info.new(
         title: raw['title'] || 'Generated API',
-        version: raw['version'] || '0.0.4',
+        version: raw['version'] || Cdd::VERSION,
         summary: raw['summary'],
         description: raw['description'],
         terms_of_service: raw['termsOfService'],
@@ -608,10 +608,12 @@ module Cdd
     #
     # @return [Array<Cdd::IR::PathItem>] list of typed PathItem objects
     def typed_paths
-      (@openapi_spec['paths'] || {}).map do |path, raw|
+      (@openapi_spec['paths'] || {}).filter_map do |path, raw|
+        next nil unless raw.is_a?(Hash)
+
         ops = {}
         raw.each do |k, v|
-          next if %w[$ref summary description servers parameters].include?(k) || !v.is_a?(Hash)
+          next if k.start_with?('x-') || %w[$ref summary description servers parameters].include?(k) || !v.is_a?(Hash)
 
           ops[k] = self.class.build_operation(k, path, v)
         end

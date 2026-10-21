@@ -161,7 +161,9 @@ class ArazzoBidirectionalTest < Minitest::Test
         end
 
         def login_and_fetch(inputs = {})
-          login_res = client.login_user(username: inputs[:username], raw_flag)
+          if inputs
+            login_res = client.login_user(username: inputs[:username], raw_flag)
+          end
           fetch_res = client.get_profile(token: login_res['token'], mode: 'full')
           client.logout_user
           assert_equal 200, last_response.status
@@ -217,10 +219,20 @@ class ArazzoBidirectionalTest < Minitest::Test
       srv_dir = File.join(dir, 'srv')
       oas_path = File.join(dir, 'oas.json')
       File.write(oas_path, JSON.generate({ 'openapi' => '3.2.0', 'info' => { 'title' => 'T', 'version' => '1' }, 'paths' => {} }))
-      Cdd::Emitter.emit_arazzo_sdk(input: oas_path, output: sdk_dir)
-      Cdd::Emitter.emit_arazzo_sdk_cli(input: oas_path, output: cli_dir)
-      Cdd::Emitter.emit_arazzo_server(input: oas_path, output: srv_dir)
+      Cdd::Emitter.emit_arazzo_sdk(input: oas_path, arazzo: arazzo_path, output: sdk_dir)
+      Cdd::Emitter.emit_arazzo_sdk_cli(input: oas_path, arazzo: arazzo_path, output: cli_dir)
+      Cdd::Emitter.emit_arazzo_server(input: oas_path, arazzo: arazzo_path, output: srv_dir)
       assert File.exist?(File.join(sdk_dir, 'lib', 'client.rb'))
+      assert File.exist?(File.join(sdk_dir, 'lib', 'workflows.rb'))
+      assert_includes File.read(File.join(sdk_dir, 'lib', 'workflows.rb')), 'def buy_pet_workflow'
+      assert_includes File.read(File.join(cli_dir, 'sdk_cli.rb')), 'buy_pet_workflow'
+      assert File.exist?(File.join(srv_dir, 'workflows', 'arazzo_engine.rb'))
+      assert File.exist?(File.join(srv_dir, 'routes', 'arazzo_routes.rb'))
+      [sdk_dir, cli_dir, srv_dir].each do |out_root|
+        Dir.glob(File.join(out_root, '**', '*.rb')).each do |rb_file|
+          assert RubyVM::InstructionSequence.compile(File.read(rb_file)), "Invalid syntax in #{rb_file}"
+        end
+      end
     end
   end
 end

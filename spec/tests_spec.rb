@@ -151,5 +151,17 @@ class TestsTest < Minitest::Test
 
     out = Cdd::Tests::Emitter.emit(ir, { server: true })
     assert_match(/sinatra_path\.gsub!\('\{user_id\}', '1'\)/, out)
+    assert RubyVM::InstructionSequence.compile(out)
+
+    ir.openapi_spec['components'] = {
+      'securitySchemes' => { 'BearerAuth' => { 'type' => 'http', 'scheme' => 'bearer' } },
+      'schemas' => { 'User' => { 'properties' => { 'name' => { 'type' => 'string' } } } }
+    }
+    files = Cdd::Tests::Emitter.emit_multiple(ir, { server: true, with_ephemeral: true, with_seed: true })
+    files.each do |fname, content|
+      assert RubyVM::InstructionSequence.compile(content), "Invalid syntax in emitted test #{fname}"
+    end
+    assert_includes files['auth_middleware_test.rb'], 'assert_equal 401, last_response.status'
+    assert_includes files['auth_middleware_test.rb'], 'assert_equal 403, last_response.status'
   end
 end

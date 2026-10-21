@@ -81,13 +81,7 @@ module Cdd
         possible_resources = path.split('/').reject do |p|
           p.empty? || p.include?('{') || %w[api v1 v2 v3 v4].include?(p.downcase)
         end
-        model_hint = possible_resources.first.to_s.downcase
-        candidates = [
-          model_hint,
-          model_hint.sub(/ies\z/, 'y'),
-          model_hint.sub(/es\z/, ''),
-          model_hint.sub(/s\z/, '')
-        ].uniq
+        candidates = Cdd::TokenScanner.singularize_candidates(possible_resources.first.to_s)
         schemas.keys.find { |k| candidates.include?(k.downcase) }
       end
 
@@ -100,7 +94,8 @@ module Cdd
       # @return [String] Sinatra route block code
       def build_domain_route_block(sinatra_path, method, details, model_name)
         r_code, path_param = build_route_header_comments(method, details)
-        r_code += "#{method.downcase} '#{sinatra_path}' do\n  content_type :json\n"
+        path_lit = Cdd::TokenScanner.single_quote_literal(sinatra_path)
+        r_code += "#{method.downcase} #{path_lit} do\n  content_type :json\n"
         r_code += if model_name
                     build_dao_backed_route_body(method.downcase, model_name, path_param)
                   else
@@ -177,6 +172,7 @@ module Cdd
       # @return [void]
       def emit_mcp_routes_file(out_dir, openapi)
         tools_json = Cdd::ClientSdkCli::Emitter.build_mcp_tools(openapi).to_json
+        common_branches = Cdd::ClientSdkCli::Emitter.common_mcp_branch_lines('  ')
         mcp_code = <<~RUBY
           # frozen_string_literal: true
 
@@ -208,16 +204,7 @@ module Cdd
             resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }
             if req['method'] == 'initialize'
               resp[:result] = { capabilities: { tools: { listChanged: true }, logging: {}, experimental: {}, roots: { listChanged: true }, sampling: {} }, serverInfo: { name: 'mcp-server', version: '1.0.0' }, protocolVersion: '2024-11-05', instructions: '' }
-            elsif req['method'] == 'ping' || req['method'] == 'logging/setLevel'
-              resp[:result] = {}
-            elsif req['method'] == 'roots/list'
-              resp[:result] = { roots: [] }
-            elsif req['method'] == 'resources/templates/list'
-              resp[:result] = { resourceTemplates: [] }
-            elsif req['method'] == 'sampling/createMessage'
-              resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
-            elsif req['method'] == 'completion/complete'
-              resp[:result] = { completion: { values: [], total: 0, hasMore: false } }
+          #{common_branches}
             elsif req['method'] == 'tools/list'
               resp[:result] = { tools: #{tools_json} }
             elsif req['method'] == 'tools/call'
@@ -431,15 +418,9 @@ module Cdd
               ActiveRecord::Schema.define do
         RUBY
         schemas.each do |name, schema|
-          db_code += "        create_table :#{name.downcase}s, force: true do |t|\n"
-          (schema['properties'] || {}).each do |prop_name, prop_details|
-            next if prop_name == 'id'
-
-            type = case prop_details['type']
-                   when 'integer' then 'integer'
-                   when 'boolean' then 'boolean'
-                   else 'string'
-                   end
+          table_name = Cdd::TokenScanner.pluralize(name)
+          db_code += "        create_table :#{table_name}, force: true do |t|\n"
+          Cdd::TokenScanner.table_columns_for_schema(schema).each do |prop_name, type|
             db_code += "          t.#{type} :#{prop_name}\n"
           end
           db_code += "        end\n"
@@ -457,11 +438,12 @@ module Cdd
       def self.emit_model_files(out_dir, schemas, needs_db)
         schemas.each do |name, schema|
           class_name = classify_name(name)
+          table_name = Cdd::TokenScanner.pluralize(name)
           model_code = "# frozen_string_literal: true\n\n"
           model_code += "require 'active_record'\n\n" if needs_db
           model_code += "# #{class_name} model\n"
           model_code += if needs_db
-                          "class #{class_name} < ActiveRecord::Base\n  self.table_name = '#{name.downcase}s'\n"
+                          "class #{class_name} < ActiveRecord::Base\n  self.table_name = '#{table_name}'\n"
                         else
                           "class #{class_name}\n"
                         end

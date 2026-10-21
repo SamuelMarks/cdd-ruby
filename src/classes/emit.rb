@@ -12,14 +12,14 @@ module Cdd
       # @return [String] generated Ruby source code
       def self.emit(ir)
         out = emit_security_schemes(ir.openapi_spec.dig('components', 'securitySchemes') || {})
-        schemas = ir.openapi_spec.dig('components', 'schemas') || {}
-        schemas.each do |name, schema|
-          out += if schema['oneOf']
-                   emit_composition_schema('schema_one_of', name, schema['oneOf'], schema['discriminator'])
-                 elsif schema['anyOf']
-                   emit_composition_schema('schema_any_of', name, schema['anyOf'], schema['discriminator'])
+        raw_schemas = ir.openapi_spec.dig('components', 'schemas') || {}
+        ir.typed_schemas.each do |schema|
+          out += if schema.one_of
+                   emit_composition_schema('schema_one_of', schema.name, schema.one_of, schema.discriminator)
+                 elsif schema.any_of
+                   emit_composition_schema('schema_any_of', schema.name, schema.any_of, schema.discriminator)
                  else
-                   emit_object_schema(name, schema)
+                   emit_object_schema(schema, raw_schemas[schema.name] || {})
                  end
         end
         out
@@ -70,27 +70,27 @@ module Cdd
         end
       end
 
-      # Emits a Ruby class definition and its `@schema` / `@schema_xml` docstrings.
+      # Emits a Ruby class definition and its `@schema` / `@schema_xml` docstrings from a typed `Cdd::IR::Schema`.
       #
-      # @param name [String] schema class name
-      # @param schema [Hash] OpenAPI schema definition
+      # @param schema [Cdd::IR::Schema] typed OpenAPI schema value object
+      # @param raw_schema [Hash] raw OpenAPI schema hash for additional vendor/scalar options
       # @return [String] formatted Ruby class source code
-      def self.emit_object_schema(name, schema)
+      def self.emit_object_schema(schema, raw_schema)
         opts = []
-        schema.each do |k, v|
+        raw_schema.each do |k, v|
           next if %w[type properties description allOf xml].include?(k)
 
           opts << "#{k}:#{v}" if v.is_a?(String) || v == true || v == false
         end
         opts_str = opts.empty? ? '' : " #{opts.join(' ')}"
-        desc = schema['description'] ? " #{schema['description']}" : ''
-        out = "# @schema #{name}#{opts_str}#{desc}\n"
-        if schema['xml']
-          xml_opts = schema['xml'].map { |xk, xv| "#{xk}:#{xv}" }
-          out += "# @schema_xml #{name} #{xml_opts.join(' ')}\n"
+        desc = schema.description ? " #{schema.description}" : ''
+        out = "# @schema #{schema.name}#{opts_str}#{desc}\n"
+        if schema.xml
+          xml_opts = schema.xml.map { |xk, xv| "#{xk}:#{xv}" }
+          out += "# @schema_xml #{schema.name} #{xml_opts.join(' ')}\n"
         end
-        out += format_class_header(name, schema['allOf'])
-        schema['properties']&.each_key { |prop| out += "  attr_accessor :#{prop}\n" }
+        out += format_class_header(schema.name, schema.all_of)
+        schema.properties.each { |prop| out += "  attr_accessor :#{prop.name}\n" }
         "#{out}end\n\n"
       end
 

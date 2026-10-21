@@ -40,7 +40,8 @@ module Cdd
         Cdd::Routes::Parser.parse(tokens, ir)
         Cdd::Openapi::Parser.parse(tokens, ir)
         Cdd::Mocks::Parser.parse(tokens, ir)
-        Cdd::Tests::Parser.parse(tokens, ir)
+        Cdd::Arazzo::Parser.parse(tokens, ir)
+        Cdd::Tests::Parser.parse(tokens, ir, skip_arazzo: true)
         Cdd::ClientSdk::Parser.parse(tokens, ir, skip_arazzo: true)
         Cdd::ClientSdkCli::Parser.parse(tokens, ir, skip_arazzo: true)
       end
@@ -187,7 +188,7 @@ module Cdd
     # @param options [Hash] CLI options containing input/output paths
     # @return [String] the generated SDK source code
     def self.emit_arazzo_sdk(options)
-      Cdd::ClientSdk::Emitter.emit_sdk(options)
+      emit_sdk(options)
     end
 
     # Emits an Arazzo-enabled Client SDK CLI from options.
@@ -195,7 +196,7 @@ module Cdd
     # @param options [Hash] CLI options containing input/output paths
     # @return [String] the generated CLI source code
     def self.emit_arazzo_sdk_cli(options)
-      Cdd::ClientSdkCli::Emitter.emit_sdk_cli(options)
+      emit_sdk_cli(options)
     end
 
     # Emits an Arazzo-enabled Server from options.
@@ -203,7 +204,7 @@ module Cdd
     # @param options [Hash] CLI options containing input/output paths
     # @return [String] the generated server source code
     def self.emit_arazzo_server(options)
-      Cdd::ServerGen::Emitter.emit_server(options)
+      emit_server(options)
     end
   end
 
@@ -234,6 +235,22 @@ module Cdd
         serverInfo: { name: name, version: version },
         protocolVersion: PROTOCOL_VERSION
       }
+    end
+
+    # Dispatches common MCP protocol methods (`ping`, `logging/setLevel`, `resources/subscribe`,
+    # `resources/unsubscribe`, `resources/templates/list`, `roots/list`, `sampling/createMessage`,
+    # and `completion/complete`).
+    #
+    # @param method [String] JSON-RPC method name
+    # @return [Hash, nil] result payload hash, or `nil` if `method` is not a common stub method
+    def dispatch_common_method(method)
+      case method
+      when 'resources/templates/list' then { resourceTemplates: get_resource_templates }
+      when 'roots/list' then { roots: get_roots }
+      when 'resources/subscribe', 'resources/unsubscribe', 'logging/setLevel', 'ping' then {}
+      when 'sampling/createMessage' then sample_message
+      when 'completion/complete' then complete_prompt(nil, nil, nil)
+      end
     end
 
     # Gets available tools in the generator

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 module Cdd
+  VERSION: String
+
   type json_scalar = String | Integer | Float | bool | nil
   type json_value = json_scalar | Array[json_value] | Hash[String, json_value]
   type json_object = Hash[String, json_value]
@@ -89,11 +91,9 @@ module Cdd
     class Property < Data
       attr_reader name: String
       attr_reader type: String?
-      attr_reader ref: String?
-      attr_reader items: json_object?
       attr_reader description: String?
-      attr_reader xml: json_object?
       attr_reader example: json_value
+      attr_reader ref: String?
     end
 
     class Schema < Data
@@ -237,7 +237,7 @@ module Cdd
       attr_reader info: ArazzoInfo
       attr_reader source_descriptions: Array[SourceDescription]
       attr_reader workflows: Array[Workflow]
-      attr_reader components: ArazzoComponents
+      attr_reader components: ArazzoComponents?
       attr_reader extensions: json_object
     end
 
@@ -261,7 +261,7 @@ module Cdd
       attr_reader summary: String?
       attr_reader description: String?
       attr_reader inputs: json_object?
-      attr_reader depends_on: Array[String]
+      attr_reader depends_on: Array[String]?
       attr_reader steps: Array[Step]
       attr_reader success_actions: Array[SuccessAction | ReusableObject]
       attr_reader failure_actions: Array[FailureAction | ReusableObject]
@@ -275,6 +275,7 @@ module Cdd
       attr_reader description: String?
       attr_reader operation_id: String?
       attr_reader operation_path: String?
+      attr_reader channel_path: String?
       attr_reader workflow_id: String?
       attr_reader parameters: Array[ArazzoParameter | ReusableObject]
       attr_reader request_body: ArazzoRequestBody?
@@ -282,6 +283,10 @@ module Cdd
       attr_reader on_success: Array[SuccessAction | ReusableObject]
       attr_reader on_failure: Array[FailureAction | ReusableObject]
       attr_reader outputs: Hash[String, String | Selector]
+      attr_reader timeout: (Integer | Float | String)?
+      attr_reader correlation_id: String?
+      attr_reader action: String?
+      attr_reader depends_on: Array[String]?
       attr_reader extensions: json_object
     end
 
@@ -302,6 +307,7 @@ module Cdd
       attr_reader type: String
       attr_reader workflow_id: String?
       attr_reader step_id: String?
+      attr_reader parameters: Array[ArazzoParameter | ReusableObject]
       attr_reader criteria: Array[Criterion]
       attr_reader extensions: json_object
     end
@@ -311,6 +317,7 @@ module Cdd
       attr_reader type: String
       attr_reader workflow_id: String?
       attr_reader step_id: String?
+      attr_reader parameters: Array[ArazzoParameter | ReusableObject]
       attr_reader retry_after: (Integer | Float)?
       attr_reader retry_limit: Integer?
       attr_reader criteria: Array[Criterion]
@@ -346,16 +353,16 @@ module Cdd
 
     class PayloadReplacement < Data
       attr_reader target: String
-      attr_reader value: json_value
       attr_reader target_selector_type: (String | ExpressionType)?
+      attr_reader value: json_value
       attr_reader extensions: json_object
     end
 
     class ArazzoComponents < Data
       attr_reader inputs: Hash[String, json_object]
-      attr_reader parameters: Hash[String, ArazzoParameter]
-      attr_reader success_actions: Hash[String, SuccessAction]
-      attr_reader failure_actions: Hash[String, FailureAction]
+      attr_reader parameters: Hash[String, ArazzoParameter | ReusableObject]
+      attr_reader success_actions: Hash[String, SuccessAction | ReusableObject]
+      attr_reader failure_actions: Hash[String, FailureAction | ReusableObject]
       attr_reader extensions: json_object
     end
 
@@ -379,7 +386,7 @@ module Cdd
     def self.build_arazzo_request_body: (json_object? raw) -> ArazzoRequestBody?
     def self.build_step: (json_object raw) -> Step
     def self.build_workflow: (json_object raw) -> Workflow
-    def self.build_arazzo_components: (json_object? raw) -> ArazzoComponents
+    def self.build_arazzo_components: (json_object? raw) -> ArazzoComponents?
     def self.build_parameter: (json_object raw) -> Parameter
     def self.build_media_type: (json_object raw) -> MediaType
     def self.build_request_body: (json_object? raw) -> RequestBody?
@@ -406,10 +413,17 @@ module Cdd
     def self.operation_id_for: (String method, String path, ?json_object details, ?collapse: bool) -> String
     def self.single_quote_literal: (String str) -> String
     def self.classify_name: (String | Symbol name) -> String
+    def self.pluralize: (String | Symbol word) -> String
+    def self.first_request_body_schema: (json_object op) -> json_object?
+    def self.singularize_candidates: (String | Symbol word) -> Array[String]
+    def self.table_columns_for_schema: (json_object schema) -> Array[[String, String]]
+    def self.sample_body_hash_literal: (?json_object? schema, ?symbol_keys: bool) -> String
     def self.sample_param_value: (json_object param) -> String
-    def self.parse_composition_comment: (String composition_key, String rest) -> json_object
+    def self.parse_composition_schema: (String composition_key, String rest) -> json_object
+    def self.parse_discriminator_options: (Array[String] parts) -> json_object?
     def self.parse_sinatra_routes: (Array[ripper_token] tokens, IR ir) -> void
-    def self.extract_route_path_literal: (Array[ripper_token] tokens, Integer start_idx) -> String?
+    def self.extract_route_path_literal: (Array[ripper_token] tokens, Integer idx) -> String?
+    def self.skip_spaces: (Array[ripper_token] tokens, Integer start_idx) -> Integer
     def self.register_sinatra_route: (IR ir, String method, String path) -> void
   end
 
@@ -440,6 +454,7 @@ module Cdd
       def self.split_outside_quotes: (String str, String delimiter) -> Array[String]
       def self.resolve_operand: (String token, json_value target_val, Hash[Symbol | String, json_value] context) -> json_value
       def self.values_match?: (json_value lhs, String op, json_value rhs) -> bool
+      def self.numeric_operand: (json_value val) -> Float?
       def self.jsonpath_criterion_match?: (String condition, json_value target_val, ?String? _version) -> bool
       def self.xpath_criterion_match?: (String condition, json_value target_val, ?String? _version) -> bool
     end
@@ -463,28 +478,32 @@ module Cdd
     class Emitter
       def self.emit: (IR ir) -> String
       def self.emit_root_lines: (IR ir) -> Array[String]
-      def self.emit_info_lines: (json_object info) -> Array[String]
+      def self.emit_info_lines: (IR::ArazzoInfo typed_info, json_object raw_info) -> Array[String]
       def self.emit_source_lines: (Array[json_object] sources) -> Array[String]
       def self.emit_component_lines: (json_object? components) -> Array[String]
-      def self.emit_extension_lines: (String tag_name, json_object? obj) -> Array[String]
+      def self.emit_extension_lines: (String tag_name, json_object obj, ?String indent) -> Array[String]
       def self.emit_workflow_lines: (json_object workflow) -> Array[String]
-      def self.emit_workflow_doc_lines: (json_object workflow) -> Array[String]
+      def self.emit_workflow_tag_lines: (json_object workflow) -> Array[String]
       def self.emit_step_lines: (json_object step) -> Array[String]
-      def self.emit_step_call_lines: (String step_id_lit, json_object step, String params_code, String body_code) -> Array[String]
-      def self.emit_step_criteria_lines: (String step_id_lit, Array[json_object] criteria) -> Array[String]
-      def self.emit_workflow_outputs_line: (json_object outputs) -> String
+      def self.build_step_call_expr: (json_object step) -> String
+      def self.build_step_call_args: (json_object step) -> Array[String]
+      def self.format_output_extraction: (String step_id, String | json_object out_val) -> String
+      def self.emit_workflow_return_line: (json_object outputs) -> String
     end
 
     class Parser
+      CLIENT_CALL_REGEX: Regexp
+
       def self.parse: (Array[ripper_token] tokens, IR ir) -> void
-      def self.parse_arazzo_docstrings: (Array[ripper_token] tokens, IR ir) -> bool
+      def self.parse_comment_line: (String line, json_object spec, IR ir, json_object? current_wf) -> json_object?
       def self.parse_json_tag: (String raw_json) -> json_value
       def self.parse_root_tag: (String line, json_object spec) -> void
       def self.apply_workflow_attribute_tag: (String line, json_object current_wf) -> void
-      def self.infer_workflows_from_ast: (Array[ripper_token] tokens, IR ir) -> void
-      def self.scan_inferred_method_body: (String body_text, json_object wf) -> void
-      def self.register_inferred_step: (String var_name, String? receiver, String call_name, String raw_args, Hash[String, String] step_vars, json_object wf) -> void
-      def self.extract_inferred_parameters: (String raw_args, Hash[String, String] step_vars) -> Array[json_object]
+      def self.infer_unannotated_workflows: (Array[ripper_token] tokens, IR ir) -> void
+      def self.infer_steps_from_method_body: (String body) -> Array[json_object]
+      def self.build_inferred_client_step: (String? assign_var, String op_id, String? raw_args, Integer index, Hash[String, json_object] var_to_step) -> json_object
+      def self.infer_step_params: (String args_str, Hash[String, json_object] var_to_step) -> Array[json_object]
+      def self.resolve_inferred_param_rhs: (String rhs, Hash[String, json_object] var_to_step) -> String
       def self.synthesize_default_source: (IR ir) -> void
     end
   end
@@ -492,18 +511,18 @@ module Cdd
   module Classes
     class Emitter
       def self.emit: (IR ir) -> String
-      def self.emit_schema: (String name, json_object schema) -> String
-      def self.emit_composition_schema: (String comp_key, String name, json_object schema) -> String
-      def self.emit_object_schema: (String name, json_object schema) -> String
-      def self.emit_class_header: (String name, Array[json_object]? all_of) -> String
+      def self.emit_security_schemes: (Hash[String, json_object] security_schemes) -> String
+      def self.emit_composition_schema: (String tag_name, String name, Array[json_object] refs_array, json_object? discriminator) -> String
+      def self.emit_object_schema: (IR::Schema schema, json_object raw_schema) -> String
+      def self.format_class_header: (String name, Array[json_object]? all_of) -> String
     end
 
     class Parser
       def self.parse: (Array[ripper_token] tokens, IR ir) -> void
-      def self.step_class_token: (Array[ripper_token] tokens, ripper_token token, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
-      def self.parse_class_declaration: (Array[ripper_token] tokens, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
-      def self.parse_attr_accessor: (Array[ripper_token] tokens, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
-      def self.parse_activerecord_column: (Array[ripper_token] tokens, Integer idx, String col_type, String current_class, IR ir) -> void
+      def self.parse_class_comment: (String comment, String? current_class, IR ir) -> void
+      def self.parse_class_declaration: (Array[ripper_token] tokens, Integer idx, IR ir) -> String?
+      def self.extract_parent_class: (Array[ripper_token] tokens, Integer idx) -> String?
+      def self.parse_attr_accessor: (Array[ripper_token] tokens, Integer idx, String current_class, IR ir) -> void
       def self.ensure_schemas: (IR ir) -> Hash[String, json_object]
       def self.ensure_class_schema: (IR ir, String class_name) -> json_object
     end
@@ -524,9 +543,9 @@ module Cdd
       def self.split_openapi_and_arazzo: (json_object raw_spec, ?String? arazzo_path) -> [json_object, json_object?]
       def self.emit_workflows_code: (json_object? arazzo) -> String
       def self.emit_models: (json_object openapi) -> String
-      def self.emit_single_model: (String name, json_object schema) -> String
+      def self.resolve_default_url: (json_object openapi) -> String
       def self.emit_client_class: (json_object openapi) -> String
-      def self.resolve_default_base_url: (json_object openapi) -> String
+      def self.emit_oauth2_helper: (json_object openapi) -> String
       def self.emit_operation_method: (String path, String method, json_object details) -> String
       def self.emit_operation_doc_comments: (String path, json_object details) -> String
       def self.emit_request_body_doc_comments: (json_object request_body) -> String
@@ -534,7 +553,7 @@ module Cdd
       def self.partition_parameter_keys: (Array[json_object] parameters) -> [Array[String], Array[String], String?]
       def self.emit_request_body_handling: (String method, json_object details, String? body_key) -> String
       def self.resolve_content_type: (json_object details) -> String
-      def self.emit_webhook_handlers: (json_object? webhooks) -> String
+      def self.emit_examples_and_webhooks: (json_object openapi) -> String
       def self.emit_auth_adapter: () -> String
       def self.emit_mcp_adapter: (json_object openapi, ?json_object? arazzo) -> String
     end
@@ -555,45 +574,46 @@ module Cdd
     class Emitter
       def self.emit_sdk_cli: (Hash[Symbol, json_value] options) -> String
       def self.build_mcp_tools: (json_object openapi, ?json_object? arazzo) -> Array[Hash[Symbol, json_value]]
-      def self.append_arazzo_mcp_tools: (Array[Hash[Symbol, json_value]] tools_array, json_object? arazzo) -> void
-      def self.emit_cli_header: (json_object info) -> String
-      def self.emit_help_block: (json_object openapi, ?json_object? arazzo) -> String
+      def self.append_arazzo_mcp_tools: (Array[Hash[Symbol, json_value]] tools_array, json_object arazzo) -> void
+      def self.emit_header_and_help: (json_object openapi, ?json_object? arazzo) -> String
+      def self.emit_help_workflows: (Array[json_object]? workflows) -> String
       def self.emit_help_servers: (Array[json_object]? servers) -> String
-      def self.emit_help_tags_and_docs: (Array[json_object]? tags, json_object? external_docs) -> String
-      def self.emit_help_security_schemes: (json_object? schemes) -> String
+      def self.emit_help_components: (json_object? components) -> String
+      def self.emit_help_security_schemes: (json_object? security_schemes) -> String
+      def self.emit_help_schemas: (json_object? schemas) -> String
       def self.emit_help_paths: (json_object? paths) -> String
+      def self.common_mcp_branch_lines: (?String indent) -> String
       def self.emit_mcp_loop: (json_object openapi, ?json_object? arazzo) -> String
       def self.emit_command_branches: (json_object openapi, ?json_object? arazzo) -> String
       def self.emit_workflow_command_branches: (Array[json_object] workflows) -> String
       def self.emit_single_command_branch: (String path, String method, json_object details) -> String
       def self.emit_branch_request_body_comments: (json_object request_body) -> String
       def self.emit_branch_response_comments: (json_object responses) -> String
+      def self.write_cli_artifacts: (Hash[Symbol, json_value] options, json_object openapi, String ruby_code) -> void
       def self.emit_cli_integration_spec: (json_object openapi) -> String
     end
 
     class Parser
-      NON_ENDPOINT_COMMANDS: Array[String]
-
       def self.parse: (Array[ripper_token] tokens, IR ir, ?skip_arazzo: bool) -> void
       def self.step_cli_token: (Array[ripper_token] tokens, ripper_token token, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
-      def self.handle_when_branch: (Array[ripper_token] tokens, Integer idx, Hash[Symbol, json_value] state, IR ir) -> void
-      def self.extract_operation_from_puts: (Array[ripper_token] slice, String op_id, IR ir) -> void
+      def self.handle_cli_keyword: (Array[ripper_token] tokens, String keyword, Integer idx, Hash[Symbol, json_value] state) -> void
+      def self.register_when_operation: (Array[ripper_token] tokens, Integer idx, String op_id, IR ir) -> void
     end
   end
 
   module DocsJson
     class Emitter
-      def self.emit: (String input, ?no_imports: bool, ?no_wrapping: bool) -> String
-      def self.load_spec: (String input) -> json_object
+      def self.emit: (String filepath, ?no_imports: bool, ?no_wrapping: bool) -> String
+      def self.load_spec: (String filepath) -> json_object
       def self.build_path_snippets: (String path, json_object ops, no_imports: bool, no_wrapping: bool) -> Hash[String, String]
       def self.format_operation_snippet: (String op_id, no_imports: bool, no_wrapping: bool) -> String
     end
 
     class Parser
-      def self.parse: (String | Array[ripper_token] | json_object tokens_or_json, IR ir) -> void
-      def self.extract_payload: (String | Array[ripper_token] | json_object tokens_or_json) -> json_object?
-      def self.populate_paths_from_endpoints: (json_object endpoints, IR ir) -> void
-      def self.populate_workflows_from_docs: (json_object workflows, IR ir) -> void
+      def self.parse: (Array[ripper_token] | String | json_object tokens, IR ir) -> IR
+      def self.parse_endpoints: (json_object endpoints, IR ir) -> void
+      def self.parse_workflows: (json_object workflows, IR ir) -> void
+      def self.extract_payload: (Array[ripper_token] | String | json_object source) -> json_object?
     end
   end
 
@@ -602,7 +622,7 @@ module Cdd
       NON_VERB_KEYS: Array[String]
 
       def self.emit: (IR ir) -> String
-      def self.emit_path_lines: (String path, json_object methods, Array[String] lines) -> void
+      def self.emit_path_lines: (IR::PathItem path_item, Array[String] lines) -> void
     end
 
     module TagHelpers
@@ -677,7 +697,8 @@ module Cdd
   module Functions
     class Emitter
       def self.emit: (IR ir) -> String
-      def self.emit_client_method: (String path, String method, json_object op) -> String
+      def self.emit_client_method: (String path, String method, IR::Operation op) -> String
+      def self.extract_client_method_params: (IR::Operation op) -> Array[String]
     end
 
     class Parser
@@ -698,7 +719,7 @@ module Cdd
 
     class Parser
       def self.parse: (Array[ripper_token] tokens, IR ir) -> void
-      def self.step_mock_token: (ripper_token token, Hash[Symbol, json_value] state, IR ir) -> void
+      def self.handle_mock_comment: (String comment, Hash[Symbol, json_value] state, IR ir) -> void
       def self.register_external_example: (String schema, String ex_name, String ext_url, IR ir) -> void
       def self.flush_mock: (Hash[Symbol, json_value] state, IR ir) -> void
       def self.infer_schema: (json_value val) -> json_object
@@ -714,8 +735,8 @@ module Cdd
 
     class Parser
       def self.parse: (Array[ripper_token] tokens, IR ir) -> void
-      def self.dispatch_openapi_comment: (String comment, json_object spec) -> void
-      def self.parse_collection_openapi_comment: (String comment, json_object spec) -> void
+      def self.parse_api_comment: (String comment, json_object spec) -> void
+      def self.parse_api_collection_comment: (String comment, json_object spec) -> void
       def self.build_described_entry: (String primary_key, String raw_val, String? raw_desc) -> json_object
     end
   end
@@ -743,7 +764,8 @@ module Cdd
       extend ComponentEmitter
 
       def self.emit: (IR ir) -> String
-      def self.emit_servers: (Array[json_object] servers, String prefix) -> String
+      def self.emit_servers: (Array[IR::Server | json_object] servers, String prefix) -> String
+      def self.format_server_var_line: (String prefix, String url, String v_name, IR::ServerVariable | json_object v_data) -> String
       def self.emit_global_security: (Array[json_object] security_schemes) -> String
       def self.emit_path_item: (Hash[Symbol, json_value] op_entry) -> String
       def self.emit_operation: (String op_type, String path, String method, json_object op) -> String
@@ -786,16 +808,15 @@ module Cdd
       def self.emit_cli_parser_file: (String out_dir) -> void
       def self.emit_database_file: (String out_dir, json_object schemas) -> void
       def self.emit_model_files: (String out_dir, json_object schemas, bool? needs_db) -> void
-      def self.build_single_model_code: (String name, json_object schema, bool? needs_db) -> String
       def self.emit_dao_files: (String out_dir, json_object schemas, bool? needs_db) -> void
       def self.build_single_dao_code: (String class_name, bool? needs_db) -> String
-      def self.build_dao_factory_code: (Array[String] schema_names, bool? needs_db) -> String
+      def self.build_dao_factory_code: (json_object schemas, bool? needs_db) -> String
       def self.emit_seeder_file: (String out_dir, json_object schemas) -> void
       def self.faker_expression_for: (String prop_name, json_object prop_details) -> String
       def self.emit_middleware_files: (String out_dir, json_object openapi, bool? needs_db) -> void
-      def self.build_auth_middleware_code: (Array[json_object] sec_schemes, bool? needs_db) -> String
+      def self.build_auth_middleware_code: (json_object openapi, bool? needs_db) -> String
       def self.emit_auth_routes_file: (String out_dir, bool? needs_db) -> void
-      def self.emit_workflow_files: (String out_dir, json_object? arazzo) -> void
+      def self.emit_arazzo_engine_files: (String out_dir, json_object arazzo) -> void
     end
 
     class Parser
@@ -808,25 +829,26 @@ module Cdd
       def self.emit: (IR ir, ?Hash[Symbol, json_value] options) -> String
       def self.emit_multiple: (IR ir, ?Hash[Symbol, json_value] options) -> Hash[String, String]
       def self.emit_arazzo_workflows_test: (IR ir) -> String
-      def self.group_paths_by_tag: (json_object paths) -> Hash[String, Hash[String, json_object]]
-      def self.emit_tag_test_class: (String tag, Hash[String, json_object] tag_paths, bool? is_server) -> String
+      def self.webhooks_or_callbacks?: (IR ir) -> bool
+      def self.emit_routes_or_client_tests: (json_object paths, Hash[Symbol, json_value] options) -> String
       def self.emit_single_operation_test: (String path, String method, json_object op, bool? is_server) -> String
       def self.emit_server_operation_body: (String path, String method, json_object op) -> String
       def self.partition_test_route_params: (String path, Array[json_object] parameters) -> [String, String]
       def self.emit_client_operation_body: (String op_id, json_object op) -> String
-      def self.sample_test_param_val: (json_object param) -> (Integer | String)
-      def self.emit_server_auxiliary_tests: (IR ir, Hash[Symbol, json_value] options, Hash[String, String] files) -> void
-      def self.emit_dao_and_factory_test: (json_object schemas, bool? needs_db) -> String
-      def self.emit_dao_test_setup_method: (json_object schemas) -> String
+      def self.sample_test_param_val: (json_object param) -> String
+      def self.emit_database_connection_test: () -> String
+      def self.emit_dao_tests: (json_object? schemas, bool? needs_db) -> String
+      def self.emit_dao_db_setup: (json_object? schemas) -> String
       def self.emit_single_dao_test_methods: (String name, bool? needs_db) -> String
-      def self.emit_seeder_and_webhook_test: (json_object spec, Hash[Symbol, json_value] options) -> String
-      def self.emit_auth_middleware_test: (Hash[Symbol, json_value] options) -> String
+      def self.emit_webhook_trigger_test: () -> String
+      def self.emit_auth_middleware_test: (Hash[Symbol, json_value] options, ?has_security: bool) -> String
       def self.emit_cors_and_validation_test: () -> String
+      def self.emit_seeder_test: (json_object? schemas) -> String
       def self.emit_cli_parser_test: () -> String
     end
 
     class Parser
-      def self.parse: (Array[ripper_token] tokens, IR ir) -> void
+      def self.parse: (Array[ripper_token] tokens, IR ir, ?skip_arazzo: bool) -> void
     end
   end
 
@@ -856,23 +878,22 @@ module Cdd
     DEFAULT_CAPABILITIES: Hash[Symbol, Hash[Symbol, bool]]
 
     def self.build_init_result: (?String name, ?String version) -> Hash[Symbol, json_value]
+    def dispatch_common_method: (String method) -> Hash[Symbol, json_value]?
     def get_tools: () -> Array[Hash[Symbol, json_value]]
-    def execute_tool: (String name, Hash[String, json_value] args) -> Hash[Symbol, json_value]
+    def execute_tool: (String name, Hash[String, json_value] args) -> String
     def get_resources: () -> Array[Hash[Symbol, String]]
     def read_resource: (String uri) -> Hash[Symbol, Array[Hash[Symbol, String]]]
-    def subscribe_resource: (String _uri) -> bool
-    def unsubscribe_resource: (String _uri) -> bool
-    def complete_prompt: (String? _prompt_name, String? _arg_name, String? _value) -> Hash[Symbol, Hash[Symbol, json_value]]
-    def complete: (String? _prompt_name, String? _arg_name, String? _value) -> Hash[Symbol, Hash[Symbol, json_value]]
-    def handle_cancelled: (String | Integer _request_id) -> nil
+    def subscribe: (String uri) -> void
+    def unsubscribe: (String uri) -> void
+    def ping: () -> bool
     def get_roots: () -> Array[Hash[Symbol, String]]
     def get_resource_templates: () -> Array[Hash[Symbol, String]]
     def sample_message: () -> Hash[Symbol, json_value]
-    def handle_progress: (String | Integer _progress_token, Numeric _progress, Numeric _total) -> nil
-    def set_level: (String level) -> String
-    def ping: () -> bool
-    def handle_subscribe: (String uri) -> bool
-    def handle_unsubscribe: (String uri) -> bool
+    def complete_prompt: (String? _prompt_name, String? _arg_name, String? _value) -> Hash[Symbol, Hash[Symbol, json_value]]
+    def complete: (String? _prompt_name, String? _arg_name, String? _value) -> Hash[Symbol, Hash[Symbol, json_value]]
+    def set_level: (String level) -> void
+    def cancelled: (String req_id) -> void
+    def progress: (String token, Integer current, Integer total) -> void
     def get_prompts: () -> Array[Hash[Symbol, json_value]]
     def get_prompt: (String _name, Hash[String, json_value] _args) -> Hash[Symbol, json_value]
   end
@@ -896,14 +917,15 @@ module Cdd
 
   class Scaffolding
     def self.generate: (Hash[Symbol, json_value] options, String type, ?String project_name) -> nil
-    def self.resolve_out_dir: (Hash[Symbol, json_value] options) -> String
-    def self.write_rubocop_config: (String out_dir) -> void
-    def self.write_gemfile: (String out_dir, String type) -> void
-    def self.write_gemspec: (String out_dir, String type, String project_name) -> void
+    def self.write_gemspec: (String out_dir, Hash[Symbol, json_value] options, String type, String project_name) -> void
+    def self.server_gemspec_deps: (Hash[Symbol, json_value] options) -> String
+    def self.write_gemfile: (String out_dir, Hash[Symbol, json_value] options, String type) -> void
+    def self.server_gemfile_deps: (Hash[Symbol, json_value] options) -> String
+    def self.write_rubocop_yml: (String out_dir) -> void
     def self.write_readme: (String out_dir, String type, String project_name) -> void
-    def self.build_readme_body: (String type) -> String
-    def self.write_dockerfile: (String out_dir, String type) -> void
-    def self.write_github_ci: (String out_dir) -> void
+    def self.server_readme_section: () -> String
+    def self.unified_cli_readme_section: () -> String
+    def self.write_github_workflow: (String out_dir) -> void
   end
 
   module CLI
@@ -955,7 +977,8 @@ module Cdd
     def self.mcp_init_result: () -> Hash[Symbol, json_value]
     def self.handle_mcp_prompt_or_resource: (json_object req) -> Hash[Symbol, json_value]
     def self.handle_mcp_tool_call: (json_object req, Hash[Symbol, json_value] resp) -> Hash[Symbol, json_value]
-    def self.inspect_schema_properties: (String file, String? name) -> Array[String]
+    def self.handle_inspect_schema_tool: (Integer | String req_id, json_object targs, Hash[Symbol, json_value] resp) -> Hash[Symbol, json_value]
+    def self.handle_generate_tool: (String tname, json_object targs, Hash[Symbol, json_value] resp) -> Hash[Symbol, json_value]
     def self.handle_sync_command: (Hash[Symbol, json_value] options) -> Integer
     def self.resolve_target_ruby_files: (String file) -> Array[String]
     def self.handle_to_openapi_command: (Hash[Symbol, json_value] options) -> Integer

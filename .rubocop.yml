@@ -23,7 +23,7 @@ Layout/LineLength:
     - 'spec/**/*'
 
 Metrics/MethodLength:
-  Max: 35
+  Max: 30
   CountAsOne: ['array', 'hash', 'heredoc', 'method_call']
   Exclude:
     - 'spec/**/*'
@@ -41,7 +41,7 @@ Metrics/ModuleLength:
     - 'spec/**/*'
 
 Metrics/BlockLength:
-  Max: 35
+  Max: 30
   CountAsOne: ['array', 'hash', 'heredoc', 'method_call']
   Exclude:
     - 'spec/**/*'
@@ -86,9 +86,7 @@ Naming/MethodParameterName:
     - j
 
 Naming/AccessorMethodName:
-  Enabled: true
-  Exclude:
-    - 'src/cdd.rb'
+  Enabled: false
 
 Naming/PredicateMethod:
   AllowedMethods:

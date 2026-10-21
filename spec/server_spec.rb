@@ -52,6 +52,7 @@ end
     require 'stringio'
 
     Cdd::Server.instance_variable_set(:@current_server, nil)
+    Cdd::Server.shutdown
     server_thread = Thread.new do
       old_stdout = $stdout
       $stdout = StringIO.new

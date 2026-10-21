@@ -31,7 +31,7 @@ repos:
 
       - id: rbs-validate
         name: Validate RBS Type Signatures
-        entry: bash -c 'test -f sig/cdd.rbs && grep -q "module Arazzo" sig/cdd.rbs'
+        entry: bash -c 'export PATH="/opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/4.0.0/bin:/usr/local/opt/ruby/bin:$PATH"; test -f sig/cdd.rbs && ! grep -q "untyped" sig/cdd.rbs && rbs -I sig validate'
         language: system
         pass_filenames: false
 

@@ -240,7 +240,7 @@ module Cdd
       # @param ir [Cdd::IR] Intermediate Representation
       # @return [String] generated Ruby route source code
       def self.emit(ir)
-        out = emit_servers(ir.openapi_spec['servers'] || [], 'server')
+        out = emit_servers(ir.typed_servers, 'server')
         out += emit_global_security(ir.openapi_spec['security'] || [])
         out += emit_components(ir.openapi_spec['components'] || {})
 
@@ -254,27 +254,42 @@ module Cdd
 
       # Emits `@server` / `@server_var` or `@op_server` / `@op_server_var` docstring tags.
       #
-      # @param servers [Array<Hash>] list of OpenAPI server objects
+      # @param servers [Array<Cdd::IR::Server, Hash>] list of OpenAPI server objects
       # @param prefix [String] `'server'` or `'op_server'`
       # @return [String] formatted server docstring lines
       def self.emit_servers(servers, prefix)
         out = ''
         servers.each do |srv|
+          is_typed = srv.is_a?(Cdd::IR::Server)
+          url = is_typed ? srv.url : srv['url']
+          raw_desc = is_typed ? srv.description : srv['description']
+          vars = is_typed ? srv.variables : (srv['variables'] || {})
           desc = if prefix == 'server'
-                   " #{srv['description']}"
+                   " #{raw_desc}"
                  else
-                   (srv['description'] ? " #{srv['description']}" : '')
+                   (raw_desc ? " #{raw_desc}" : '')
                  end
-          out += "# @#{prefix} #{srv['url']}#{desc}\n"
-          next unless srv['variables']
-
-          srv['variables'].each do |v_name, v_data|
-            v_enum = v_data['enum'] ? " enum:#{v_data['enum'].join(',')}" : ''
-            v_desc = v_data['description'] ? " description:#{v_data['description']}" : ''
-            out += "# @#{prefix}_var #{srv['url']} #{v_name} #{v_data['default']}#{v_enum}#{v_desc}\n"
-          end
+          out += "# @#{prefix} #{url}#{desc}\n"
+          vars.each { |v_name, v_data| out += format_server_var_line(prefix, url, v_name, v_data) }
         end
         out
+      end
+
+      # Formats a single `@server_var` or `@op_server_var` docstring line.
+      #
+      # @param prefix [String] `'server'` or `'op_server'`
+      # @param url [String] server URL
+      # @param v_name [String] variable name
+      # @param v_data [Cdd::IR::ServerVariable, Hash] server variable definition
+      # @return [String] formatted server variable docstring line
+      def self.format_server_var_line(prefix, url, v_name, v_data)
+        is_typed = v_data.is_a?(Cdd::IR::ServerVariable)
+        enum_list = is_typed ? v_data.enum : v_data['enum']
+        var_desc = is_typed ? v_data.description : v_data['description']
+        default_val = is_typed ? v_data.default : v_data['default']
+        v_enum = enum_list ? " enum:#{enum_list.join(',')}" : ''
+        v_desc = var_desc ? " description:#{var_desc}" : ''
+        "# @#{prefix}_var #{url} #{v_name} #{default_val}#{v_enum}#{v_desc}\n"
       end
 
       # Emits top-level `@security` docstring tags.

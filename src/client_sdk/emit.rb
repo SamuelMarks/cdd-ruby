@@ -107,14 +107,12 @@ module Cdd
           "'#{param['name']}' => #{Cdd::TokenScanner.sample_param_value(param)}"
         end
         if details['requestBody']
-          is_array = details.dig('requestBody', 'content')&.values&.any? do |mt|
-            mt.dig('schema', 'type') == 'array' || mt.dig('schema', 'items')
-          end
-          if is_array
+          body_schema = Cdd::TokenScanner.first_request_body_schema(details)
+          if body_schema.is_a?(Hash) && (body_schema['type'] == 'array' || body_schema['items'])
             params << "'body' => [{ 'id' => 1, 'username' => 'test_user', 'name' => 'test' }]"
           else
-            params.push("'id' => 1", "'name' => 'test'", "'photoUrls' => ['http://example.com']",
-                        "'status' => 'available'")
+            body_lit = Cdd::TokenScanner.sample_body_hash_literal(body_schema, symbol_keys: false)
+            params << body_lit.sub(/\A\{\s*/, '').sub(/\s*\}\z/, '')
           end
         end
         params.empty? ? '{}' : "{ #{params.join(', ')} }"
@@ -176,18 +174,19 @@ module Cdd
       # @param openapi [Hash] parsed OpenAPI specification
       # @return [String] Ruby models code
       def self.emit_models(openapi)
-        info = openapi['info'] || {}
+        ir = Cdd::IR.new(openapi)
+        raw_info = openapi['info'] || {}
         out = "# frozen_string_literal: true\n\n"
-        out += "# Auto-generated Models for #{info['title'] || 'API'}\n"
-        out += "# Version: #{info['version']}\n" if info['version']
-        schemas = openapi.dig('components', 'schemas')
-        return out unless schemas
+        out += "# Auto-generated Models for #{raw_info['title'] || 'API'}\n"
+        out += "# Version: #{raw_info['version']}\n" if raw_info['version']
+        typed_schemas = ir.typed_schemas
+        return out if typed_schemas.empty?
 
         out += "module Types\n"
-        schemas.each do |name, schema|
-          out += "  class #{name}\n"
-          out += "    # schema example: #{schema['example']}\n" if schema['example']
-          schema['properties']&.each_key { |pname| out += "    attr_accessor :#{pname}\n" }
+        typed_schemas.each do |schema|
+          out += "  class #{schema.name}\n"
+          out += "    # schema example: #{schema.example}\n" unless schema.example.nil?
+          schema.properties.each { |prop| out += "    attr_accessor :#{prop.name}\n" }
           out += "  end\n"
         end
         "#{out}end\n"
@@ -221,7 +220,8 @@ module Cdd
         out += "# Version: #{info['version']}\n" if info['version']
         out += "class ClientSdk\n"
         out += "  attr_accessor :base_url, :last_response, :api_key, :access_token\n"
-        out += "  def initialize(base_url = '#{resolve_default_url(openapi)}')\n    @base_url = base_url\n  end\n"
+        default_url_lit = Cdd::TokenScanner.single_quote_literal(resolve_default_url(openapi))
+        out += "  def initialize(base_url = #{default_url_lit})\n    @base_url = base_url\n  end\n"
         if openapi['servers']
           out += "  # Base URL mappings:\n"
           openapi['servers'].each { |srv| out += "  # #{srv['url']} - #{srv['description']}\n" }
@@ -238,8 +238,8 @@ module Cdd
       # @param openapi [Hash] parsed OpenAPI specification
       # @return [String] OAuth2 helper method code or empty string
       def self.emit_oauth2_helper(openapi)
-        schemes = openapi.dig('components', 'securitySchemes') || {}
-        return '' unless schemes.values.any? { |s| s['type'] == 'oauth2' }
+        ir = Cdd::IR.new(openapi)
+        return '' unless ir.typed_security_schemes.any? { |s| s.type == 'oauth2' }
 
         "  def authorize_oauth2(client_id, client_secret, token_url)\n    " \
           "uri = URI(token_url)\n    " \
@@ -544,6 +544,12 @@ module Cdd
             def complete_prompt(prompt_name, arg_name, value)
               { completion: { values: [], total: 0, hasMore: false } }
             end
+            alias set_level handle_logging_level
+            alias ping handle_ping
+            alias cancelled handle_cancelled
+            alias progress handle_progress
+            alias subscribe handle_subscribe
+            alias unsubscribe handle_unsubscribe
           end
         RUBY
       end

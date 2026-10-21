@@ -142,5 +142,21 @@ class FunctionsTest < Minitest::Test
     tokens = Ripper.lex(code)
     Cdd::Functions::Parser.parse(tokens, ir)
     assert_empty(ir.openapi_spec['paths'] || {})
+
+    verbs_ir = Cdd::IR.new
+    verbs_ir.openapi_spec['paths'] = {
+      '/items' => {
+        'get' => { 'operationId' => 'list_items' },
+        'post' => { 'operationId' => 'create_item', 'requestBody' => { 'content' => { 'application/json' => {} } } },
+        'put' => { 'operationId' => 'replace_item' },
+        'delete' => { 'operationId' => 'delete_item' },
+        'patch' => { 'operationId' => 'patch_item' }
+      }
+    }
+    emitted_code = Cdd::Functions::Emitter.emit(verbs_ir)
+    assert RubyVM::InstructionSequence.compile(emitted_code)
+    roundtrip_ir = Cdd::IR.new
+    Cdd::Functions::Parser.parse(Ripper.lex(emitted_code), roundtrip_ir)
+    assert_equal %w[get post put delete patch].sort, roundtrip_ir.openapi_spec['paths']['/items'].keys.sort
   end
 end

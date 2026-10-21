@@ -144,17 +144,22 @@ class CddEmitterCliTest < Minitest::Test
     res = Cdd::Emitter.emit_sdk_cli(input: @json_path, output: @tmp_dir)
     assert_match(/get_hello/, res)
     assert File.exist?(File.join(@tmp_dir, 'sdk_cli.rb'))
+    assert RubyVM::InstructionSequence.compile(res)
 
     no_paths_json = File.join(@tmp_dir, 'no_paths.json')
     File.write(no_paths_json, '{"openapi":"3.2.0","info":{"title":"API"}}')
     res2 = Cdd::Emitter.emit_sdk_cli(input: no_paths_json)
     assert_match(/Usage: sdk_cli/, res2)
+    assert RubyVM::InstructionSequence.compile(res2)
   end
 
   def test_emit_server
     out_dir = File.join(@tmp_dir, 'server_out')
     Cdd::Emitter.emit_server(input: @json_path, output: out_dir)
     assert File.exist?(File.join(out_dir, 'server.rb'))
+    Dir.glob(File.join(out_dir, '**', '*.rb')).each do |rb_file|
+      assert RubyVM::InstructionSequence.compile(File.read(rb_file)), "Invalid syntax in #{rb_file}"
+    end
     routes_out = File.read(File.join(out_dir, 'routes', 'general_routes.rb'))
     assert_match(%r{get '/hello/:id' do}, routes_out)
 
@@ -162,5 +167,6 @@ class CddEmitterCliTest < Minitest::Test
     File.write(no_paths_json, '{"openapi":"3.2.0"}')
     res2 = Cdd::Emitter.emit_server(input: no_paths_json, output: out_dir)
     assert_match(/require 'sinatra'/, res2)
+    assert RubyVM::InstructionSequence.compile(res2)
   end
 end

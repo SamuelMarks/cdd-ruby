@@ -254,5 +254,25 @@ class ClientSdkCliTest < Minitest::Test
     tokens = Ripper.lex("when 'mcp'\n")
     Cdd::ClientSdkCli::Parser.parse(tokens, ir)
     assert_nil ir.openapi_spec['paths']
+
+    apostrophe_spec = {
+      'openapi' => '3.2.0',
+      'info' => { 'title' => "User's API", 'version' => '1.0' },
+      'servers' => [{ 'url' => "http://example.com/user's", 'description' => "User's server" }],
+      'paths' => {
+        '/users' => {
+          'get' => { 'operationId' => 'get_users', 'summary' => "Fetch user's profile" }
+        }
+      }
+    }
+    file = Tempfile.new(['apostrophe', '.json'])
+    file.write(apostrophe_spec.to_json)
+    file.close
+    cli_code = Cdd::ClientSdkCli::Emitter.emit_sdk_cli(input: file.path)
+    sdk_code = Cdd::ClientSdk::Emitter.emit_sdk(input: file.path)
+    assert RubyVM::InstructionSequence.compile(cli_code)
+    assert RubyVM::InstructionSequence.compile(sdk_code)
+  ensure
+    file.unlink
   end
 end

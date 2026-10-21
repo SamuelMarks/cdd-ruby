@@ -32,18 +32,20 @@ module Cdd
       # @param arazzo [Hash, nil] optional parsed Arazzo specification
       # @return [Array<Hash>] MCP tool definitions
       def self.build_mcp_tools(openapi, arazzo = nil)
+        ir = Cdd::IR.new(openapi)
         tools_array = []
-        openapi['paths']&.each do |path, methods|
-          methods.each do |method, details|
-            operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
+        ir.typed_paths.each do |path_item|
+          path_item.operations.each do |method, op|
+            operation_id = Cdd::TokenScanner.operation_id_for(method, path_item.path,
+                                                              { 'operationId' => op.operation_id }, collapse: false)
             tool = {
               name: operation_id,
-              description: details['summary'] || "Call #{method.upcase} #{path}",
+              description: op.summary || "Call #{method.upcase} #{path_item.path}",
               inputSchema: { type: 'object', properties: {}, required: [] }
             }
-            details['parameters']&.each do |param|
-              tool[:inputSchema][:properties][param['name']] = { type: 'string', description: param['in'] }
-              tool[:inputSchema][:required] << param['name'] if param['required']
+            op.parameters.each do |param|
+              tool[:inputSchema][:properties][param.name] = { type: 'string', description: param.in_location }
+              tool[:inputSchema][:required] << param.name if param.required
             end
             tools_array << tool
           end
@@ -58,11 +60,13 @@ module Cdd
       # @param arazzo [Hash] parsed Arazzo specification
       # @return [void]
       def self.append_arazzo_mcp_tools(tools_array, arazzo)
-        (arazzo['workflows'] || []).each do |workflow|
+        ir = Cdd::IR.new(nil, arazzo)
+        ir.typed_arazzo.workflows.each do |workflow|
+          wf_id = workflow.workflow_id
           tools_array << {
-            name: workflow['workflowId'],
-            description: workflow['summary'] || workflow['description'] || "Run workflow #{workflow['workflowId']}",
-            inputSchema: workflow['inputs'] || { type: 'object', properties: {}, required: [] }
+            name: wf_id,
+            description: workflow.summary || workflow.description || "Run workflow #{wf_id}",
+            inputSchema: workflow.inputs || { type: 'object', properties: {}, required: [] }
           }
         end
       end
@@ -101,7 +105,8 @@ module Cdd
         out = "  puts 'Workflows:'\n  puts '  workflow list | run <workflowId>'\n"
         workflows.each do |workflow|
           summary = workflow['summary'] ? " - #{workflow['summary']}" : ''
-          out += "  puts '    #{workflow['workflowId']}#{summary}'\n"
+          line_lit = Cdd::TokenScanner.single_quote_literal("    #{workflow['workflowId']}#{summary}")
+          out += "  puts #{line_lit}\n"
         end
         out
       end
@@ -115,9 +120,13 @@ module Cdd
 
         out = "  puts 'Servers:'\n"
         servers.each do |server|
-          out += "  puts '  #{server['url']} - #{server['description']}'\n"
+          srv_lit = Cdd::TokenScanner.single_quote_literal("  #{server['url']} - #{server['description']}")
+          out += "  puts #{srv_lit}\n"
           server['variables']&.each do |k, v|
-            out += "  puts '    var #{k} default=#{v['default']} enum=#{v['enum']&.join(',')}'\n"
+            var_lit = Cdd::TokenScanner.single_quote_literal(
+              "    var #{k} default=#{v['default']} enum=#{v['enum']&.join(',')}"
+            )
+            out += "  puts #{var_lit}\n"
           end
         end
         out
@@ -130,26 +139,44 @@ module Cdd
       def self.emit_help_components(components)
         return '' unless components
 
-        out = ''
-        if components['securitySchemes']
-          out += "  puts 'Security Required:'\n"
-          components['securitySchemes'].each do |name, scheme|
-            out += "  puts '  #{name} (#{scheme['type']})'\n"
-            if scheme['type'] == 'oauth2'
-              out += "  puts '  OAuth Scopes: #{scheme.dig('flows', 'implicit', 'scopes')&.keys&.join(',')}'\n"
-            end
+        emit_help_security_schemes(components['securitySchemes']) + emit_help_schemas(components['schemas'])
+      end
+
+      # Emits security scheme help lines for `print_help`.
+      #
+      # @param security_schemes [Hash, nil] securitySchemes component map
+      # @return [String] Ruby puts statements
+      def self.emit_help_security_schemes(security_schemes)
+        return '' unless security_schemes
+
+        out = "  puts 'Security Required:'\n"
+        security_schemes.each do |name, scheme|
+          out += "  puts #{Cdd::TokenScanner.single_quote_literal("  #{name} (#{scheme['type']})")}\n"
+          if scheme['type'] == 'oauth2'
+            scopes_str = scheme.dig('flows', 'implicit', 'scopes')&.keys&.join(',')
+            out += "  puts #{Cdd::TokenScanner.single_quote_literal("  OAuth Scopes: #{scopes_str}")}\n"
           end
         end
-        if components['schemas']
-          out += "  puts 'Schemas Available:'\n"
-          components['schemas'].each do |name, schema|
-            out += "  puts '  #{name}'\n"
-            next unless schema['discriminator']
+        out
+      end
 
-            out += "  puts '    Discriminator: #{schema['discriminator']['propertyName']}'\n"
-            if schema['discriminator']['mapping']
-              out += "  puts '    Mapping: #{schema['discriminator']['mapping'].to_json}'\n"
-            end
+      # Emits schema help lines for `print_help`.
+      #
+      # @param schemas [Hash, nil] schemas component map
+      # @return [String] Ruby puts statements
+      def self.emit_help_schemas(schemas)
+        return '' unless schemas
+
+        out = "  puts 'Schemas Available:'\n"
+        schemas.each do |name, schema|
+          out += "  puts #{Cdd::TokenScanner.single_quote_literal("  #{name}")}\n"
+          next unless schema['discriminator']
+
+          prop_name = schema['discriminator']['propertyName']
+          out += "  puts #{Cdd::TokenScanner.single_quote_literal("    Discriminator: #{prop_name}")}\n"
+          if schema['discriminator']['mapping']
+            map_json = schema['discriminator']['mapping'].to_json
+            out += "  puts #{Cdd::TokenScanner.single_quote_literal("    Mapping: #{map_json}")}\n"
           end
         end
         out
@@ -167,14 +194,33 @@ module Cdd
           methods.each do |method, details|
             operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
             summary = details['summary'] ? " - #{details['summary']}" : ''
-            out += "  puts '  #{operation_id}#{summary}'\n"
+            out += "  puts #{Cdd::TokenScanner.single_quote_literal("  #{operation_id}#{summary}")}\n"
             details['parameters']&.each do |param|
               req = param['required'] ? '*' : ''
-              out += "  puts '    --#{param['name']} [#{param['in']}] #{req}'\n"
+              param_lit = Cdd::TokenScanner.single_quote_literal("    --#{param['name']} [#{param['in']}] #{req}")
+              out += "  puts #{param_lit}\n"
             end
           end
         end
         out
+      end
+
+      # Returns the shared MCP JSON-RPC `elsif` branches for standard stubbed MCP methods.
+      #
+      # @param indent [String] leading whitespace indentation
+      # @return [String] shared Ruby `elsif` branch lines
+      def self.common_mcp_branch_lines(indent = '      ')
+        "#{indent}elsif %w[ping logging/setLevel resources/subscribe resources/unsubscribe].include?(req['method'])\n" \
+          "#{indent}  resp[:result] = {}\n" \
+          "#{indent}elsif req['method'] == 'roots/list'\n" \
+          "#{indent}  resp[:result] = { roots: [] }\n" \
+          "#{indent}elsif req['method'] == 'resources/templates/list'\n" \
+          "#{indent}  resp[:result] = { resourceTemplates: [] }\n" \
+          "#{indent}elsif req['method'] == 'sampling/createMessage'\n" \
+          "#{indent}  resp[:result] = { role: 'assistant', model: 'stub-model', " \
+          "content: { type: 'text', text: 'sampled' } }\n" \
+          "#{indent}elsif req['method'] == 'completion/complete'\n" \
+          "#{indent}  resp[:result] = { completion: { values: [], total: 0, hasMore: false } }"
       end
 
       # Emits the `when 'mcp'` stdio JSON-RPC server branch using safe Open3 subprocess execution.
@@ -186,6 +232,7 @@ module Cdd
         info = openapi['info'] || {}
         tools_json = build_mcp_tools(openapi, arazzo).to_json
         docs_text = "# #{info['title'] || 'API'} Docs\n\n#{info['description'] || ''}"
+        common_branches = common_mcp_branch_lines('      ')
         <<~RUBY
           command = ARGV.shift
           case command
@@ -205,12 +252,7 @@ module Cdd
                 resp = { jsonrpc: '2.0', id: req['id'], result: { _meta: {} } }
                 if req['method'] == 'initialize'
                   resp[:result] = { capabilities: { tools: { listChanged: true }, resources: { subscribe: true, listChanged: true }, prompts: { listChanged: true }, logging: {}, experimental: {}, roots: { listChanged: true }, sampling: {} }, serverInfo: { name: 'sdk-cli-mcp', version: '1.0.0' }, protocolVersion: '2024-11-05', instructions: '' }
-                elsif req['method'] == 'ping' || req['method'] == 'logging/setLevel' || req['method'] == 'resources/subscribe' || req['method'] == 'resources/unsubscribe'
-                  resp[:result] = {}
-                elsif req['method'] == 'sampling/createMessage'
-                  resp[:result] = { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
-                elsif req['method'] == 'completion/complete'
-                  resp[:result] = { completion: { values: [], total: 0, hasMore: false } }
+          #{common_branches}
                 elsif req['method'] == 'prompts/list'
                   resp[:result] = { prompts: [{ name: 'api_help', description: 'Help for API', arguments: [] }] }
                 elsif req['method'] == 'prompts/get'
@@ -218,13 +260,9 @@ module Cdd
                   resp[:result] = name == 'api_help' ? { description: 'API Help', messages: [{ role: 'user', content: { type: 'text', text: 'How do I use this API?' } }] } : { messages: [] }
                 elsif req['method'] == 'resources/list'
                   resp[:result] = { resources: [{ uri: 'mcp://api/docs', name: 'API Documentation', mimeType: 'text/markdown' }] }
-                elsif req['method'] == 'resources/templates/list'
-                  resp[:result] = { resourceTemplates: [] }
                 elsif req['method'] == 'resources/read'
                   uri = req.dig('params', 'uri')
                   resp[:result] = uri == 'mcp://api/docs' ? { contents: [{ uri: uri, mimeType: 'text/markdown', text: #{docs_text.inspect} }] } : { contents: [] }
-                elsif req['method'] == 'roots/list'
-                  resp[:result] = { roots: [] }
                 elsif req['method'] == 'tools/list'
                   resp[:result] = { tools: #{tools_json} }
                 elsif req['method'] == 'tools/call'
@@ -277,7 +315,9 @@ module Cdd
         out += "  elsif sub == 'run'\n    wf_id = ARGV.shift\n    puts \"Running workflow \#{wf_id}\"\n  end\n"
         workflows.each do |workflow|
           wf_id = workflow['workflowId']
-          out += "when '#{wf_id}'\n  puts 'Running workflow #{wf_id}'\n"
+          wf_lit = Cdd::TokenScanner.single_quote_literal(wf_id)
+          msg_lit = Cdd::TokenScanner.single_quote_literal("Running workflow #{wf_id}")
+          out += "when #{wf_lit}\n  puts #{msg_lit}\n"
         end
         out
       end
@@ -290,7 +330,9 @@ module Cdd
       # @return [String] Ruby `when` branch code
       def self.emit_single_command_branch(path, method, details)
         operation_id = Cdd::TokenScanner.operation_id_for(method, path, details, collapse: false)
-        out = "when '#{operation_id}'\n  puts 'Calling #{method.upcase} #{path}'\n"
+        op_lit = Cdd::TokenScanner.single_quote_literal(operation_id)
+        call_lit = Cdd::TokenScanner.single_quote_literal("Calling #{method.upcase} #{path}")
+        out = "when #{op_lit}\n  puts #{call_lit}\n"
         out += "  # External Docs: #{details.dig('externalDocs', 'url')}\n" if details['externalDocs']
         out += "  # Tags: #{details['tags'].join(', ')}\n" if details['tags']
         out += emit_branch_request_body_comments(details['requestBody']) if details['requestBody']

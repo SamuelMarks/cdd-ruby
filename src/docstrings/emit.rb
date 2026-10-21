@@ -15,28 +15,25 @@ module Cdd
       # @return [String] formatted docstring summary lines
       def self.emit(ir)
         lines = []
-        (ir.openapi_spec.dig('components', 'schemas') || {}).each do |name, schema|
-          desc = schema.is_a?(Hash) && schema['description'] ? " #{schema['description']}" : ''
-          lines << "# @schema #{name}#{desc}"
+        ir.typed_schemas.each do |schema|
+          desc = schema.description ? " #{schema.description}" : ''
+          lines << "# @schema #{schema.name}#{desc}"
         end
-        (ir.openapi_spec['paths'] || {}).each do |path, methods|
-          emit_path_lines(path, methods, lines) if methods.is_a?(Hash)
+        ir.typed_paths.each do |path_item|
+          emit_path_lines(path_item, lines)
         end
         lines.empty? ? '' : "#{lines.join("\n")}\n"
       end
 
-      # Appends `@summary` and `@route` lines for a single path item.
+      # Appends `@summary` and `@route` lines for a single typed `PathItem`.
       #
-      # @param path [String] OpenAPI path string
-      # @param methods [Hash] path item operations map
+      # @param path_item [Cdd::IR::PathItem] typed OpenAPI path item
       # @param lines [Array<String>] accumulator array
       # @return [void]
-      def self.emit_path_lines(path, methods, lines)
-        methods.each do |method, details|
-          next if method.start_with?('x-') || NON_VERB_KEYS.include?(method)
-
-          lines << "# @summary #{details['summary']}" if details.is_a?(Hash) && details['summary']
-          lines << "# @route #{method.upcase} #{path}"
+      def self.emit_path_lines(path_item, lines)
+        path_item.operations.each do |method, operation|
+          lines << "# @summary #{operation.summary}" if operation.summary
+          lines << "# @route #{method.upcase} #{path_item.path}"
         end
       end
     end
