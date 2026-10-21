@@ -228,7 +228,8 @@ module Cdd
         server_code = "# frozen_string_literal: true\n\n$cli_options ||= {}\n"
         server_code += "require_relative 'config/cli_parser'\n"
         server_code += "$cli_options = CliParser.parse(ARGV) if ARGV.any?\n\n"
-        server_code += "require 'sinatra'\nrequire 'json'\n\nset :server, :puma\n\n"
+        server_code += "require 'sinatra'\nrequire 'json'\n\nset :server, :puma\n"
+        server_code += "set :host_authorization, { permitted_hosts: [] }\n\n"
         if openapi['info']
           server_code += "# API Title: #{openapi['info']['title']}\n" if openapi['info']['title']
           server_code += "# Version: #{openapi['info']['version']}\n" if openapi['info']['version']
@@ -262,7 +263,8 @@ module Cdd
         FileUtils.mkdir_p(File.join(options[:output], 'tests'))
         test_files = Cdd::Tests::Emitter.emit_multiple(ir, options.merge(server: true))
         test_files.each do |filename, t_code|
-          full_test_code = "# frozen_string_literal: true\n\nrequire 'minitest'\nrequire 'minitest/autorun'\n" \
+          full_test_code = "# frozen_string_literal: true\n\nENV['RACK_ENV'] ||= 'test'\n" \
+                           "require 'minitest'\nrequire 'minitest/autorun'\n" \
                            "require_relative '../server'\n\n#{t_code}"
           File.write(File.join(options[:output], 'tests', filename), full_test_code)
         end
@@ -687,6 +689,7 @@ module Cdd
         auth_code += <<~RUBY
           # Security Middleware
           before do
+            pass if request.request_method == 'OPTIONS'
             pass if request.path_info == '/mcp/sse' || request.path_info == '/mcp/message'
             pass if request.path_info.start_with?('/auth/')
             if $cli_options[:enforce_auth] || (ENV['EPHEMERAL_DB'] == 'true')

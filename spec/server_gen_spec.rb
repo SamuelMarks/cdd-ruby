@@ -102,13 +102,18 @@ class ServerGenTest < Minitest::Test
       dao_code = File.read(File.join(out_dir, 'daos', 'user_dao.rb'))
       seeder_code = File.read(File.join(out_dir, 'config', 'seeder.rb'))
       server_code = File.read(File.join(out_dir, 'server.rb'))
+      auth_code = File.read(File.join(out_dir, 'middlewares', 'auth.rb'))
+      routes_test_code = File.read(File.join(out_dir, 'tests', 'routes_test.rb'))
 
       test_code = Cdd::Tests::Emitter.emit(ir, options)
 
       assert db_code.include?('class DatabaseConnection')
       assert dao_code.include?('class ConcreteUserDao < AbstractUserDao')
       assert seeder_code.include?('module Seeder')
+      assert server_code.include?('set :host_authorization, { permitted_hosts: [] }')
       assert server_code.include?("if defined?(DatabaseConnection) && (ENV['DATABASE_URL'] || ENV['EPHEMERAL_DB'] == 'true')")
+      assert auth_code.include?("pass if request.request_method == 'OPTIONS'")
+      assert routes_test_code.include?("ENV['RACK_ENV'] ||= 'test'")
       assert test_code.include?('class DatabaseConnectionTest')
       assert RubyVM::InstructionSequence.compile(test_code)
       Dir.glob(File.join(out_dir, '**', '*.rb')).each do |rb_file|
