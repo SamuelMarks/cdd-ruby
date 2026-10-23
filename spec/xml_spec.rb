@@ -27,9 +27,14 @@ class XmlTest < Minitest::Test
     ir = Cdd::IR.new
     ir.openapi_spec['components']['schemas']['User'] = {
       'type' => 'object',
+      'readOnly' => true,
+      'properties' => {
+        'id' => { 'type' => 'integer', 'readOnly' => true }
+      },
       'xml' => {
         'name' => 'user',
         'attribute' => true,
+        'nodeType' => 'element',
         'wrapped' => false,
         'prefix' => 'ex',
         'namespace' => 'http://example.com/schema'
@@ -38,7 +43,17 @@ class XmlTest < Minitest::Test
 
     out = Cdd::Classes::Emitter.emit(ir)
     assert_match(
-      %r{@schema_xml User name:user attribute:true wrapped:false prefix:ex namespace:http://example.com/schema}, out
+      %r{@schema_xml User name:user attribute:true nodeType:element wrapped:false prefix:ex namespace:http://example.com/schema},
+      out
     )
+    assert_includes out, '# @readonly id'
+
+    ir2 = Cdd::IR.new
+    tokens = Ripper.lex(out)
+    Cdd::Classes::Parser.parse(tokens, ir2)
+    Cdd::Docstrings::Parser.parse(tokens, ir2)
+    assert_equal true, ir2.openapi_spec.dig('components', 'schemas', 'User', 'readOnly')
+    assert_equal true, ir2.openapi_spec.dig('components', 'schemas', 'User', 'properties', 'id', 'readOnly')
+    assert_equal 'element', ir2.openapi_spec.dig('components', 'schemas', 'User', 'xml', 'nodeType')
   end
 end

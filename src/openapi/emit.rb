@@ -40,12 +40,13 @@ module Cdd
         out
       end
 
-      # Emits `@api_externalDocs` and `@api_webhook` docstring lines.
+      # Emits `@api_produces`, `@api_externalDocs`, and `@api_webhook` docstring lines.
       #
       # @param spec [Hash] OpenAPI specification hash
-      # @return [String] formatted externalDocs and webhook lines
+      # @return [String] formatted produces, externalDocs, and webhook lines
       def self.emit_docs_and_webhooks(spec)
         out = ''
+        out += "# @api_produces #{spec['produces'].join(', ')}\n" if spec['produces']&.any?
         if spec['externalDocs']
           ed = spec['externalDocs']
           desc = ed['description'] ? " #{ed['description']}" : ''

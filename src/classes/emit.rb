@@ -12,6 +12,7 @@ module Cdd
       # @return [String] generated Ruby source code
       def self.emit(ir)
         out = emit_security_schemes(ir.openapi_spec.dig('components', 'securitySchemes') || {})
+        out += emit_security_schemes(ir.openapi_spec['securityDefinitions'] || {}, 'security_definition')
         raw_schemas = ir.openapi_spec.dig('components', 'schemas') || {}
         ir.typed_schemas.each do |schema|
           out += if schema.one_of
@@ -25,25 +26,43 @@ module Cdd
         out
       end
 
-      # Emits `@security_scheme` docstring tags for all component security schemes.
+      # Emits `@security_scheme` or `@security_definition` docstring tags for security schemes.
       #
-      # @param security_schemes [Hash{String => Hash}] securitySchemes component map
-      # @return [String] formatted `@security_scheme` lines
-      def self.emit_security_schemes(security_schemes)
+      # @param security_schemes [Hash{String => Hash}] securitySchemes or securityDefinitions map
+      # @param tag_name [String] docstring tag name (`'security_scheme'` or `'security_definition'`)
+      # @return [String] formatted security scheme lines
+      def self.emit_security_schemes(security_schemes, tag_name = 'security_scheme')
         return '' if security_schemes.empty?
 
         lines = security_schemes.map do |name, scheme|
-          opts = []
-          scheme.each do |k, v|
-            next if %w[type description].include?(k)
-
-            opts << "#{k}:#{v}"
-          end
+          opts = format_security_scheme_options(scheme)
           opts_str = opts.empty? ? '' : " #{opts.join(' ')}"
           desc = scheme['description'] ? " #{scheme['description']}" : ''
-          "# @security_scheme #{name} #{scheme['type']}#{opts_str}#{desc}\n"
+          "# @#{tag_name} #{name} #{scheme['type']}#{opts_str}#{desc}\n"
         end
         "#{lines.join}\n"
+      end
+
+      # Formats scalar and nested OAuth flow options for a security scheme.
+      #
+      # @param scheme [Hash] OpenAPI or Swagger security scheme hash
+      # @return [Array<String>] list of `key:value` option strings
+      def self.format_security_scheme_options(scheme)
+        opts = []
+        scheme.each do |k, v|
+          next if %w[type description].include?(k)
+
+          if k == 'flows' && v.is_a?(Hash)
+            v.each do |flow_name, flow_obj|
+              flow_obj.each do |fk, fv|
+                opts << "flows.#{flow_name}.#{fk}:#{fv}" if fv.is_a?(String)
+              end
+            end
+          else
+            opts << "#{k}:#{v}"
+          end
+        end
+        opts
       end
 
       # Emits a `@schema_one_of` or `@schema_any_of` docstring tag with optional discriminator metadata.
@@ -90,7 +109,10 @@ module Cdd
           out += "# @schema_xml #{schema.name} #{xml_opts.join(' ')}\n"
         end
         out += format_class_header(schema.name, schema.all_of)
-        schema.properties.each { |prop| out += "  attr_accessor :#{prop.name}\n" }
+        schema.properties.each do |prop|
+          out += "  # @readonly #{prop.name}\n" if prop.read_only
+          out += "  attr_accessor :#{prop.name}\n"
+        end
         "#{out}end\n\n"
       end
 

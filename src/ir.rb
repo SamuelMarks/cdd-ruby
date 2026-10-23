@@ -14,27 +14,28 @@ module Cdd
     Server = Data.define(:url, :description, :variables)
 
     # Strongly-typed representation of an OpenAPI Schema property.
-    Property = Data.define(:name, :type, :description, :example, :ref)
+    Property = Data.define(:name, :type, :description, :example, :ref, :read_only)
 
     # Strongly-typed representation of an OpenAPI Schema component.
     Schema = Data.define(:name, :type, :properties, :required, :all_of, :one_of, :any_of, :discriminator, :xml,
-                         :example, :description)
+                         :example, :description, :read_only)
 
     # Strongly-typed representation of an OpenAPI Parameter.
     Parameter = Data.define(:name, :in_location, :schema, :required, :description, :style, :explode,
-                            :allow_reserved, :allow_empty_value, :deprecated, :examples)
+                            :allow_reserved, :allow_empty_value, :deprecated, :examples, :collection_format, :items)
 
     # Strongly-typed representation of an OpenAPI Encoding object.
-    Encoding = Data.define(:content_type, :headers, :style, :explode, :allow_reserved, :description)
+    Encoding = Data.define(:content_type, :headers, :style, :explode, :allow_reserved, :description,
+                           :prefix_encoding, :item_encoding)
 
     # Strongly-typed representation of an OpenAPI MediaType object.
-    MediaType = Data.define(:schema, :example, :examples, :encoding)
+    MediaType = Data.define(:schema, :item_schema, :example, :examples, :encoding, :prefix_encoding, :item_encoding)
 
     # Strongly-typed representation of an OpenAPI RequestBody object.
     RequestBody = Data.define(:description, :content, :required)
 
     # Strongly-typed representation of an OpenAPI Header object.
-    Header = Data.define(:description, :schema, :required, :deprecated, :example, :examples)
+    Header = Data.define(:description, :schema, :required, :deprecated, :example, :examples, :collection_format, :items)
 
     # Strongly-typed representation of an OpenAPI Link object.
     Link = Data.define(:operation_ref, :operation_id, :parameters, :request_body, :description, :server)
@@ -44,17 +45,19 @@ module Cdd
 
     # Strongly-typed representation of an OpenAPI Operation object.
     Operation = Data.define(:http_method, :path, :operation_id, :summary, :description, :tags, :parameters,
-                            :request_body, :responses, :callbacks, :security, :servers, :deprecated, :external_docs)
+                            :request_body, :responses, :callbacks, :security, :servers, :deprecated, :external_docs,
+                            :produces)
 
     # Strongly-typed representation of an OpenAPI PathItem object.
-    PathItem = Data.define(:path, :summary, :description, :operations, :parameters, :servers, :ref)
+    PathItem = Data.define(:path, :summary, :description, :operations, :additional_operations, :parameters, :servers,
+                           :ref)
 
     # Strongly-typed representation of an OpenAPI OAuthFlows object.
     OAuthFlows = Data.define(:implicit, :password, :client_credentials, :authorization_code, :device_authorization)
 
     # Strongly-typed representation of an OpenAPI SecurityScheme object.
     SecurityScheme = Data.define(:name, :type, :description, :param_name, :in_location, :scheme, :bearer_format,
-                                 :flows, :open_id_connect_url, :oauth2_metadata_url)
+                                 :flows, :open_id_connect_url, :oauth2_metadata_url, :authorization_url)
 
     # Strongly-typed representation of an OpenAPI Example object.
     Example = Data.define(:name, :schema_ref, :summary, :description, :value, :data_value, :serialized_value,
@@ -151,10 +154,14 @@ module Cdd
       end
       if hash['paths'].is_a?(Hash)
         hash['paths'].each do |path, methods|
-          methods.each_key do |verb|
+          methods.each do |verb, op_val|
             next if %w[$ref summary description servers parameters].include?(verb)
 
-            ir.routes |= ["#{verb.upcase} #{path}"]
+            if verb == 'additionalOperations' && op_val.is_a?(Hash)
+              op_val.each_key { |add_verb| ir.routes |= ["#{add_verb.upcase} #{path}"] }
+            else
+              ir.routes |= ["#{verb.upcase} #{path}"]
+            end
           end
         end
       end
@@ -464,7 +471,8 @@ module Cdd
             type: p['type'],
             description: p['description'],
             example: p['example'],
-            ref: p['$ref']
+            ref: p['$ref'],
+            read_only: p['readOnly']
           )
         end
         Schema.new(
@@ -478,7 +486,8 @@ module Cdd
           discriminator: s['discriminator'],
           xml: s['xml'],
           example: s['example'],
-          description: s['description']
+          description: s['description'],
+          read_only: s['readOnly']
         )
       end
     end
@@ -499,7 +508,26 @@ module Cdd
         allow_reserved: raw['allowReserved'],
         allow_empty_value: raw['allowEmptyValue'],
         deprecated: raw['deprecated'],
-        examples: raw['examples']
+        examples: raw['examples'],
+        collection_format: raw['collectionFormat'],
+        items: raw['items']
+      )
+    end
+
+    # Builds a typed `Encoding` from a raw OpenAPI encoding Hash.
+    #
+    # @param raw [Hash] raw OpenAPI encoding hash
+    # @return [Cdd::IR::Encoding] typed encoding object
+    def self.build_encoding(raw)
+      Encoding.new(
+        content_type: raw['contentType'],
+        headers: raw['headers'],
+        style: raw['style'],
+        explode: raw['explode'],
+        allow_reserved: raw['allowReserved'],
+        description: raw['description'],
+        prefix_encoding: (raw['prefixEncoding'] || []).map { |pe| build_encoding(pe) },
+        item_encoding: raw['itemEncoding'].is_a?(Hash) ? build_encoding(raw['itemEncoding']) : nil
       )
     end
 
@@ -508,21 +536,15 @@ module Cdd
     # @param raw [Hash] raw OpenAPI media type hash
     # @return [Cdd::IR::MediaType] typed media type object
     def self.build_media_type(raw)
-      encodings = (raw['encoding'] || {}).transform_values do |enc|
-        Encoding.new(
-          content_type: enc['contentType'],
-          headers: enc['headers'],
-          style: enc['style'],
-          explode: enc['explode'],
-          allow_reserved: enc['allowReserved'],
-          description: enc['description']
-        )
-      end
+      encodings = (raw['encoding'] || {}).transform_values { |enc| build_encoding(enc) }
       MediaType.new(
         schema: raw['schema'],
+        item_schema: raw['itemSchema'],
         example: raw['example'],
         examples: raw['examples'],
-        encoding: encodings
+        encoding: encodings,
+        prefix_encoding: (raw['prefixEncoding'] || []).map { |pe| build_encoding(pe) },
+        item_encoding: raw['itemEncoding'].is_a?(Hash) ? build_encoding(raw['itemEncoding']) : nil
       )
     end
 
@@ -554,7 +576,9 @@ module Cdd
           required: h['required'],
           deprecated: h['deprecated'],
           example: h['example'],
-          examples: h['examples']
+          examples: h['examples'],
+          collection_format: h['collectionFormat'],
+          items: h['items']
         )
       end
       links = (raw['links'] || {}).transform_values do |l|
@@ -600,8 +624,29 @@ module Cdd
         security: raw['security'],
         servers: raw['servers'],
         deprecated: raw['deprecated'],
-        external_docs: raw['externalDocs']
+        external_docs: raw['externalDocs'],
+        produces: raw['produces']
       )
+    end
+
+    # Builds typed standard and additional `Operation` maps for a path item.
+    #
+    # @param path [String] route path
+    # @param raw [Hash] raw OpenAPI PathItem hash
+    # @return [Array(Hash, Hash)] `[operations, additional_operations]`
+    def self.build_path_item_operations(path, raw)
+      ops = {}
+      add_ops = {}
+      raw.each do |k, v|
+        if k == 'additionalOperations' && v.is_a?(Hash)
+          v.each { |ak, av| add_ops[ak] = build_operation(ak, path, av) }
+          next
+        end
+        next if k.start_with?('x-') || %w[$ref summary description servers parameters].include?(k) || !v.is_a?(Hash)
+
+        ops[k] = build_operation(k, path, v)
+      end
+      [ops, add_ops]
     end
 
     # Builds typed `PathItem` value objects from the current OpenAPI spec.
@@ -611,17 +656,13 @@ module Cdd
       (@openapi_spec['paths'] || {}).filter_map do |path, raw|
         next nil unless raw.is_a?(Hash)
 
-        ops = {}
-        raw.each do |k, v|
-          next if k.start_with?('x-') || %w[$ref summary description servers parameters].include?(k) || !v.is_a?(Hash)
-
-          ops[k] = self.class.build_operation(k, path, v)
-        end
+        ops, add_ops = self.class.build_path_item_operations(path, raw)
         PathItem.new(
           path: path,
           summary: raw['summary'],
           description: raw['description'],
           operations: ops,
+          additional_operations: add_ops,
           parameters: (raw['parameters'] || []).map { |p| self.class.build_parameter(p) },
           servers: raw['servers'],
           ref: raw['$ref']
@@ -629,12 +670,14 @@ module Cdd
       end
     end
 
-    # Builds typed `SecurityScheme` value objects from the current OpenAPI spec.
+    # Builds typed `SecurityScheme` value objects from the current OpenAPI or Swagger spec.
     #
     # @return [Array<Cdd::IR::SecurityScheme>] list of typed SecurityScheme objects
     def typed_security_schemes
-      schemes = @openapi_spec.dig('components', 'securitySchemes')
-      return [] unless schemes.is_a?(Hash)
+      comp_schemes = @openapi_spec.dig('components', 'securitySchemes')
+      swag_schemes = @openapi_spec['securityDefinitions']
+      schemes = (comp_schemes.is_a?(Hash) ? comp_schemes : {}).merge(swag_schemes.is_a?(Hash) ? swag_schemes : {})
+      return [] if schemes.empty?
 
       schemes.map do |name, raw|
         raw_flows = raw['flows']
@@ -657,7 +700,8 @@ module Cdd
           bearer_format: raw['bearerFormat'],
           flows: flows,
           open_id_connect_url: raw['openIdConnectUrl'],
-          oauth2_metadata_url: raw['oauth2MetadataUrl']
+          oauth2_metadata_url: raw['oauth2MetadataUrl'],
+          authorization_url: raw['authorizationUrl']
         )
       end
     end

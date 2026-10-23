@@ -27,7 +27,7 @@ module Cdd
         end
       end
 
-      # Parses `@schema_one_of`, `@schema_any_of`, or `# property:` comments.
+      # Parses `@schema_one_of`, `@schema_any_of`, `@readonly`, or `# property:` comments.
       #
       # @param comment [String] raw comment text
       # @param current_class [String, nil] currently active class name
@@ -39,6 +39,10 @@ module Cdd
           name = ::Regexp.last_match(2)
           schema = Cdd::TokenScanner.parse_composition_schema(comp_key, ::Regexp.last_match(3))
           ensure_schemas(ir)[name] = schema
+        elsif current_class && comment =~ /#\s*@readonly\s+(\w+)/
+          prop = ::Regexp.last_match(1)
+          schema = ensure_class_schema(ir, current_class)
+          (schema['properties'][prop] ||= { 'type' => 'string' })['readOnly'] = true
         elsif current_class && comment =~ /#\s*property:\s+(\w+)\s+\((.+)\)/
           prop = ::Regexp.last_match(1)
           type = ::Regexp.last_match(2)

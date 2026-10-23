@@ -49,7 +49,10 @@ class ArazzoBidirectionalTest < Minitest::Test
               ],
               'requestBody' => {
                 'contentType' => 'application/json',
-                'payload' => { 'name' => 'Rex' }
+                'payload' => { 'name' => 'Rex' },
+                'replacements' => [
+                  { 'target' => '/name', 'value' => '$inputs.user' }
+                ]
               },
               'outputs' => {
                 'id' => '$response.body#/id',
@@ -59,7 +62,11 @@ class ArazzoBidirectionalTest < Minitest::Test
             {
               'stepId' => 'subWfStep',
               'workflowId' => 'notify_workflow',
-              'parameters' => [{ 'name' => 'petId', 'in' => 'query', 'value' => '$steps.createPet.outputs.id' }]
+              'parameters' => [{ 'name' => 'petId', 'in' => 'query', 'value' => '$steps.createPet.outputs.id' }],
+              'requestBody' => {
+                'contentType' => 'application/json',
+                'payload' => { 'notified' => true }
+              }
             },
             {
               'stepId' => 'asyncStep',

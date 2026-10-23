@@ -35,4 +35,38 @@ class SecuritySchemeTest < Minitest::Test
     assert_equal 'bearer', scheme['scheme']
     assert_nil scheme['description']
   end
+
+  def test_security_definition_and_oauth_flows
+    code = <<~RUBY
+      # @security_definition petstore_auth oauth2 authorizationUrl:https://petstore.swagger.io/oauth/dialog flow:implicit Swagger OAuth
+      # @security_scheme oauth2_full oauth2 flows.authorizationCode.authorizationUrl:https://example.com/oauth/authorize flows.authorizationCode.tokenUrl:https://example.com/oauth/token flows.authorizationCode.refreshUrl:https://example.com/oauth/refresh flows.deviceAuthorization.deviceAuthorizationUrl:https://example.com/oauth/device
+    RUBY
+
+    tokens = Ripper.lex(code)
+    ir = Cdd::IR.new
+    Cdd::Docstrings::Parser.parse(tokens, ir)
+
+    swag_def = ir.openapi_spec.dig('securityDefinitions', 'petstore_auth')
+    assert_equal 'oauth2', swag_def['type']
+    assert_equal 'https://petstore.swagger.io/oauth/dialog', swag_def['authorizationUrl']
+    assert_equal 'Swagger OAuth', swag_def['description']
+
+    oas_flow = ir.openapi_spec.dig('components', 'securitySchemes', 'oauth2_full', 'flows')
+    assert_equal 'https://example.com/oauth/authorize', oas_flow.dig('authorizationCode', 'authorizationUrl')
+    assert_equal 'https://example.com/oauth/token', oas_flow.dig('authorizationCode', 'tokenUrl')
+    assert_equal 'https://example.com/oauth/refresh', oas_flow.dig('authorizationCode', 'refreshUrl')
+    assert_equal 'https://example.com/oauth/device', oas_flow.dig('deviceAuthorization', 'deviceAuthorizationUrl')
+
+    typed = ir.typed_security_schemes
+    assert_equal 2, typed.size
+    petstore_typed = typed.find { |s| s.name == 'petstore_auth' }
+    assert_equal 'https://petstore.swagger.io/oauth/dialog', petstore_typed.authorization_url
+
+    out = Cdd::Classes::Emitter.emit(ir)
+    assert_includes out, '# @security_definition petstore_auth oauth2 ' \
+                         'authorizationUrl:https://petstore.swagger.io/oauth/dialog flow:implicit Swagger OAuth'
+    assert_includes out, 'flows.authorizationCode.authorizationUrl:https://example.com/oauth/authorize'
+    assert_includes out, 'flows.authorizationCode.refreshUrl:https://example.com/oauth/refresh'
+    assert_includes out, 'flows.deviceAuthorization.deviceAuthorizationUrl:https://example.com/oauth/device'
+  end
 end

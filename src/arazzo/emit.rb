@@ -177,7 +177,14 @@ module Cdd
           "#{param['name']}: #{RuntimeExpression.to_ruby_expr(param['value'])}"
         end
         rb = step['requestBody']
-        args << "body: #{rb['payload'].inspect}" if rb.is_a?(Hash) && rb.key?('payload')
+        if rb.is_a?(Hash) && rb.key?('payload')
+          args << if rb['replacements'].is_a?(Array) && !rb['replacements'].empty?
+                    "body: Cdd::Arazzo::PayloadReplacer.apply(#{rb['payload'].inspect}, " \
+                      "#{rb['replacements'].inspect}, { steps: steps, inputs: inputs })"
+                  else
+                    "body: #{rb['payload'].inspect}"
+                  end
+        end
         args
       end
 

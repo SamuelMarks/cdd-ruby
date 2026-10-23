@@ -33,7 +33,7 @@ module Cdd
         opts.empty? ? '' : " #{opts.join(' ')}"
       end
 
-      # Builds standard parameter option strings (`required`, `style`, `explode`, etc.).
+      # Builds standard parameter option strings (`required`, `style`, `explode`, `collectionFormat`, `items.*`, etc.).
       #
       # @param param [Hash] OpenAPI parameter object
       # @return [String] space-prefixed parameter option string
@@ -45,7 +45,47 @@ module Cdd
         opts << "allowReserved:#{param['allowReserved']}" unless param['allowReserved'].nil?
         opts << "allowEmptyValue:#{param['allowEmptyValue']}" unless param['allowEmptyValue'].nil?
         opts << "deprecated:#{param['deprecated']}" unless param['deprecated'].nil?
+        opts << "collectionFormat:#{param['collectionFormat']}" if param['collectionFormat']
+        param['items']&.each { |ik, iv| opts << "items.#{ik}:#{iv}" }
         format_options_list(opts)
+      end
+
+      # Builds standard header option strings (`required`, `collectionFormat`, `items.*`).
+      #
+      # @param hdr [Hash] OpenAPI header object
+      # @return [String] space-prefixed header option string
+      def format_header_options(hdr)
+        opts = []
+        opts << "required:#{hdr['required']}" unless hdr['required'].nil?
+        opts << "collectionFormat:#{hdr['collectionFormat']}" if hdr['collectionFormat']
+        hdr['items']&.each { |ik, iv| opts << "items.#{ik}:#{iv}" }
+        format_options_list(opts)
+      end
+
+      # Builds MediaType option strings (`itemSchema`, `itemEncoding.*`, `prefixEncoding.*`).
+      #
+      # @param media_obj [Hash] OpenAPI media type object
+      # @return [String] space-prefixed media type option string
+      def format_media_type_options(media_obj)
+        opts = []
+        opts << "itemSchema:#{schema_type_name({ 'schema' => media_obj['itemSchema'] })}" if media_obj['itemSchema']
+        media_obj['itemEncoding']&.each { |ik, iv| opts << "itemEncoding.#{ik}:#{iv}" }
+        media_obj['prefixEncoding']&.first&.each { |pk, pv| opts << "prefixEncoding.#{pk}:#{pv}" }
+        format_options_list(opts)
+      end
+
+      # Builds Encoding option strings (`contentType`, `style`, `explode`, `headers.*`, `itemEncoding.*`, etc.).
+      #
+      # @param enc [Hash] OpenAPI Encoding object
+      # @return [String] space-prefixed encoding option string
+      def format_encoding_options(enc)
+        enc_opts = %w[contentType style explode allowReserved].filter_map do |k|
+          "#{k}:#{enc[k]}" unless enc[k].nil?
+        end
+        enc['headers']&.each { |hk, hv| enc_opts << "headers.#{hk}:$ref:#{hv['$ref']}" if hv['$ref'] }
+        enc['itemEncoding']&.each { |ik, iv| enc_opts << "itemEncoding.#{ik}:#{iv}" }
+        enc['prefixEncoding']&.first&.each { |pk, pv| enc_opts << "prefixEncoding.#{pk}:#{pv}" }
+        format_options_list(enc_opts)
       end
 
       # Formats Link option strings (`operationId`, `operationRef`, `parameters.*`, `requestBody`).
@@ -68,6 +108,7 @@ module Cdd
       def emit_components(components)
         out = emit_component_parameters(components['parameters'])
         out += emit_component_request_bodies(components['requestBodies'])
+        out += emit_component_media_types(components['mediaTypes'])
         out += emit_component_headers(components['headers'])
         out += emit_component_responses(components['responses'])
         out += emit_component_links(components['links'])
@@ -98,9 +139,23 @@ module Cdd
 
         lines = request_bodies.map do |rb_name, rb|
           media_type, schema_name = first_media_schema(rb['content'])
+          mt_opts = format_media_type_options(rb.dig('content', media_type))
           opts_str = rb['required'].nil? ? '' : " required:#{rb['required']}"
           desc = rb['description'] ? " description:#{rb['description']}" : ''
-          "# @component_request_body #{rb_name} [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
+          "# @component_request_body #{rb_name} [#{schema_name}] #{media_type}#{opts_str}#{mt_opts}#{desc}\n"
+        end
+        "#{lines.join}\n"
+      end
+
+      # Emits `@component_media_type` docstring tags.
+      #
+      # @param media_types [Hash, nil] `components.mediaTypes` map
+      # @return [String] formatted `@component_media_type` lines
+      def emit_component_media_types(media_types)
+        return '' unless media_types
+
+        lines = media_types.map do |mt_name, mt|
+          "# @component_media_type #{mt_name} [#{schema_type_name(mt)}]#{format_media_type_options(mt)}\n"
         end
         "#{lines.join}\n"
       end
@@ -113,7 +168,7 @@ module Cdd
         return '' unless headers
 
         lines = headers.map do |h_name, hdr|
-          opts_str = hdr['required'].nil? ? '' : " required:#{hdr['required']}"
+          opts_str = format_header_options(hdr)
           desc = hdr['description'] ? " description:#{hdr['description']}" : ''
           "# @component_header #{h_name} [#{schema_type_name(hdr)}]#{opts_str}#{desc}\n"
         end
@@ -131,9 +186,11 @@ module Cdd
           desc = resp['description'] && resp['description'] != 'Response' ? " description:#{resp['description']}" : ''
           if resp['content']
             media_type, schema_name = first_media_schema(resp['content'])
-            req_val = resp['content'][media_type]['required']
+            mt_obj = resp['content'][media_type]
+            req_val = mt_obj['required']
             opts_str = req_val.nil? ? '' : " required:#{req_val}"
-            "# @component_response #{r_name} [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
+            mt_opts = format_media_type_options(mt_obj)
+            "# @component_response #{r_name} [#{schema_name}] #{media_type}#{opts_str}#{mt_opts}#{desc}\n"
           else
             "# @component_response #{r_name}#{desc}\n"
           end
@@ -317,16 +374,19 @@ module Cdd
         out += "# @path_summary #{path_data['summary']}\n" if path_data['summary']
         out += "# @path_description #{path_data['description']}\n" if path_data['description']
         path_data.each do |method, op|
-          next if %w[summary description].include?(method)
+          next if %w[summary description additionalOperations].include?(method)
 
           out += emit_operation(op_entry[:type], path, method, op)
+        end
+        path_data['additionalOperations']&.each do |method, op|
+          out += emit_operation('additional_route', path, method, op)
         end
         out
       end
 
       # Emits a single HTTP operation's docstring tags and Sinatra route block.
       #
-      # @param op_type [String] `'route'` or `'webhook'`
+      # @param op_type [String] `'route'`, `'webhook'`, or `'additional_route'`
       # @param path [String] route path or webhook name
       # @param method [String] HTTP method
       # @param op [Hash] OpenAPI operation hash
@@ -338,18 +398,18 @@ module Cdd
         out += emit_operation_responses(op['responses'] || {})
         out += emit_operation_callbacks(op['callbacks'] || {})
         out += emit_operation_security(op['security'])
-        tag = op_type == 'webhook' ? 'webhook' : 'route'
-        out += "# @#{tag} #{method.upcase} #{path}\n"
+        out += "# @#{op_type} #{method.upcase} #{path}\n"
         "#{out}#{method.downcase} '#{path}' do\n  # TODO: implement\n  status 200\nend\n\n"
       end
 
-      # Emits operation-level metadata tags (`@deprecated`, `@external_docs`, `@op_server`, `@operationId`, etc.).
+      # Emits operation-level metadata tags (`@deprecated`, `@produces`, `@external_docs`, `@op_server`, etc.).
       #
       # @param op [Hash] OpenAPI operation hash
       # @return [String] formatted operation metadata lines
       def self.emit_operation_metadata(op)
         out = ''
         out += "# @deprecated\n" if op['deprecated']
+        out += "# @produces #{op['produces'].join(', ')}\n" if op['produces']&.any?
         if op['externalDocs']
           ed = op['externalDocs']
           desc = ed['description'] ? " #{ed['description']}" : ''
@@ -397,9 +457,10 @@ module Cdd
         return "# @request_body_ref #{request_body['$ref'].split('/').last}\n" if request_body['$ref']
 
         media_type, schema_name = first_media_schema(request_body['content'])
+        mt_opts = format_media_type_options(request_body.dig('content', media_type))
         opts_str = request_body['required'].nil? ? '' : " required:#{request_body['required']}"
         desc = request_body['description'] ? " #{request_body['description']}" : ''
-        out = "# @request_body [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
+        out = "# @request_body [#{schema_name}] #{media_type}#{opts_str}#{mt_opts}#{desc}\n"
         request_body['content'].each do |m_type, content_data|
           content_data['examples']&.each do |ex_name, ex|
             out += "# @request_body_example_ref #{m_type} #{ex_name} #{ex['$ref'].split('/').last}\n" if ex['$ref']
@@ -417,14 +478,8 @@ module Cdd
       def self.emit_content_encodings(media_type, encodings)
         out = ''
         encodings.each do |prop, enc|
-          enc_opts = []
-          enc_opts << "contentType:#{enc['contentType']}" if enc['contentType']
-          enc_opts << "style:#{enc['style']}" if enc['style']
-          enc_opts << "explode:#{enc['explode']}" unless enc['explode'].nil?
-          enc_opts << "allowReserved:#{enc['allowReserved']}" unless enc['allowReserved'].nil?
-          enc['headers']&.each { |hk, hv| enc_opts << "headers.#{hk}:$ref:#{hv['$ref']}" if hv['$ref'] }
           enc_desc = enc['description'] ? " description:#{enc['description']}" : ''
-          out += "# @request_body_encoding #{media_type} #{prop}#{format_options_list(enc_opts)}#{enc_desc}\n"
+          out += "# @request_body_encoding #{media_type} #{prop}#{format_encoding_options(enc)}#{enc_desc}\n"
         end
         out
       end
@@ -467,9 +522,11 @@ module Cdd
         desc = resp['description'] && resp['description'] != 'Response' ? " #{resp['description']}" : ''
         if resp['content']
           media_type, schema_name = first_media_schema(resp['content'])
-          req_val = resp['content'][media_type]['required']
+          mt_obj = resp['content'][media_type]
+          req_val = mt_obj['required']
           opts_str = req_val.nil? ? '' : " required:#{req_val}"
-          out = "# @response #{status} [#{schema_name}] #{media_type}#{opts_str}#{desc}\n"
+          mt_opts = format_media_type_options(mt_obj)
+          out = "# @response #{status} [#{schema_name}] #{media_type}#{opts_str}#{mt_opts}#{desc}\n"
           resp['content'].each do |m_type, content_data|
             content_data['examples']&.each do |ex_name, ex|
               if ex['$ref']
@@ -495,7 +552,7 @@ module Cdd
           if hdr['$ref']
             out += "# @response_header_ref #{status} #{h_name} #{hdr['$ref'].split('/').last}\n"
           else
-            opts_str = hdr['required'].nil? ? '' : " required:#{hdr['required']}"
+            opts_str = format_header_options(hdr)
             h_desc = hdr['description'] ? " #{hdr['description']}" : ''
             out += "# @response_header #{status} #{h_name} [#{schema_type_name(hdr)}]#{opts_str}#{h_desc}\n"
           end

@@ -239,7 +239,7 @@ module Cdd
 
     # Dispatches common MCP protocol methods (`ping`, `logging/setLevel`, `resources/subscribe`,
     # `resources/unsubscribe`, `resources/templates/list`, `roots/list`, `sampling/createMessage`,
-    # and `completion/complete`).
+    # `completion/complete`, `notifications/initialized`, and `close`).
     #
     # @param method [String] JSON-RPC method name
     # @return [Hash, nil] result payload hash, or `nil` if `method` is not a common stub method
@@ -247,7 +247,8 @@ module Cdd
       case method
       when 'resources/templates/list' then { resourceTemplates: get_resource_templates }
       when 'roots/list' then { roots: get_roots }
-      when 'resources/subscribe', 'resources/unsubscribe', 'logging/setLevel', 'ping' then {}
+      when 'resources/subscribe', 'resources/unsubscribe', 'logging/setLevel',
+           'ping', 'notifications/initialized', 'close' then {}
       when 'sampling/createMessage' then sample_message
       when 'completion/complete' then complete_prompt(nil, nil, nil)
       end
@@ -300,7 +301,13 @@ module Cdd
     # @return [Array<Hash>] list of resources
     def get_resources
       [
-        { uri: 'mcp://cdd/ast', name: 'Internal AST Query Resource', mimeType: 'application/json' }
+        {
+          uri: 'mcp://cdd/ast',
+          name: 'Internal AST Query Resource',
+          description: 'Internal AST representation',
+          mimeType: 'application/json',
+          annotations: { audience: ['assistant'], priority: 1.0 }
+        }
       ]
     end
 
@@ -309,7 +316,9 @@ module Cdd
     # @return [Hash] the resource contents
     # @raise [Cdd::McpError] when the requested URI is not found
     def read_resource(uri)
-      raise Cdd::McpError, "Resource not found: #{uri}" unless uri == 'mcp://cdd/ast'
+      raise Cdd::McpError, "Resource not found: #{uri}" unless %w[mcp://cdd/ast mcp://cdd/blob].include?(uri)
+
+      return { contents: [{ uri: uri, mimeType: 'application/octet-stream', blob: 'Y2Rk' }] } if uri == 'mcp://cdd/blob'
 
       { contents: [{ uri: uri, mimeType: 'application/json', text: '{"message":"AST placeholder"}' }] }
     end
@@ -325,6 +334,18 @@ module Cdd
     # @param uri [String] the resource URI
     # @return [void]
     def unsubscribe(uri)
+      # no-op
+    end
+
+    # Handles `notifications/initialized` acknowledgment from the client.
+    # @return [void]
+    def initialized
+      # no-op
+    end
+
+    # Handles graceful MCP connection close/disconnect.
+    # @return [void]
+    def close
       # no-op
     end
 
@@ -349,7 +370,16 @@ module Cdd
     # Samples a message
     # @return [Hash] the sampled message
     def sample_message
-      { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
+      {
+        role: 'assistant',
+        model: 'stub-model',
+        stopReason: 'endTurn',
+        content: {
+          type: 'text',
+          text: 'sampled',
+          annotations: { audience: ['user'], priority: 0.5 }
+        }
+      }
     end
 
     # Completes a prompt

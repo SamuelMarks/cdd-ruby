@@ -44,13 +44,15 @@ module Cdd
         end
       end
 
-      # Parses `@api_server`, `@api_tag`, `@api_externalDocs`, and `@api_webhook` comments.
+      # Parses `@api_produces`, `@api_server`, `@api_tag`, `@api_externalDocs`, and `@api_webhook` comments.
       #
       # @param comment [String] raw comment text
       # @param spec [Hash] OpenAPI specification hash
       # @return [void]
       def self.parse_api_collection_comment(comment, spec)
         case comment
+        when /#\s*@api_produces\s+(.*)/
+          spec['produces'] = ::Regexp.last_match(1).split(/\s*,\s*/).reject(&:empty?)
         when /#\s*@api_server\s+(\S+)(?:\s+(.*))?/
           (spec['servers'] ||= []) << build_described_entry('url', ::Regexp.last_match(1), ::Regexp.last_match(2))
         when /#\s*@api_tag\s+(\S+)(?:\s+(.*))?/

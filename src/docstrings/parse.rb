@@ -53,13 +53,63 @@ module Cdd
         PRIMITIVE_TYPES.include?(down) ? { 'type' => down } : { '$ref' => "#/components/schemas/#{schema_type}" }
       end
 
-      # Applies coerced key-value pairs onto a target hash.
+      # Applies coerced key-value pairs (including nested `items.*`, `itemSchema`, `itemEncoding.*`,
+      # `prefixEncoding.*`, and `flows.*`) onto a target hash.
       #
       # @param target [Hash] destination hash
       # @param pairs [Hash] raw string key-value pairs
       # @return [void]
       def apply_coerced_pairs(target, pairs)
-        (pairs || {}).each { |k, v| target[k] = coerce_boolean_or_string(v) }
+        (pairs || {}).each { |k, v| apply_single_pair(target, k, v) }
+      end
+
+      # Applies a single option key-value pair onto `target`.
+      #
+      # @param target [Hash] destination hash
+      # @param key [String] option key
+      # @param val [String] raw option value
+      # @return [void]
+      def apply_single_pair(target, key, val)
+        coerced = coerce_boolean_or_string(val)
+        if key.start_with?('items.')
+          (target['items'] ||= {})[key.sub('items.', '')] = coerced
+        elsif key == 'itemSchema'
+          target['itemSchema'] = schema_or_ref(val)
+        elsif key.start_with?('itemEncoding.')
+          (target['itemEncoding'] ||= {})[key.sub('itemEncoding.', '')] = coerced
+        elsif key.start_with?('prefixEncoding.')
+          (target['prefixEncoding'] ||= [{}]).first[key.sub('prefixEncoding.', '')] = coerced
+        elsif key.start_with?('flows.')
+          _, flow_name, flow_prop = key.split('.', 3)
+          ((target['flows'] ||= {})[flow_name] ||= { 'scopes' => {} })[flow_prop] = val
+        else
+          target[key] = coerced
+        end
+      end
+
+      # Checks whether an option key belongs on the inner MediaType object rather than RequestBody.
+      #
+      # @param key [String] option key
+      # @return [Boolean] true if media-type-scoped option
+      def media_type_option_key?(key)
+        key == 'itemSchema' || key.start_with?('itemEncoding.', 'prefixEncoding.')
+      end
+
+      # Applies requestBody option pairs, routing media-type-specific keys to the media type entry.
+      #
+      # @param rb [Hash] OpenAPI RequestBody hash
+      # @param media_type [String] media type key
+      # @param pairs [Hash] option key-value pairs
+      # @return [void]
+      def apply_request_body_pairs(rb, media_type, pairs)
+        media_obj = rb.dig('content', media_type)
+        (pairs || {}).each do |k, v|
+          if media_obj && media_type_option_key?(k)
+            apply_single_pair(media_obj, k, v)
+          else
+            apply_single_pair(rb, k, v)
+          end
+        end
       end
 
       # Applies dotted or flat key-value pairs onto a Link hash.
@@ -116,15 +166,18 @@ module Cdd
     module ComponentAttacher
       include TagHelpers
 
-      # Parses `@security_scheme`, `@schema_xml`, `@schema_one_of`, `@schema_any_of`, and `@schema` tags.
+      # Parses `@security_scheme`, `@security_definition`, `@schema_xml`, `@schema_one_of`,
+      # `@schema_any_of`, and `@schema` tags.
       #
       # @param comment [String] raw comment line
       # @param ir [Cdd::IR] Intermediate Representation
       # @return [Boolean] true if matched
       def parse_schema_tags?(comment, ir)
         case comment
-        when /#\s*@security_scheme\s+(\w+)\s+(\w+)(?:\s+(.*))?/
-          parse_security_scheme_tag(::Regexp.last_match(1), ::Regexp.last_match(2), ::Regexp.last_match(3) || '', ir)
+        when /#\s*@(security_scheme|security_definition)\s+(\w+)\s+(\w+)(?:\s+(.*))?/
+          is_def = ::Regexp.last_match(1) == 'security_definition'
+          parse_security_scheme_tag(::Regexp.last_match(2), ::Regexp.last_match(3),
+                                    ::Regexp.last_match(4) || '', ir, is_definition: is_def)
         when /#\s*@schema_xml\s+(\w+)(?:\s+(.*))?/
           parse_schema_xml_tag(::Regexp.last_match(1), ::Regexp.last_match(2) || '', ir)
         when /#\s*@(schema_one_of|schema_any_of)\s+(\w+)\s+(.*)/
@@ -138,20 +191,25 @@ module Cdd
         true
       end
 
-      # Parses a `@security_scheme` tag into `components.securitySchemes`.
+      # Parses a `@security_scheme` or `@security_definition` tag into the IR.
       #
       # @param scheme_name [String] security scheme key
       # @param type [String] security scheme type
       # @param rest [String] options and description
       # @param ir [Cdd::IR] Intermediate Representation
+      # @param is_definition [Boolean] true to store in Swagger 2.0 `securityDefinitions`
       # @return [void]
-      def parse_security_scheme_tag(scheme_name, type, rest, ir)
+      def parse_security_scheme_tag(scheme_name, type, rest, ir, is_definition: false)
         pairs, parsed_rest = parse_rest(rest)
-        ir.openapi_spec['components'] ||= {}
-        ir.openapi_spec['components']['securitySchemes'] ||= {}
-        scheme = { 'type' => type }.merge(pairs)
+        scheme = { 'type' => type }
+        apply_coerced_pairs(scheme, pairs)
         scheme['description'] = parsed_rest.strip unless parsed_rest.strip.empty?
-        ir.openapi_spec['components']['securitySchemes'][scheme_name] = scheme
+        if is_definition
+          (ir.openapi_spec['securityDefinitions'] ||= {})[scheme_name] = scheme
+        else
+          ir.openapi_spec['components'] ||= {}
+          (ir.openapi_spec['components']['securitySchemes'] ||= {})[scheme_name] = scheme
+        end
       end
 
       # Parses a `@schema_xml` tag into a schema's `xml` metadata object.
@@ -214,7 +272,7 @@ module Cdd
         ir.openapi_spec['components'] ||= {}
         ir.openapi_spec['components']['schemas'] ||= {}
         schema = (ir.openapi_spec['components']['schemas'][schema_name] ||= { 'type' => 'object', 'properties' => {} })
-        pairs.each { |k, v| schema[k] = v }
+        pairs.each { |k, v| schema[k] = k == 'readOnly' ? coerce_boolean_or_string(v) : v }
         schema['description'] = parsed_rest.strip unless parsed_rest.strip.empty?
       end
 
@@ -231,13 +289,13 @@ module Cdd
         when /#\s*@component_request_body\s+(\w+)\s+\[(\w+)\]\s+(\S+)(?:\s+(.*))?/
           parse_component_request_body(::Regexp.last_match(1), ::Regexp.last_match(2),
                                        ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
-        when /#\s*@component_header\s+(\w+)\s+\[(\w+)\](?:\s+(.*))?/
+        when /#\s*@component_media_type\s+(\w+)\s+\[(\w+)\](?:\s+(.*))?/
+          parse_component_media_type(::Regexp.last_match(1), ::Regexp.last_match(2),
+                                     ::Regexp.last_match(3) || '', ir)
+        when /#\s*@component_header\s+([A-Za-z0-9_-]+)\s+\[(\w+)\](?:\s+(.*))?/
           parse_component_header(::Regexp.last_match(1), ::Regexp.last_match(2), ::Regexp.last_match(3) || '', ir)
         when /#\s*@component_link\s+(\w+)(?:\s+(.*))?/
           parse_component_link(::Regexp.last_match(1), ::Regexp.last_match(2) || '', ir)
-        when /#\s*@component_response\s+(\w+)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
-          parse_component_response(::Regexp.last_match(1), ::Regexp.last_match(2),
-                                   ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
         else
           return parse_component_callback_tags?(comment, ir)
         end
@@ -272,10 +330,25 @@ module Cdd
       def parse_component_request_body(name, schema_name, media_type, rest, ir)
         pairs, parsed_rest = parse_rest(rest)
         rb = { 'content' => { media_type => { 'schema' => { '$ref' => "#/components/schemas/#{schema_name}" } } } }
-        apply_coerced_pairs(rb, pairs)
+        apply_request_body_pairs(rb, media_type, pairs)
         rb['description'] = parsed_rest.strip unless parsed_rest.empty?
         ir.openapi_spec['components'] ||= {}
         (ir.openapi_spec['components']['requestBodies'] ||= {})[name] = rb
+      end
+
+      # Parses `@component_media_type` into `components.mediaTypes`.
+      #
+      # @param name [String] mediaType component key
+      # @param schema_name [String] type or schema reference
+      # @param rest [String] trailing options
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def parse_component_media_type(name, schema_name, rest, ir)
+        pairs, _parsed_rest = parse_rest(rest)
+        mt = { 'schema' => schema_or_ref(schema_name) }
+        apply_coerced_pairs(mt, pairs)
+        ir.openapi_spec['components'] ||= {}
+        (ir.openapi_spec['components']['mediaTypes'] ||= {})[name] = mt
       end
 
       # Parses `@component_header` into `components.headers`.
@@ -324,13 +397,16 @@ module Cdd
         (ir.openapi_spec['components']['responses'] ||= {})[name] = resp
       end
 
-      # Parses `@component_callback*` tags into `components.callbacks`.
+      # Parses `@component_response` and `@component_callback*` tags into `components`.
       #
       # @param comment [String] raw comment line
       # @param ir [Cdd::IR] Intermediate Representation
       # @return [Boolean] true if matched
       def parse_component_callback_tags?(comment, ir)
         case comment
+        when /#\s*@component_response\s+(\w+)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
+          parse_component_response(::Regexp.last_match(1), ::Regexp.last_match(2),
+                                   ::Regexp.last_match(3), ::Regexp.last_match(4).to_s, ir)
         when /#\s*@component_callback\s+(\w+)\s+(\S+)\s+(get|put|post|delete|options|head|patch|trace|query)/i
           name = ::Regexp.last_match(1)
           url = ::Regexp.last_match(2)
@@ -340,10 +416,10 @@ module Cdd
           ((cbs[name] ||= {})[url] ||= {})[method] ||= { 'responses' => { '200' => { 'description' => 'OK' } } }
         when /#\s*@component_callback_request_body\s+\[(\w+)\]\s+(\S+)(?:\s+(.*))?/
           attach_component_callback_request_body(::Regexp.last_match(1), ::Regexp.last_match(2),
-                                                 (::Regexp.last_match(3) || '').strip, ir)
+                                                 ::Regexp.last_match(3).to_s.strip, ir)
         when /#\s*@component_callback_response\s+(\d+|default)(?:\s+\[(\w+)\]\s+(\S+))?(?:\s+(.*))?/
           attach_component_callback_response(::Regexp.last_match(1), ::Regexp.last_match(2),
-                                             ::Regexp.last_match(3), ::Regexp.last_match(4) || '', ir)
+                                             ::Regexp.last_match(3), ::Regexp.last_match(4).to_s, ir)
         else
           return false
         end
@@ -387,40 +463,46 @@ module Cdd
     module OperationAttacher
       include TagHelpers
 
-      # Assembles an OpenAPI operation hash from accumulated tags when `@route` or `@webhook` is encountered.
+      # Assembles an OpenAPI operation hash from accumulated tags when `@route`, `@webhook`,
+      # or `@additional_route` is encountered.
       #
-      # @param is_webhook [Boolean] true if `@webhook`, false if `@route`
-      # @param method [String] lowercase HTTP method
+      # @param op_kind [String] `'route'`, `'webhook'`, or `'additional_route'`
+      # @param method [String] HTTP method
       # @param path [String] route path or webhook name
       # @param current_tags [Array<Hash>] accumulated operation tags
       # @param ir [Cdd::IR] Intermediate Representation
       # @return [void]
-      def build_operation_from_tags(is_webhook, method, path, current_tags, ir)
+      def build_operation_from_tags(op_kind, method, path, current_tags, ir)
+        is_webhook = op_kind == 'webhook'
         root_key = is_webhook ? 'webhooks' : 'paths'
         ir.routes |= ["#{method.upcase} #{path}"] unless is_webhook
-        ir.openapi_spec[root_key] ||= {}
-        ir.openapi_spec[root_key][path] ||= {}
+        target_path = ((ir.openapi_spec[root_key] ||= {})[path] ||= {})
 
         ctx = {
           op: { 'responses' => { '200' => { 'description' => 'OK' } } },
-          params: [],
-          security: [],
-          tags: [],
-          servers: [],
-          path: path,
-          ir: ir
+          params: [], security: [], tags: [], servers: [], path: path, ir: ir
         }
-
         current_tags.each { |tag| apply_operation_tag(tag, ctx) }
         extract_implicit_path_params(path, ctx[:params])
+        finalize_operation_collections(ctx)
 
+        if op_kind == 'additional_route'
+          (target_path['additionalOperations'] ||= {})[method] = ctx[:op]
+        else
+          target_path[method] = ctx[:op]
+        end
+        current_tags.clear
+      end
+
+      # Copies non-empty `params`, `security`, `tags`, and `servers` arrays from `ctx` onto `ctx[:op]`.
+      #
+      # @param ctx [Hash] operation builder context
+      # @return [void]
+      def finalize_operation_collections(ctx)
         ctx[:op]['parameters'] = ctx[:params] unless ctx[:params].empty?
         ctx[:op]['security'] = ctx[:security] unless ctx[:security].empty?
         ctx[:op]['tags'] = ctx[:tags] unless ctx[:tags].empty?
         ctx[:op]['servers'] = ctx[:servers] unless ctx[:servers].empty?
-
-        ir.openapi_spec[root_key][path][method] = ctx[:op]
-        current_tags.clear
       end
 
       # Applies a single accumulated tag hash onto the operation builder context.
@@ -477,7 +559,7 @@ module Cdd
         when :request_body
           ref_schema = { '$ref' => "#/components/schemas/#{tag[:schema_name]}" }
           rb = { 'content' => { tag[:media_type] => { 'schema' => ref_schema } } }
-          apply_coerced_pairs(rb, tag[:options])
+          apply_request_body_pairs(rb, tag[:media_type], tag[:options])
           rb['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
           op['requestBody'] = rb
         when :request_body_ref
@@ -626,7 +708,7 @@ module Cdd
         end
       end
 
-      # Applies scalar metadata tags (`:operationId`, `:summary`, `:description`, `:deprecated`, etc.).
+      # Applies scalar metadata tags (`:operationId`, `:summary`, `:description`, `:deprecated`, `:produces`, etc.).
       #
       # @param tag [Hash] parsed tag entry
       # @param ctx [Hash] operation builder context
@@ -638,6 +720,7 @@ module Cdd
         when :summary then op['summary'] = tag[:value]
         when :description then op['description'] = tag[:value]
         when :deprecated then op['deprecated'] = true
+        when :produces then op['produces'] = tag[:value]
         when :external_docs
           ed = { 'url' => tag[:url] }
           ed['description'] = tag[:description] if tag[:description] && !tag[:description].empty?
@@ -725,15 +808,11 @@ module Cdd
         return if parse_component_tags?(comment, ir)
         return if parse_operation_tags?(comment, current_tags, ir)
 
-        return unless comment =~ /#\s*@(route|webhook)\s+([A-Z]+)\s+(\S+)/i
+        return unless comment =~ /#\s*@(route|webhook|additional_route)\s+([A-Za-z0-9_-]+)\s+(\S+)/i
 
-        build_operation_from_tags(
-          ::Regexp.last_match(1).downcase == 'webhook',
-          ::Regexp.last_match(2).downcase,
-          ::Regexp.last_match(3),
-          current_tags,
-          ir
-        )
+        kind = ::Regexp.last_match(1).downcase
+        method_str = kind == 'additional_route' ? ::Regexp.last_match(2) : ::Regexp.last_match(2).downcase
+        build_operation_from_tags(kind, method_str, ::Regexp.last_match(3), current_tags, ir)
       end
 
       # Parses global and operation-level server and route-ref tags.
@@ -906,31 +985,24 @@ module Cdd
         true
       end
 
-      # Parses `@operationId`, `@tag`, `@summary`, `@description`, `@deprecated`, `@external_docs`, and `@path_*` tags.
+      # Parses `@operationId`, `@tag`, `@summary`, `@description`, `@deprecated`, `@produces`,
+      # `@external_docs`, and `@path_*` tags.
       #
       # @param comment [String] raw comment line
       # @param current_tags [Array<Hash>] accumulated operation tags
       # @return [Boolean] true if matched
       def self.parse_metadata_tags?(comment, current_tags)
         case comment
-        when /#\s*@operationId\s+(.*)/
-          current_tags << { type: :operationId, value: ::Regexp.last_match(1).strip }
-        when /#\s*@tag\s+(.*)/
-          current_tags << { type: :tag, value: ::Regexp.last_match(1).strip }
-        when /#\s*@summary\s+(.*)/
-          current_tags << { type: :summary, value: ::Regexp.last_match(1).strip }
-        when /#\s*@description\s+(.*)/
-          current_tags << { type: :description, value: ::Regexp.last_match(1).strip }
+        when /#\s*@(operationId|tag|summary|description|path_summary|path_description)\s+(.*)/
+          current_tags << { type: ::Regexp.last_match(1).to_sym, value: ::Regexp.last_match(2).strip }
         when /#\s*@deprecated/
           current_tags << { type: :deprecated }
+        when /#\s*@produces\s+(.*)/
+          current_tags << { type: :produces, value: ::Regexp.last_match(1).split(/\s*,\s*/).reject(&:empty?) }
         when /#\s*@external_docs\s+(\S+)(?:\s+(.*))?/
           desc = ::Regexp.last_match(2)
           current_tags << { type: :external_docs, url: ::Regexp.last_match(1).strip,
                             description: (desc && !desc.strip.empty? ? desc.strip : nil) }
-        when /#\s*@path_summary\s+(.*)/
-          current_tags << { type: :path_summary, value: ::Regexp.last_match(1).strip }
-        when /#\s*@path_description\s+(.*)/
-          current_tags << { type: :path_description, value: ::Regexp.last_match(1).strip }
         else
           return false
         end

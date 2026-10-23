@@ -520,6 +520,12 @@ module Cdd
             def handle_ping
               true
             end
+            def handle_initialized
+              true
+            end
+            def handle_close
+              true
+            end
             def handle_cancelled(request_id)
               # No-op for generated code
             end
@@ -530,7 +536,7 @@ module Cdd
               []
             end
             def sample_message
-              { role: 'assistant', model: 'stub-model', content: { type: 'text', text: 'sampled' } }
+              { role: 'assistant', model: 'stub-model', stopReason: 'endTurn', content: { type: 'text', text: 'sampled' } }
             end
             def handle_progress(progress_token, progress, total)
               # No-op for generated code
@@ -546,6 +552,8 @@ module Cdd
             end
             alias set_level handle_logging_level
             alias ping handle_ping
+            alias initialized handle_initialized
+            alias close handle_close
             alias cancelled handle_cancelled
             alias progress handle_progress
             alias subscribe handle_subscribe

@@ -18,7 +18,7 @@ module Cdd
         typed_paths.each do |path_item|
           next if path_item.ref
 
-          path_item.operations.each do |method, op|
+          path_item.operations.merge(path_item.additional_operations).each do |method, op|
             out += emit_client_method(path_item.path, method, op)
           end
         end

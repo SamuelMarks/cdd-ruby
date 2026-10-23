@@ -8,6 +8,7 @@ class OpenapiMetadataTest < Minitest::Test
       # @api_title My API
       # @api_version 1.2.3
       # @api_description The coolest API
+      # @api_produces application/json, application/xml
       # @api_self https://example.com/openapi.json
       # @api_jsonSchemaDialect https://json-schema.org/draft/2020-12/schema
       # @api_server https://example.com/api Production server
@@ -27,6 +28,7 @@ class OpenapiMetadataTest < Minitest::Test
     assert_equal 'My API', ir.openapi_spec['info']['title']
     assert_equal '1.2.3', ir.openapi_spec['info']['version']
     assert_equal 'The coolest API', ir.openapi_spec['info']['description']
+    assert_equal %w[application/json application/xml], ir.openapi_spec['produces']
     assert_equal 'https://example.com/openapi.json', ir.openapi_spec['$self']
     assert_equal 'https://json-schema.org/draft/2020-12/schema', ir.openapi_spec['jsonSchemaDialect']
 
@@ -55,6 +57,7 @@ class OpenapiMetadataTest < Minitest::Test
     assert_match(/# @api_title My API/, emitted)
     assert_match(/# @api_version 1.2.3/, emitted)
     assert_match(/# @api_description The coolest API/, emitted)
+    assert_match(%r{# @api_produces application/json, application/xml}, emitted)
     assert_match(%r{# @api_self https://example.com/openapi.json}, emitted)
     assert_match(%r{# @api_jsonSchemaDialect https://json-schema.org/draft/2020-12/schema}, emitted)
     assert_match(%r{# @api_server https://example.com/api Production server}, emitted)

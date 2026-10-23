@@ -114,11 +114,18 @@ end
     res_content = router.read_resource('mcp://cdd/ast')
     assert_equal 'mcp://cdd/ast', res_content[:contents][0][:uri]
 
+    blob_content = router.read_resource('mcp://cdd/blob')
+    assert_equal 'Y2Rk', blob_content[:contents][0][:blob]
+
     assert_raises(Cdd::McpError) { router.read_resource('mcp://unknown') }
 
     assert_nil router.subscribe('uri')
     assert_nil router.unsubscribe('uri')
+    assert_nil router.initialized
+    assert_nil router.close
     assert router.ping
+    assert_equal({}, router.dispatch_common_method('notifications/initialized'))
+    assert_equal({}, router.dispatch_common_method('close'))
     assert_nil router.set_level('debug')
     assert_nil router.cancelled('id')
     assert_nil router.progress('token', 1, 2)

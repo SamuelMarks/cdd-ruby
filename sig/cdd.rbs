@@ -94,6 +94,7 @@ module Cdd
       attr_reader description: String?
       attr_reader example: json_value
       attr_reader ref: String?
+      attr_reader read_only: bool?
     end
 
     class Schema < Data
@@ -108,6 +109,7 @@ module Cdd
       attr_reader xml: json_object?
       attr_reader example: json_value
       attr_reader description: String?
+      attr_reader read_only: bool?
     end
 
     class Parameter < Data
@@ -122,6 +124,8 @@ module Cdd
       attr_reader allow_empty_value: bool?
       attr_reader deprecated: bool?
       attr_reader examples: json_object?
+      attr_reader collection_format: String?
+      attr_reader items: json_object?
     end
 
     class Encoding < Data
@@ -131,13 +135,18 @@ module Cdd
       attr_reader explode: bool?
       attr_reader allow_reserved: bool?
       attr_reader description: String?
+      attr_reader prefix_encoding: Array[Encoding]
+      attr_reader item_encoding: Encoding?
     end
 
     class MediaType < Data
       attr_reader schema: json_object?
+      attr_reader item_schema: json_object?
       attr_reader example: json_value
       attr_reader examples: json_object?
       attr_reader encoding: Hash[String, Encoding]
+      attr_reader prefix_encoding: Array[Encoding]
+      attr_reader item_encoding: Encoding?
     end
 
     class RequestBody < Data
@@ -153,6 +162,8 @@ module Cdd
       attr_reader deprecated: bool?
       attr_reader example: json_value
       attr_reader examples: json_object?
+      attr_reader collection_format: String?
+      attr_reader items: json_object?
     end
 
     class Link < Data
@@ -187,6 +198,7 @@ module Cdd
       attr_reader servers: Array[json_object]?
       attr_reader deprecated: bool?
       attr_reader external_docs: json_object?
+      attr_reader produces: Array[String]?
     end
 
     class PathItem < Data
@@ -194,6 +206,7 @@ module Cdd
       attr_reader summary: String?
       attr_reader description: String?
       attr_reader operations: Hash[String, Operation]
+      attr_reader additional_operations: Hash[String, Operation]
       attr_reader parameters: Array[Parameter]
       attr_reader servers: Array[json_object]?
       attr_reader ref: String?
@@ -218,6 +231,7 @@ module Cdd
       attr_reader flows: OAuthFlows?
       attr_reader open_id_connect_url: String?
       attr_reader oauth2_metadata_url: String?
+      attr_reader authorization_url: String?
     end
 
     class Example < Data
@@ -388,10 +402,12 @@ module Cdd
     def self.build_workflow: (json_object raw) -> Workflow
     def self.build_arazzo_components: (json_object? raw) -> ArazzoComponents?
     def self.build_parameter: (json_object raw) -> Parameter
+    def self.build_encoding: (json_object raw) -> Encoding
     def self.build_media_type: (json_object raw) -> MediaType
     def self.build_request_body: (json_object? raw) -> RequestBody?
     def self.build_response: (String status, json_object raw) -> Response
     def self.build_operation: (String http_method, String path, json_object raw) -> Operation
+    def self.build_path_item_operations: (String path, json_object raw) -> [Hash[String, Operation], Hash[String, Operation]]
     def to_openapi_hash: () -> json_object
     def to_arazzo_hash: () -> json_object
     def typed_arazzo: () -> ArazzoSpec
@@ -511,7 +527,8 @@ module Cdd
   module Classes
     class Emitter
       def self.emit: (IR ir) -> String
-      def self.emit_security_schemes: (Hash[String, json_object] security_schemes) -> String
+      def self.emit_security_schemes: (Hash[String, json_object] security_schemes, ?String tag_name) -> String
+      def self.format_security_scheme_options: (json_object scheme) -> Array[String]
       def self.emit_composition_schema: (String tag_name, String name, Array[json_object] refs_array, json_object? discriminator) -> String
       def self.emit_object_schema: (IR::Schema schema, json_object raw_schema) -> String
       def self.format_class_header: (String name, Array[json_object]? all_of) -> String
@@ -632,6 +649,9 @@ module Cdd
       def coerce_boolean_or_string: (json_value val) -> json_value
       def schema_or_ref: (String schema_type) -> Hash[String, String]
       def apply_coerced_pairs: (json_object target, Hash[String, String]? pairs) -> void
+      def apply_single_pair: (json_object target, String key, String val) -> void
+      def media_type_option_key?: (String key) -> bool
+      def apply_request_body_pairs: (json_object rb, String media_type, Hash[String, String]? pairs) -> void
       def apply_link_pairs: (json_object link_obj, Hash[String, String] pairs) -> void
       def build_response_object: (String? schema_name, String? media_type, Hash[String, String] pairs, String? desc_text) -> json_object
       def last_callback_operation: (json_object? callbacks) -> json_object?
@@ -641,13 +661,14 @@ module Cdd
       include TagHelpers
 
       def parse_schema_tags?: (String comment, IR ir) -> bool
-      def parse_security_scheme_tag: (String scheme_name, String type, String rest, IR ir) -> void
+      def parse_security_scheme_tag: (String scheme_name, String type, String rest, IR ir, ?is_definition: bool) -> void
       def parse_schema_xml_tag: (String schema_name, String rest, IR ir) -> void
       def parse_composition_tag: (String comp_key, String schema_name, String rest, IR ir) -> void
       def parse_object_schema_tag: (String schema_name, String rest, IR ir) -> void
       def parse_component_tags?: (String comment, IR ir) -> bool
       def parse_component_param: (String name, String schema_type, String loc, String rest, IR ir) -> void
       def parse_component_request_body: (String name, String schema_name, String media_type, String rest, IR ir) -> void
+      def parse_component_media_type: (String name, String schema_name, String rest, IR ir) -> void
       def parse_component_header: (String name, String schema_type, String rest, IR ir) -> void
       def parse_component_link: (String name, String rest, IR ir) -> void
       def parse_component_response: (String name, String? schema_name, String? media_type, String rest, IR ir) -> void
@@ -659,7 +680,8 @@ module Cdd
     module OperationAttacher
       include TagHelpers
 
-      def build_operation_from_tags: (bool is_webhook, String method, String path, Array[Hash[Symbol, json_value]] current_tags, IR ir) -> void
+      def build_operation_from_tags: (String op_kind, String method, String path, Array[Hash[Symbol, json_value]] current_tags, IR ir) -> void
+      def finalize_operation_collections: (Hash[Symbol, json_value] ctx) -> void
       def apply_operation_tag: (Hash[Symbol, json_value] tag, Hash[Symbol, json_value] ctx) -> void
       def apply_param_tag: (Hash[Symbol, json_value] tag, Array[json_object] params) -> void
       def apply_request_body_tag: (Hash[Symbol, json_value] tag, json_object op) -> void
@@ -747,10 +769,14 @@ module Cdd
       def first_media_schema: (json_object content_map) -> [String, String]
       def format_options_list: (Array[String] opts) -> String
       def format_param_options: (json_object param) -> String
+      def format_header_options: (json_object hdr) -> String
+      def format_media_type_options: (json_object media_obj) -> String
+      def format_encoding_options: (json_object enc) -> String
       def format_link_options: (json_object link_obj) -> String
       def emit_components: (json_object components) -> String
       def emit_component_parameters: (json_object? parameters) -> String
       def emit_component_request_bodies: (json_object? request_bodies) -> String
+      def emit_component_media_types: (json_object? media_types) -> String
       def emit_component_headers: (json_object? headers) -> String
       def emit_component_responses: (json_object? responses) -> String
       def emit_component_links: (json_object? links) -> String
@@ -885,6 +911,8 @@ module Cdd
     def read_resource: (String uri) -> Hash[Symbol, Array[Hash[Symbol, String]]]
     def subscribe: (String uri) -> void
     def unsubscribe: (String uri) -> void
+    def initialized: () -> void
+    def close: () -> void
     def ping: () -> bool
     def get_roots: () -> Array[Hash[Symbol, String]]
     def get_resource_templates: () -> Array[Hash[Symbol, String]]

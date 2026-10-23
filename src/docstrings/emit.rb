@@ -25,7 +25,7 @@ module Cdd
         lines.empty? ? '' : "#{lines.join("\n")}\n"
       end
 
-      # Appends `@summary` and `@route` lines for a single typed `PathItem`.
+      # Appends `@summary`, `@route`, and `@additional_route` lines for a single typed `PathItem`.
       #
       # @param path_item [Cdd::IR::PathItem] typed OpenAPI path item
       # @param lines [Array<String>] accumulator array
@@ -34,6 +34,10 @@ module Cdd
         path_item.operations.each do |method, operation|
           lines << "# @summary #{operation.summary}" if operation.summary
           lines << "# @route #{method.upcase} #{path_item.path}"
+        end
+        path_item.additional_operations.each do |method, operation|
+          lines << "# @summary #{operation.summary}" if operation.summary
+          lines << "# @additional_route #{method.upcase} #{path_item.path}"
         end
       end
     end

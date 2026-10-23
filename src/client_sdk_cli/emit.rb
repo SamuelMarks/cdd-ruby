@@ -210,14 +210,15 @@ module Cdd
       # @param indent [String] leading whitespace indentation
       # @return [String] shared Ruby `elsif` branch lines
       def self.common_mcp_branch_lines(indent = '      ')
-        "#{indent}elsif %w[ping logging/setLevel resources/subscribe resources/unsubscribe].include?(req['method'])\n" \
+        "#{indent}elsif %w[ping logging/setLevel resources/subscribe resources/unsubscribe " \
+          "notifications/initialized close].include?(req['method'])\n" \
           "#{indent}  resp[:result] = {}\n" \
           "#{indent}elsif req['method'] == 'roots/list'\n" \
           "#{indent}  resp[:result] = { roots: [] }\n" \
           "#{indent}elsif req['method'] == 'resources/templates/list'\n" \
           "#{indent}  resp[:result] = { resourceTemplates: [] }\n" \
           "#{indent}elsif req['method'] == 'sampling/createMessage'\n" \
-          "#{indent}  resp[:result] = { role: 'assistant', model: 'stub-model', " \
+          "#{indent}  resp[:result] = { role: 'assistant', model: 'stub-model', stopReason: 'endTurn', " \
           "content: { type: 'text', text: 'sampled' } }\n" \
           "#{indent}elsif req['method'] == 'completion/complete'\n" \
           "#{indent}  resp[:result] = { completion: { values: [], total: 0, hasMore: false } }"
