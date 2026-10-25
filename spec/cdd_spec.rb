@@ -133,6 +133,20 @@ end
     assert_equal({}, router.get_prompt('name', {}))
     assert_equal({ completion: { values: [], total: 0, hasMore: false } }, router.complete('n', 'a', 'v'))
   end
+
+  def test_gemspec_and_gemfile_compatibility
+    root_dir = File.expand_path('..', __dir__)
+    spec = Gem::Specification.load(File.join(root_dir, 'cdd-ruby.gemspec'))
+    assert_equal ['MIT', 'Apache-2.0'], spec.licenses
+    assert_equal Gem::Requirement.new('>= 3.0.0'), spec.required_ruby_version
+    runtime_deps = spec.runtime_dependencies.to_h { |d| [d.name, d.requirement] }
+    assert_equal Gem::Requirement.new('>= 3.0'), runtime_deps['bigdecimal']
+    assert_equal Gem::Requirement.new('~> 1.8'), runtime_deps['webrick']
+    assert_equal %w[bigdecimal webrick], runtime_deps.keys.sort
+
+    gemfile_content = File.read(File.join(root_dir, 'Gemfile'))
+    assert_includes gemfile_content, "gem 'minitest', '>= 5.0'"
+  end
 end
 
 class CddEmitterCliTest < Minitest::Test

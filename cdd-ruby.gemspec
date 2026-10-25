@@ -9,19 +9,15 @@ Gem::Specification.new do |spec|
   spec.description   = 'AST-based bidirectional compiler to convert Ruby code to OpenAPI specs and vice versa ' \
                        'using only the Ruby standard library.'
   spec.homepage      = 'https://github.com/offscale/cdd-ruby'
-  spec.license       = 'Apache-2.0'
+  spec.licenses      = ['MIT', 'Apache-2.0']
 
   spec.files         = Dir.glob('src/**/*') + Dir.glob('bin/**/*') + %w[README.md]
   spec.bindir        = 'bin'
   spec.executables   = ['cdd-ruby']
   spec.require_paths = ['src']
 
-  spec.required_ruby_version = '>= 3.4.0'
-  spec.add_dependency 'activerecord', '~> 8.0'
-  spec.add_dependency 'faker', '~> 3.5'
-  spec.add_dependency 'pg', '~> 1.5'
-  spec.add_dependency 'sinatra', '~> 4.0'
-  spec.add_dependency 'sqlite3', '~> 2.0'
+  spec.required_ruby_version = '>= 3.0.0'
+  spec.add_dependency 'bigdecimal', '>= 3.0'
   spec.add_dependency 'webrick', '~> 1.8'
   spec.metadata['rubygems_mfa_required'] = 'true'
 end

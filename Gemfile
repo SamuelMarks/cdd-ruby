@@ -6,7 +6,7 @@ source 'https://rubygems.org'
 
 gem 'rspec', '~> 3.13'
 
-gem 'minitest', '~> 6.0'
+gem 'minitest', '>= 5.0'
 
 gem 'simplecov', '~> 0.22.0'
 gem 'yard', '~> 0.9.38'
