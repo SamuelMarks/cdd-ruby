@@ -19,6 +19,7 @@ module Cdd
       unless options[:no_installable_package]
         write_gemspec(out_dir, options, type, project_name)
         write_gemfile(out_dir, options, type)
+        write_rakefile(out_dir)
         write_rubocop_yml(out_dir)
         write_readme(out_dir, type, project_name)
       end
@@ -45,6 +46,7 @@ module Cdd
           spec.summary       = "Auto-generated #{type}"
           spec.files         = Dir.glob("**/*.rb")
           spec.require_paths = ["lib"]
+          spec.add_development_dependency "rake", "~> 13.0"
           spec.add_development_dependency "rspec", "~> 3.0"
           spec.add_development_dependency "rubocop", "~> 1.60"
       GEMSPEC
@@ -84,11 +86,33 @@ module Cdd
       gemfile = <<~GEMFILE
         source 'https://rubygems.org'
         gemspec
+        gem 'rake', '~> 13.0'
         gem 'rspec', group: :test
         gem 'rubocop', group: :development
       GEMFILE
       gemfile += server_gemfile_deps(options) if type == 'server'
       File.write(gemfile_path, gemfile)
+    end
+
+    # Writes `Rakefile` with `task :test` delegating to `rspec` if not already present in `out_dir`.
+    #
+    # @param out_dir [String] target directory
+    # @return [void]
+    def self.write_rakefile(out_dir)
+      rakefile_path = File.join(out_dir, 'Rakefile')
+      return if File.exist?(rakefile_path)
+
+      rakefile = <<~RAKEFILE
+        # frozen_string_literal: true
+
+        desc 'Run tests'
+        task :test do
+          sh 'bundle exec rspec'
+        end
+
+        task default: :test
+      RAKEFILE
+      File.write(rakefile_path, rakefile)
     end
 
     # Builds the server-specific gem lines for a generated `Gemfile`.

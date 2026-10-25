@@ -295,4 +295,127 @@ class ClientSdkTest < Minitest::Test
   ensure
     file.unlink
   end
+
+  def test_client_sdk_generated_rakefile_gemfile_and_integration_spec
+    spec = {
+      'openapi' => '3.0.0',
+      'basePath' => '/v2',
+      'components' => {
+        'schemas' => {
+          'Pet' => {
+            'type' => 'object',
+            'properties' => { 'id' => { 'type' => 'integer' }, 'name' => { 'type' => 'string' } }
+          },
+          'PetList' => {
+            'type' => 'array',
+            'items' => { '$ref' => '#/components/schemas/Pet' }
+          },
+          'ScalarString' => {
+            'type' => 'string'
+          }
+        }
+      },
+      'paths' => {
+        '/pets' => {
+          'get' => {
+            'operationId' => 'listPets',
+            'responses' => {
+              '200' => {
+                'description' => 'OK',
+                'content' => {
+                  'application/json' => {
+                    'schema' => { '$ref' => '#/components/schemas/PetList' }
+                  }
+                }
+              },
+              '500' => {
+                'description' => 'Internal Error'
+              }
+            }
+          },
+          'post' => {
+            'operationId' => 'createPet',
+            'responses' => {
+              '201' => {
+                'description' => 'Created',
+                'content' => {
+                  'application/json' => {
+                    'schema' => {
+                      'type' => 'object',
+                      'properties' => { 'id' => { 'type' => 'integer' } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        '/pets/accepted' => {
+          'post' => {
+            'operationId' => 'acceptPet',
+            'responses' => {
+              '202' => {
+                'description' => 'Accepted',
+                'schema' => { '$ref' => '#/components/schemas/ScalarString' }
+              }
+            }
+          }
+        },
+        '/pets/unknown_ref' => {
+          'get' => {
+            'operationId' => 'unknownRefPet',
+            'responses' => {
+              '200' => {
+                'description' => 'OK',
+                'schema' => { '$ref' => '#/definitions/MissingModel' }
+              }
+            }
+          }
+        },
+        '/pets/no_2xx' => {
+          'get' => {
+            'operationId' => 'no2xxPet',
+            'responses' => {
+              '404' => { 'description' => 'Not found' }
+            }
+          }
+        }
+      }
+    }
+    file = Tempfile.new(['openapi', '.json'])
+    file.write(spec.to_json)
+    file.close
+
+    Dir.mktmpdir do |dir|
+      Cdd::ClientSdk::Emitter.emit_sdk({ input: file.path, output: dir, tests: true })
+      gemfile_path = File.join(dir, 'Gemfile')
+      rakefile_path = File.join(dir, 'Rakefile')
+      integration_spec_path = File.join(dir, 'spec', 'integration_spec.rb')
+
+      assert File.exist?(gemfile_path)
+      assert File.exist?(rakefile_path)
+      assert File.exist?(integration_spec_path)
+
+      gemfile_content = File.read(gemfile_path)
+      assert_includes gemfile_content, "gem 'rake', '~> 13.0'"
+      assert_includes gemfile_content, "gem 'rspec'"
+
+      rakefile_content = File.read(rakefile_path)
+      assert_includes rakefile_content, 'task :test'
+      assert_includes rakefile_content, 'rspec'
+
+      integration_content = File.read(integration_spec_path)
+      assert RubyVM::InstructionSequence.compile(integration_content)
+      assert_includes integration_content, "ENV['BASE_URL'] || ENV['API_URL'] || 'http://127.0.0.1:8080/v2'"
+      assert_includes integration_content, 'TCPSocket.new(host, port).close'
+      assert_includes integration_content, "if !server_listening && File.exist?('../../generated_server/server.rb')"
+      assert_includes integration_content, "expect(client.last_response.code).not_to eq('500')"
+      assert_includes integration_content, "validate_response_not_sabotaged!(response, 'array')"
+      assert_includes integration_content, "validate_response_not_sabotaged!(response, 'object')"
+      assert_includes integration_content, 'validate_response_not_sabotaged!(response, nil)'
+      refute_includes integration_content, "skip 'Server is not available'"
+    end
+  ensure
+    file.unlink
+  end
 end

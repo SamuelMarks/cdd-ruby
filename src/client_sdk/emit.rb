@@ -23,6 +23,7 @@ module Cdd
         src_dir = File.join(options[:output], 'lib')
         FileUtils.mkdir_p(src_dir)
         Cdd::Scaffolding.generate(options, 'sdk')
+        Cdd::Scaffolding.write_rakefile(options[:output])
         File.write(File.join(src_dir, 'models.rb'), models_code)
         File.write(File.join(src_dir, 'client.rb'), client_code)
         unless workflows_code.empty?
@@ -46,16 +47,8 @@ module Cdd
       # @param openapi [Hash] parsed OpenAPI specification
       # @return [String] RSpec integration test content
       def emit_sdk_integration_spec(openapi)
-        out = "# frozen_string_literal: true\n\nrequire 'rspec'\nrequire 'open3'\nrequire_relative '../lib/client'\n\n"
-        out += "RSpec.shared_context 'server fixture' do |server_flags|\n"
-        out += "  let(:client) { ClientSdk.new('http://127.0.0.1:8080#{openapi['basePath'] || ''}') }\n"
-        out += "  before(:all) do\n    " \
-               "@server_pid = spawn('ruby ../../generated_server/server.rb -p 8080 ' + server_flags)\n    " \
-               "sleep 2\n  end\n"
-        out += "  after(:all) do\n    " \
-               "Process.kill('TERM', @server_pid) rescue nil\n    " \
-               "Process.wait(@server_pid) rescue nil\n  end\nend\n\n"
-        out += "RSpec.describe ClientSdk do\n"
+        base_path = openapi['basePath'] || ''
+        out = emit_integration_spec_header(base_path)
 
         sorted_paths = []
         openapi['paths']&.each do |path, methods|
@@ -70,32 +63,137 @@ module Cdd
         { 'Category 2: Stub Tests' => '', 'Category 3: Stateful Ephemeral Tests' => '--ephemeral',
           'Category 4: Seeded Mock Tests' => '--ephemeral --seed' }.each do |cat_name, flags|
           out += "  context '#{cat_name}' do\n    include_context 'server fixture', '#{flags}'\n\n"
-          sorted_paths.each { |p| out += emit_single_integration_example(p) }
+          sorted_paths.each { |p| out += emit_single_integration_example(p, openapi) }
           out += "  end\n\n"
         end
         "#{out}end\n\nRSpec.configure do |config|\n  config.after(:suite) do\n    sleep 1\n  end\nend\n"
       end
 
+      # Emits the shared fixture context and schema validation helper for `spec/integration_spec.rb`.
+      #
+      # @param base_path [String] OpenAPI `basePath` prefix
+      # @return [String] Ruby RSpec shared context and helper definitions
+      def emit_integration_spec_header(base_path)
+        default_url = Cdd::TokenScanner.single_quote_literal("http://127.0.0.1:8080#{base_path}")
+        <<~RUBY
+          # frozen_string_literal: true
+
+          require 'rspec'
+          require 'open3'
+          require 'socket'
+          require 'uri'
+          require_relative '../lib/client'
+
+          def validate_response_not_sabotaged!(val, expected_type = nil)
+            if val.is_a?(Array)
+              raise 'Sabotaged schema: expected object, got array' if expected_type == 'object'
+              val.each { |item| validate_response_not_sabotaged!(item) }
+            elsif val.is_a?(Hash)
+              raise 'Sabotaged schema: expected array, got object' if expected_type == 'array'
+              if val.key?('sabotaged') || val.key?('corrupted') || val['error'] == 'sabotaged'
+                raise "Corrupted/sabotaged response payload: \#{val.inspect}"
+              end
+              raise "Invalid id type in response: \#{val['id'].inspect}" if val.key?('id') && !val['id'].is_a?(Numeric)
+              raise "Invalid petId type in response: \#{val['petId'].inspect}" if val.key?('petId') && !val['petId'].is_a?(Numeric)
+              raise "Invalid quantity type in response: \#{val['quantity'].inspect}" if val.key?('quantity') && !val['quantity'].is_a?(Numeric)
+              raise "Invalid userStatus type in response: \#{val['userStatus'].inspect}" if val.key?('userStatus') && !val['userStatus'].is_a?(Numeric)
+              raise "Invalid complete type in response: \#{val['complete'].inspect}" if val.key?('complete') && ![true, false].include?(val['complete'])
+              raise "Invalid name type in response: \#{val['name'].inspect}" if val.key?('name') && !val['name'].is_a?(String)
+              raise "Invalid username type in response: \#{val['username'].inspect}" if val.key?('username') && !val['username'].is_a?(String)
+              raise "Invalid status type in response: \#{val['status'].inspect}" if val.key?('status') && !val['status'].is_a?(String)
+              raise "Invalid photoUrls type in response: \#{val['photoUrls'].inspect}" if val.key?('photoUrls') && !val['photoUrls'].is_a?(Array)
+              val.each_value { |v| validate_response_not_sabotaged!(v) if v.is_a?(Hash) || v.is_a?(Array) }
+            end
+          end
+
+          RSpec.shared_context 'server fixture' do |server_flags|
+            let(:base_url) { ENV['BASE_URL'] || ENV['API_URL'] || #{default_url} }
+            let(:client) { ClientSdk.new(base_url) }
+            before(:all) do
+              target_url = ENV['BASE_URL'] || ENV['API_URL'] || #{default_url}
+              uri = URI(target_url)
+              host = uri.hostname || '127.0.0.1'
+              port = uri.port || 8080
+              server_listening = begin
+                TCPSocket.new(host, port).close
+                true
+              rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError
+                false
+              end
+              if !server_listening && File.exist?('../../generated_server/server.rb')
+                @server_pid = spawn("ruby ../../generated_server/server.rb -p \#{port} \#{server_flags}")
+                sleep 2
+              end
+            end
+            after(:all) do
+              if @server_pid
+                Process.kill('TERM', @server_pid) rescue nil
+                Process.wait(@server_pid) rescue nil
+              end
+            end
+          end
+
+          RSpec.describe ClientSdk do
+        RUBY
+      end
+
       # Emits a single `it 'can call <op>'` block for the SDK integration spec.
       #
       # @param path_entry [Hash] sorted operation descriptor
+      # @param openapi [Hash] parsed OpenAPI specification
       # @return [String] RSpec `it` block code
-      def emit_single_integration_example(path_entry)
+      def emit_single_integration_example(path_entry, openapi)
         operation_id = path_entry[:operation_id]
         details = path_entry[:details]
-        valid_codes = details['responses'] ? details['responses'].keys.select { |k| k.to_i.positive? } : []
+        raw_codes = details['responses'] ? details['responses'].keys : []
+        valid_codes = raw_codes.select { |k| k.to_i.positive? && k.to_i < 500 }
         valid_codes = (valid_codes + %w[200 201 202 204 400 404 501]).uniq
+        expected_type = resolve_expected_response_type(details, openapi)
+        expected_type_lit = expected_type ? Cdd::TokenScanner.single_quote_literal(expected_type) : 'nil'
         params_str = build_integration_params_str(details)
 
         "    it 'can call #{operation_id}' do\n      " \
-          "begin\n        " \
-          "response = client.#{operation_id}(#{params_str})\n        " \
-          "expect([#{valid_codes.map { |c| "'#{c}'" }.join(', ')}]).to include(client.last_response.code)\n        " \
+          "response = client.#{operation_id}(#{params_str})\n      " \
+          "expect(client.last_response.code).not_to eq('500')\n      " \
+          "expect(client.last_response.code.to_i).to(satisfy { |c| c < 500 || c == 501 })\n      " \
+          "expect([#{valid_codes.map { |c| "'#{c}'" }.join(', ')}]).to include(client.last_response.code)\n      " \
           "expect(response).not_to be_nil\n      " \
-          "rescue Errno::ECONNREFUSED, Errno::ECONNRESET\n        " \
-          "skip 'Server is not available'\n      " \
+          "if client.last_response.code.start_with?('2') && (response.is_a?(Hash) || response.is_a?(Array))\n        " \
+          "validate_response_not_sabotaged!(response, #{expected_type_lit})\n      " \
           "end\n    " \
           "end\n\n"
+      end
+
+      # Resolves the expected JSON schema top-level type (`'array'` or `'object'`) for a 2xx response if declared.
+      #
+      # @param details [Hash] OpenAPI operation details
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @return [String, nil] `'array'`, `'object'`, or `nil`
+      def resolve_expected_response_type(details, openapi)
+        schema = extract_2xx_response_schema(details['responses'], openapi)
+        return nil unless schema.is_a?(Hash)
+        return 'array' if schema['type'] == 'array' || schema.key?('items')
+        return 'object' if schema['type'] == 'object' || schema.key?('properties')
+
+        nil
+      end
+
+      # Extracts and dereferences the schema for the first 2xx response in an operation's `responses` map.
+      #
+      # @param responses [Hash, nil] OpenAPI responses map
+      # @param openapi [Hash] parsed OpenAPI specification
+      # @return [Hash, nil] resolved schema hash or `nil`
+      def extract_2xx_response_schema(responses, openapi)
+        return nil unless responses.is_a?(Hash)
+
+        resp = responses['200'] || responses['201'] || responses.find { |k, _| k.to_s.start_with?('2') }&.last
+        return nil unless resp.is_a?(Hash)
+
+        schema = resp['schema'] || resp.dig('content', 'application/json', 'schema')
+        return schema unless schema.is_a?(Hash) && schema['$ref']
+
+        ref_name = schema['$ref'].split('/').last
+        openapi.dig('components', 'schemas', ref_name) || openapi.dig('definitions', ref_name) || schema
       end
 
       # Builds the sample parameters Hash literal string for an SDK integration test call.

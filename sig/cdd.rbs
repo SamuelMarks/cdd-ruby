@@ -549,7 +549,10 @@ module Cdd
     module IntegrationSpecEmitter
       def write_sdk_artifacts: (Hash[Symbol, json_value] options, json_object openapi, String models_code, String client_code, ?String workflows_code) -> void
       def emit_sdk_integration_spec: (json_object openapi) -> String
-      def emit_single_integration_example: (Hash[Symbol, json_value] path_entry) -> String
+      def emit_integration_spec_header: (String base_path) -> String
+      def emit_single_integration_example: (Hash[Symbol, json_value] path_entry, json_object openapi) -> String
+      def resolve_expected_response_type: (json_object details, json_object openapi) -> String?
+      def extract_2xx_response_schema: (json_object? responses, json_object openapi) -> json_object?
       def build_integration_params_str: (json_object details) -> String
     end
 
@@ -948,6 +951,7 @@ module Cdd
     def self.write_gemspec: (String out_dir, Hash[Symbol, json_value] options, String type, String project_name) -> void
     def self.server_gemspec_deps: (Hash[Symbol, json_value] options) -> String
     def self.write_gemfile: (String out_dir, Hash[Symbol, json_value] options, String type) -> void
+    def self.write_rakefile: (String out_dir) -> void
     def self.server_gemfile_deps: (Hash[Symbol, json_value] options) -> String
     def self.write_rubocop_yml: (String out_dir) -> void
     def self.write_readme: (String out_dir, String type, String project_name) -> void

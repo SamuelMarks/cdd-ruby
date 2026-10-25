@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.homepage      = 'https://github.com/offscale/cdd-ruby'
   spec.licenses      = ['MIT', 'Apache-2.0']
 
-  spec.files         = Dir.glob('src/**/*') + Dir.glob('bin/**/*') + %w[README.md]
+  spec.files         = Dir.glob('src/**/*') + Dir.glob('bin/**/*') + %w[README.md Rakefile]
   spec.bindir        = 'bin'
   spec.executables   = ['cdd-ruby']
   spec.require_paths = ['src']

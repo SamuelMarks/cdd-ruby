@@ -143,9 +143,15 @@ end
     assert_equal Gem::Requirement.new('>= 3.0'), runtime_deps['bigdecimal']
     assert_equal Gem::Requirement.new('~> 1.8'), runtime_deps['webrick']
     assert_equal %w[bigdecimal webrick], runtime_deps.keys.sort
+    assert_includes spec.files, 'Rakefile'
 
     gemfile_content = File.read(File.join(root_dir, 'Gemfile'))
+    assert_includes gemfile_content, "gem 'rake', '~> 13.0'"
     assert_includes gemfile_content, "gem 'minitest', '>= 5.0'"
+
+    rakefile_content = File.read(File.join(root_dir, 'Rakefile'))
+    assert_includes rakefile_content, 'task :test'
+    assert_includes rakefile_content, 'rspec'
   end
 end
 
