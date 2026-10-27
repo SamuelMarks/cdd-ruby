@@ -152,6 +152,17 @@ end
     rakefile_content = File.read(File.join(root_dir, 'Rakefile'))
     assert_includes rakefile_content, 'task :test'
     assert_includes rakefile_content, 'rspec'
+
+    makefile_content = File.read(File.join(root_dir, 'Makefile'))
+    assert_includes makefile_content, "build_wasm:\n\t@BIN_DIR=$${BIN_DIR:-dist} python3 scripts/build_wasm.py"
+
+    make_bat_content = File.read(File.join(root_dir, 'make.bat'))
+    assert_includes make_bat_content, 'python scripts/build_wasm.py'
+
+    build_wasm_content = File.read(File.join(root_dir, 'scripts', 'build_wasm.py'))
+    assert_includes build_wasm_content, 'extend_ruby_path'
+    assert_includes build_wasm_content, 'Gem.bindir'
+    assert_includes build_wasm_content, 'cdd-ruby.wasm'
   end
 end
 

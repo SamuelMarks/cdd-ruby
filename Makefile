@@ -51,11 +51,7 @@ run: build
 	bundle exec ruby bin/cdd-ruby $(ARGS)
 
 build_wasm:
-	@BIN_DIR=$${BIN_DIR:-dist} ; \
-	mkdir -p $$BIN_DIR ; \
-	echo "Building WASM via ruby-wasm. It requires ruby.wasm packager." ; \
-	rbwasm build -o $$BIN_DIR/ruby.wasm --disable-gems; \
-	rbwasm pack $$BIN_DIR/ruby.wasm --dir src::/src --dir bin::/bin -o $$BIN_DIR/cdd-ruby.wasm;
+	@BIN_DIR=$${BIN_DIR:-dist} python3 scripts/build_wasm.py
 
 build_docker:
 	docker build -f alpine.Dockerfile -t cdd-ruby:alpine .

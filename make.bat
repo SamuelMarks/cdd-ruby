@@ -76,10 +76,7 @@ goto :eof
 :build_wasm
 if "%BIN_DIR%"=="" set BIN_DIR=dist
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
-echo Building WASM via ruby-wasm. It requires ruby.wasm packager.
-call rbwasm build -o "%BIN_DIR%\ruby.wasm" --disable-gems
-call rbwasm pack "%BIN_DIR%\ruby.wasm" --dir src::/src --dir bin::/bin -o "%BIN_DIR%\cdd-ruby.wasm"
-goto :eof
+python scripts/build_wasm.py
 goto :eof
 
 :build_docker
