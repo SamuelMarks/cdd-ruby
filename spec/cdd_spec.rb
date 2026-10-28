@@ -163,6 +163,8 @@ end
     assert_includes build_wasm_content, 'extend_ruby_path'
     assert_includes build_wasm_content, 'Gem.bindir'
     assert_includes build_wasm_content, 'cdd-ruby.wasm'
+    assert_includes build_wasm_content, 'build_pruned_usr_dir'
+    assert_includes build_wasm_content, 'optimize_wasm_binary'
   end
 end
 
