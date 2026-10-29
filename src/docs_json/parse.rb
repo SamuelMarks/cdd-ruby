@@ -18,6 +18,7 @@ module Cdd
         return ir unless payload.is_a?(Hash)
 
         parse_endpoints(payload['endpoints'], ir) if payload['endpoints'].is_a?(Hash)
+        parse_webhooks(payload['webhooks'], ir) if payload['webhooks'].is_a?(Hash)
         parse_workflows(payload['workflows'], ir) if payload['workflows'].is_a?(Hash)
         ir
       end
@@ -29,16 +30,36 @@ module Cdd
       # @return [void]
       def self.parse_endpoints(endpoints, ir)
         ir.openapi_spec['paths'] ||= {}
-        endpoints.each do |path, methods|
+        parse_operation_map(endpoints, ir.openapi_spec['paths'])
+      end
+
+      # Parses `webhooks` snippets from a docs_json payload into `ir.openapi_spec`.
+      #
+      # @param webhooks [Hash] webhooks map
+      # @param ir [Cdd::IR] Intermediate Representation
+      # @return [void]
+      def self.parse_webhooks(webhooks, ir)
+        ir.openapi_spec['webhooks'] ||= {}
+        parse_operation_map(webhooks, ir.openapi_spec['webhooks'])
+      end
+
+      # Parses an operation map (`endpoints` or `webhooks`) where each operation entry is a String or Hash.
+      #
+      # @param source_map [Hash] map of path or webhook name to HTTP method entries
+      # @param target [Hash] destination map in `ir.openapi_spec`
+      # @return [void]
+      def self.parse_operation_map(source_map, target)
+        source_map.each do |path, methods|
           next unless methods.is_a?(Hash)
 
-          ir.openapi_spec['paths'][path] ||= {}
-          methods.each do |method, snippet|
+          target[path] ||= {}
+          methods.each do |method, entry|
             op = { 'responses' => { '200' => { 'description' => 'OK' } } }
+            snippet = entry.is_a?(Hash) ? entry['snippet'] : entry
             if snippet.is_a?(String) && snippet =~ /client\.([a-zA-Z0-9_]+)\s*\(/
               op['operationId'] = ::Regexp.last_match(1)
             end
-            ir.openapi_spec['paths'][path][method.downcase] = op
+            target[path][method.downcase] = op
           end
         end
       end

@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
+require_relative 'src/error'
+
 Gem::Specification.new do |spec|
   spec.name = 'cdd-ruby'
-  spec.version = '0.0.4'
+  spec.version = Cdd::VERSION
   spec.authors       = ['CDD Developer']
   spec.email         = ['developer@example.com']
   spec.summary       = 'Compiler Driven Development for Ruby <-> OpenAPI 3.2.0'

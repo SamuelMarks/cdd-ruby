@@ -623,15 +623,23 @@ module Cdd
 
   module DocsJson
     class Emitter
+      IMPORTS_SNIPPET: String
+      WRAPPER_START_SNIPPET: String
+      WRAPPER_END_SNIPPET: String
+
       def self.emit: (String filepath, ?no_imports: bool, ?no_wrapping: bool) -> String
       def self.load_spec: (String filepath) -> json_object
-      def self.build_path_snippets: (String path, json_object ops, no_imports: bool, no_wrapping: bool) -> Hash[String, String]
-      def self.format_operation_snippet: (String op_id, no_imports: bool, no_wrapping: bool) -> String
+      def self.build_collection_snippets: (json_object? collection, no_imports: bool, no_wrapping: bool) -> Hash[String, Hash[String, Hash[String, String]]]
+      def self.build_path_snippets: (String path, json_object ops, no_imports: bool, no_wrapping: bool) -> Hash[String, Hash[String, String]]
+      def self.build_operation_args: (json_object op_details) -> String
+      def self.format_operation_snippet: (String op_id, no_imports: bool, no_wrapping: bool, ?args_str: String) -> Hash[String, String]
     end
 
     class Parser
       def self.parse: (Array[ripper_token] | String | json_object tokens, IR ir) -> IR
       def self.parse_endpoints: (json_object endpoints, IR ir) -> void
+      def self.parse_webhooks: (json_object webhooks, IR ir) -> void
+      def self.parse_operation_map: (json_object source_map, json_object target) -> void
       def self.parse_workflows: (json_object workflows, IR ir) -> void
       def self.extract_payload: (Array[ripper_token] | String | json_object source) -> json_object?
     end

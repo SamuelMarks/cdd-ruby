@@ -137,6 +137,9 @@ end
   def test_gemspec_and_gemfile_compatibility
     root_dir = File.expand_path('..', __dir__)
     spec = Gem::Specification.load(File.join(root_dir, 'cdd-ruby.gemspec'))
+    tag_version = `git -C #{root_dir} describe --tags --abbrev=0`.strip.sub(/\Av/, '')
+    assert_equal tag_version, Cdd::VERSION
+    assert_equal tag_version, spec.version.to_s
     assert_equal ['MIT', 'Apache-2.0'], spec.licenses
     assert_equal Gem::Requirement.new('>= 3.0.0'), spec.required_ruby_version
     runtime_deps = spec.runtime_dependencies.to_h { |d| [d.name, d.requirement] }

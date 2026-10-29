@@ -421,8 +421,10 @@ end
     assert json['endpoints'].key?('/users/{id}')
     assert json['endpoints']['/users/{id}'].key?('get')
 
-    code = json['endpoints']['/users/{id}']['get']
-    assert_match(/getUser/, code)
+    entry = json['endpoints']['/users/{id}']['get']
+    assert_match(/getUser/, entry['snippet'])
+    assert json.key?('webhooks')
+    assert json['webhooks'].key?('newPet')
   end
 
   def test_cli_scaffolding
@@ -574,6 +576,13 @@ end
       CDD::CLI.run(['to_docs_json', '-i', @json_path, '-o', out_docs])
     end
     assert File.exist?(out_docs)
+
+    dir_target = File.join(@out_dir, 'docs_dir')
+    FileUtils.mkdir_p(dir_target)
+    capture_stdout do
+      CDD::CLI.run(['to_docs_json', '-i', @json_path, '-o', dir_target])
+    end
+    assert File.exist?(File.join(dir_target, 'docs.json'))
   end
 
   def test_cli_to_docs_json_default_out

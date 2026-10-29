@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'fileutils'
+require_relative 'error'
 
 # Core namespace for the CDD Ruby compiler and OpenAPI toolchain.
 module Cdd
@@ -41,7 +42,7 @@ module Cdd
       gemspec = <<~GEMSPEC
         Gem::Specification.new do |spec|
           spec.name          = "#{project_name}"
-          spec.version       = "0.1.0"
+          spec.version       = "#{Cdd::VERSION}"
           spec.authors       = ["CDD Generator"]
           spec.summary       = "Auto-generated #{type}"
           spec.files         = Dir.glob("**/*.rb")

@@ -20,6 +20,7 @@ class ScaffoldingTest < Minitest::Test
     options = { output: @out_dir, no_installable_package: false, no_github_actions: false }
     Cdd::Scaffolding.generate(options, 'server', 'test_proj')
     assert File.exist?(File.join(@out_dir, 'test_proj.gemspec'))
+    assert File.read(File.join(@out_dir, 'test_proj.gemspec')).include?(%(spec.version       = "#{Cdd::VERSION}"))
     assert File.exist?(File.join(@out_dir, 'Gemfile'))
     assert File.exist?(File.join(@out_dir, 'Rakefile'))
     assert File.read(File.join(@out_dir, 'Gemfile')).include?("gem 'rake', '~> 13.0'")

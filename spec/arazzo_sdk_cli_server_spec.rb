@@ -202,7 +202,7 @@ class ClientSdkCliServerArazzoTest < Minitest::Test
 
       docs_json_str = Cdd::DocsJson::Emitter.emit(arazzo_path)
       docs_hash = JSON.parse(docs_json_str)
-      assert_includes docs_hash['workflows']['checkout_flow'], 'client.checkout_flow()'
+      assert_includes docs_hash['workflows']['checkout_flow']['snippet'], 'client.checkout_flow()'
 
       docs_ir = Cdd::IR.new
       Cdd::DocsJson::Parser.parse(docs_json_str, docs_ir)

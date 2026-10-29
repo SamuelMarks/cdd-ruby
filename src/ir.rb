@@ -126,13 +126,13 @@ module Cdd
       @routes = []
       @openapi_spec = openapi_spec || {
         'openapi' => '3.2.0',
-        'info' => { 'title' => 'Generated API', 'version' => '0.0.4' },
+        'info' => { 'title' => 'Generated API', 'version' => Cdd::VERSION },
         'paths' => {},
         'components' => { 'schemas' => {} }
       }
       @arazzo_spec = arazzo_spec || {
         'arazzo' => '1.1.0',
-        'info' => { 'title' => 'Generated Workflows', 'version' => '0.0.4' },
+        'info' => { 'title' => 'Generated Workflows', 'version' => Cdd::VERSION },
         'sourceDescriptions' => [],
         'workflows' => []
       }

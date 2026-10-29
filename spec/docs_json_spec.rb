@@ -28,28 +28,104 @@ class DocsJsonTest < Minitest::Test
     out = Cdd::DocsJson::Emitter.emit(@filepath)
     parsed = JSON.parse(out)
 
+    assert_equal "require 'json'\nrequire 'my_api_client'", parsed['imports']
+    assert_equal "def main\n  client = MyApiClient.new('https://api.example.com')", parsed['wrapper_start']
+    assert_equal "end\n\nmain if __FILE__ == $0", parsed['wrapper_end']
+
     endpoints = parsed['endpoints']
     assert endpoints.key?('/users')
     assert endpoints['/users'].key?('get')
 
-    code = endpoints['/users']['get']
-    assert_match(/require 'json'/, code)
-    assert_match(/def main/, code)
-    assert_match(/response = client\.listUsers\(\)/, code)
-    assert_match(/end/, code)
+    entry = endpoints['/users']['get']
+    assert_equal "require 'json'\nrequire 'my_api_client'", entry['imports']
+    assert_equal "def main\n  client = MyApiClient.new('https://api.example.com')", entry['wrapper_start']
+    assert_equal "  response = client.listUsers()\n  puts response.inspect", entry['snippet']
+    assert_equal "end\n\nmain if __FILE__ == $0", entry['wrapper_end']
+    assert_match(/require 'json'/, entry['code'])
+    assert_match(/def main/, entry['code'])
+    assert_match(/response = client\.listUsers\(\)/, entry['code'])
+    assert_match(/end/, entry['code'])
   end
 
   def test_docs_json_emit_no_imports_no_wrapping
     out = Cdd::DocsJson::Emitter.emit(@filepath, no_imports: true, no_wrapping: true)
     parsed = JSON.parse(out)
 
-    code = parsed['endpoints']['/users']['get']
+    assert_nil parsed['imports']
+    assert_nil parsed['wrapper_start']
+    assert_nil parsed['wrapper_end']
 
-    refute_match(/require/, code)
-    refute_match(/def main/, code)
-    refute_match(/end
-/, code)
-    assert_match(/response = client\.listUsers\(\)/, code)
+    entry = parsed['endpoints']['/users']['get']
+    assert_nil entry['imports']
+    assert_nil entry['wrapper_start']
+    assert_nil entry['wrapper_end']
+    assert_equal "response = client.listUsers()\nputs response.inspect", entry['snippet']
+    assert_equal "response = client.listUsers()\nputs response.inspect", entry['code']
+  end
+
+  def test_docs_json_emit_params_webhooks_and_workflows
+    spec = {
+      'openapi' => '3.2.0',
+      'paths' => {
+        '/users/{id}' => {
+          'put' => {
+            'operationId' => 'updateUser',
+            'parameters' => [
+              { 'name' => 'id', 'in' => 'path', 'required' => true, 'schema' => { 'type' => 'integer' } },
+              { 'name' => 'status', 'in' => 'query', 'schema' => { 'type' => 'string' } }
+            ],
+            'requestBody' => {
+              'required' => true,
+              'content' => {
+                'application/json' => {
+                  'schema' => {
+                    'type' => 'object',
+                    'properties' => { 'name' => { 'type' => 'string' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      'webhooks' => {
+        'userUpdated' => {
+          'post' => {
+            'operationId' => 'onUserUpdated',
+            'requestBody' => {
+              'content' => {
+                'application/json' => {
+                  'schema' => { '$ref' => '#/components/schemas/User' }
+                }
+              }
+            }
+          }
+        }
+      },
+      'workflows' => [
+        { 'workflowId' => 'syncUsers' }
+      ]
+    }
+    spec_path = File.join(@tmp_dir, 'rich_openapi.json')
+    File.write(spec_path, spec.to_json)
+
+    out = Cdd::DocsJson::Emitter.emit(spec_path)
+    parsed = JSON.parse(out)
+
+    put_entry = parsed.dig('endpoints', '/users/{id}', 'put')
+    assert_includes put_entry['snippet'], "client.updateUser(id: 1, status: 'available', body: { name: 'test' })"
+
+    wh_entry = parsed.dig('webhooks', 'userUpdated', 'post')
+    assert_includes wh_entry['snippet'], 'client.onUserUpdated(body: {'
+
+    wf_entry = parsed.dig('workflows', 'syncUsers')
+    assert_includes wf_entry['snippet'], 'client.syncUsers()'
+
+    ir = Cdd::IR.new
+    Cdd::DocsJson::Parser.parse(out, ir)
+    assert_equal 'updateUser', ir.openapi_spec.dig('paths', '/users/{id}', 'put', 'operationId')
+    assert_equal 'onUserUpdated', ir.openapi_spec.dig('webhooks', 'userUpdated', 'post', 'operationId')
+    assert_includes ir.workflows, 'syncUsers'
   end
 
   def test_docs_json_emit_from_url

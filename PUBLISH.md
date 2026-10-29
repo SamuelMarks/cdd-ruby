@@ -4,7 +4,7 @@ This guide covers how to publish the `cdd-ruby` gem to rubygems.org and how to h
 
 ## Publishing the Gem
 
-1. Ensure the version is correct in `cdd-ruby.gemspec` and `bin/cdd-ruby`.
+1. Ensure the version is correct in `cdd-ruby.gemspec` and `src/error.rb`.
 2. Ensure you have a rubygems account and are logged in via `gem signin`.
 3. Build the gem using the make command:
    ```bash
@@ -12,7 +12,7 @@ This guide covers how to publish the `cdd-ruby` gem to rubygems.org and how to h
    ```
 4. Push the generated gem to RubyGems:
    ```bash
-   gem push cdd-ruby-0.0.2.gem
+   gem push cdd-ruby-0.0.4.gem
    ```
 
 ## Building & Hosting Docs

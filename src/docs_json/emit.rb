@@ -15,6 +15,15 @@ module Cdd
   module DocsJson
     # Emitter for generating OpenAPI endpoint documentation snippets in JSON format.
     class Emitter
+      # Default Ruby `require` statements for generated documentation snippets.
+      IMPORTS_SNIPPET = "require 'json'\nrequire 'my_api_client'"
+
+      # Opening `def main` and client initialization lines for wrapped snippets.
+      WRAPPER_START_SNIPPET = "def main\n  client = MyApiClient.new('https://api.example.com')"
+
+      # Closing `end` and script entrypoint guard for wrapped snippets.
+      WRAPPER_END_SNIPPET = "end\n\nmain if __FILE__ == $0"
+
       # Emits `docs_json` from an OpenAPI specification file or URL.
       #
       # @param filepath [String] OpenAPI spec filepath or URL
@@ -24,14 +33,15 @@ module Cdd
       # @raise [Cdd::UnsupportedEnvironmentError] when fetching remote URLs without `Net::HTTP` support
       def self.emit(filepath, no_imports: false, no_wrapping: false)
         spec = load_spec(filepath)
-        endpoints = {}
+        result = {}
+        result['imports'] = IMPORTS_SNIPPET unless no_imports
+        result['wrapper_start'] = WRAPPER_START_SNIPPET unless no_wrapping
+        result['wrapper_end'] = WRAPPER_END_SNIPPET unless no_wrapping
+        result['endpoints'] = build_collection_snippets(spec['paths'], no_imports: no_imports, no_wrapping: no_wrapping)
 
-        (spec['paths'] || {}).each do |path, ops|
-          path_map = build_path_snippets(path, ops, no_imports: no_imports, no_wrapping: no_wrapping)
-          endpoints[path] = path_map unless path_map.empty?
-        end
+        webhooks = build_collection_snippets(spec['webhooks'], no_imports: no_imports, no_wrapping: no_wrapping)
+        result['webhooks'] = webhooks unless webhooks.empty?
 
-        result = { 'endpoints' => endpoints }
         if spec['workflows'].is_a?(Array) && spec['workflows'].any?
           result['workflows'] = spec['workflows'].to_h do |wf|
             wf_id = wf['workflowId']
@@ -59,39 +69,80 @@ module Cdd
         end
       end
 
-      # Builds a map of HTTP method => code snippet for a single path entry.
+      # Builds a map of path or webhook name => HTTP method snippet objects.
       #
-      # @param path [String] OpenAPI path
+      # @param collection [Hash, nil] OpenAPI `paths` or `webhooks` map
+      # @param no_imports [Boolean] omit imports flag
+      # @param no_wrapping [Boolean] omit wrapping flag
+      # @return [Hash{String => Hash{String => Hash{String => String}}}] nested snippet map
+      def self.build_collection_snippets(collection, no_imports:, no_wrapping:)
+        out = {}
+        (collection || {}).each do |path, ops|
+          path_map = build_path_snippets(path, ops, no_imports: no_imports, no_wrapping: no_wrapping)
+          out[path] = path_map unless path_map.empty?
+        end
+        out
+      end
+
+      # Builds a map of HTTP method => structured code snippet object for a single path or webhook entry.
+      #
+      # @param path [String] OpenAPI path or webhook name
       # @param ops [Hash] path operations map
       # @param no_imports [Boolean] omit imports flag
       # @param no_wrapping [Boolean] omit wrapping flag
-      # @return [Hash{String => String}] method => snippet map
+      # @return [Hash{String => Hash{String => String}}] method => structured snippet map
       def self.build_path_snippets(path, ops, no_imports:, no_wrapping:)
         path_map = {}
         ops.each do |method, op_details|
           next if method.start_with?('x-') || %w[summary description parameters servers].include?(method.downcase)
 
           op_id = Cdd::TokenScanner.operation_id_for(method.downcase, path, op_details)
-          path_map[method.downcase] = format_operation_snippet(op_id, no_imports: no_imports, no_wrapping: no_wrapping)
+          args_str = build_operation_args(op_details)
+          path_map[method.downcase] = format_operation_snippet(
+            op_id, no_imports: no_imports, no_wrapping: no_wrapping, args_str: args_str
+          )
         end
         path_map
       end
 
-      # Formats the Ruby client invocation snippet for a single operationId.
+      # Builds a comma-separated sample keyword arguments string for an OpenAPI operation call.
+      #
+      # @param op_details [Hash] OpenAPI operation details
+      # @return [String] sample keyword arguments string
+      def self.build_operation_args(op_details)
+        args = (op_details['parameters'] || []).map do |param|
+          "#{param['name']}: #{Cdd::TokenScanner.sample_param_value(param)}"
+        end
+        if op_details['requestBody']
+          schema = Cdd::TokenScanner.first_request_body_schema(op_details)
+          args << "body: #{Cdd::TokenScanner.sample_body_hash_literal(schema, symbol_keys: true)}"
+        end
+        args.join(', ')
+      end
+
+      # Formats the structured Ruby client invocation snippet object for a single operationId.
       #
       # @param op_id [String] operationId name
       # @param no_imports [Boolean] omit imports flag
       # @param no_wrapping [Boolean] omit wrapping flag
-      # @return [String] formatted Ruby snippet
-      def self.format_operation_snippet(op_id, no_imports:, no_wrapping:)
-        snippet = []
-        snippet.push("require 'json'", "require 'my_api_client'", '') unless no_imports
-        snippet.push('def main', "  client = MyApiClient.new('https://api.example.com')") unless no_wrapping
-
+      # @param args_str [String] formatted sample argument list
+      # @return [Hash{String => String}] structured Ruby snippet object
+      def self.format_operation_snippet(op_id, no_imports:, no_wrapping:, args_str: '')
         indent = no_wrapping ? '' : '  '
-        snippet.push("#{indent}response = client.#{op_id}()", "#{indent}puts response.inspect")
-        snippet.push('end', '', 'main if __FILE__ == $0') unless no_wrapping
-        snippet.join("\n")
+        call_lines = "#{indent}response = client.#{op_id}(#{args_str})\n#{indent}puts response.inspect"
+        entry = {}
+        entry['imports'] = IMPORTS_SNIPPET unless no_imports
+        entry['wrapper_start'] = WRAPPER_START_SNIPPET unless no_wrapping
+        entry['snippet'] = call_lines
+        entry['wrapper_end'] = WRAPPER_END_SNIPPET unless no_wrapping
+
+        full_parts = []
+        full_parts.push(IMPORTS_SNIPPET, '') unless no_imports
+        full_parts.push(WRAPPER_START_SNIPPET) unless no_wrapping
+        full_parts.push(call_lines)
+        full_parts.push(WRAPPER_END_SNIPPET) unless no_wrapping
+        entry['code'] = full_parts.join("\n")
+        entry
       end
     end
   end

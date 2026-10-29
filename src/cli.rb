@@ -576,7 +576,7 @@ module Cdd
         end
 
         if argv.include?('-v') || argv.include?('--version')
-          puts '0.0.4'
+          puts Cdd::VERSION
           return 0
         end
 
@@ -841,6 +841,7 @@ module Cdd
         no_wrapping = get_arg(options, :no_wrapping, 'CDD_NO_WRAPPING', false)
         raise Cdd::ValidationError, 'Error: Missing -i <filepath>' if input.nil?
 
+        out = File.join(out, 'docs.json') if File.directory?(out)
         result = Cdd::DocsJson::Emitter.emit(input, no_imports: no_imports, no_wrapping: no_wrapping)
         write_or_print_output(out, result)
         0
