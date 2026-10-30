@@ -628,12 +628,15 @@ module Cdd
       WRAPPER_END_SNIPPET: String
 
       def self.emit: (String filepath, ?no_imports: bool, ?no_wrapping: bool) -> String
+      def self.generate: (String filepath, ?no_imports: bool, ?no_wrapping: bool) -> String
       def self.load_spec: (String filepath) -> json_object
       def self.build_collection_snippets: (json_object? collection, no_imports: bool, no_wrapping: bool) -> Hash[String, Hash[String, Hash[String, String]]]
       def self.build_path_snippets: (String path, json_object ops, no_imports: bool, no_wrapping: bool) -> Hash[String, Hash[String, String]]
       def self.build_operation_args: (json_object op_details) -> String
       def self.format_operation_snippet: (String op_id, no_imports: bool, no_wrapping: bool, ?args_str: String) -> Hash[String, String]
     end
+
+    Emit: singleton(Emitter)
 
     class Parser
       def self.parse: (Array[ripper_token] | String | json_object tokens, IR ir) -> IR

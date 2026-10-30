@@ -25,7 +25,7 @@ class DocsJsonTest < Minitest::Test
   end
 
   def test_docs_json_emit
-    out = Cdd::DocsJson::Emitter.emit(@filepath)
+    out = Cdd::DocsJson::Emit.generate(@filepath)
     parsed = JSON.parse(out)
 
     assert_equal "require 'json'\nrequire 'my_api_client'", parsed['imports']
@@ -39,11 +39,11 @@ class DocsJsonTest < Minitest::Test
     entry = endpoints['/users']['get']
     assert_equal "require 'json'\nrequire 'my_api_client'", entry['imports']
     assert_equal "def main\n  client = MyApiClient.new('https://api.example.com')", entry['wrapper_start']
-    assert_equal "  response = client.listUsers()\n  puts response.inspect", entry['snippet']
+    assert_equal "response = client.listUsers()\nputs response.inspect", entry['snippet']
     assert_equal "end\n\nmain if __FILE__ == $0", entry['wrapper_end']
     assert_match(/require 'json'/, entry['code'])
     assert_match(/def main/, entry['code'])
-    assert_match(/response = client\.listUsers\(\)/, entry['code'])
+    assert_match(/^  response = client\.listUsers\(\)\n  puts response\.inspect$/, entry['code'])
     assert_match(/end/, entry['code'])
   end
 

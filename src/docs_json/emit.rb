@@ -128,12 +128,13 @@ module Cdd
       # @param args_str [String] formatted sample argument list
       # @return [Hash{String => String}] structured Ruby snippet object
       def self.format_operation_snippet(op_id, no_imports:, no_wrapping:, args_str: '')
+        raw_snippet = "response = client.#{op_id}(#{args_str})\nputs response.inspect"
         indent = no_wrapping ? '' : '  '
         call_lines = "#{indent}response = client.#{op_id}(#{args_str})\n#{indent}puts response.inspect"
         entry = {}
         entry['imports'] = IMPORTS_SNIPPET unless no_imports
         entry['wrapper_start'] = WRAPPER_START_SNIPPET unless no_wrapping
-        entry['snippet'] = call_lines
+        entry['snippet'] = raw_snippet
         entry['wrapper_end'] = WRAPPER_END_SNIPPET unless no_wrapping
 
         full_parts = []
@@ -144,6 +145,13 @@ module Cdd
         entry['code'] = full_parts.join("\n")
         entry
       end
+
+      class << self
+        alias generate emit
+      end
     end
+
+    # Alias for `Cdd::DocsJson::Emitter`.
+    Emit = Emitter
   end
 end
