@@ -21,6 +21,9 @@ jobs:
           - 8081:8080
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
@@ -55,6 +58,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'

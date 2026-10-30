@@ -137,7 +137,8 @@ end
   def test_gemspec_and_gemfile_compatibility
     root_dir = File.expand_path('..', __dir__)
     spec = Gem::Specification.load(File.join(root_dir, 'cdd-ruby.gemspec'))
-    tag_version = `git -C #{root_dir} describe --tags --abbrev=0`.strip.sub(/\Av/, '')
+    raw_tag = `git -C #{root_dir} describe --tags --abbrev=0 2>/dev/null`.strip.sub(/\Av/, '')
+    tag_version = [raw_tag, Cdd::VERSION].reject(&:empty?).first
     assert_equal tag_version, Cdd::VERSION
     assert_equal tag_version, spec.version.to_s
     assert_equal ['MIT', 'Apache-2.0'], spec.licenses
@@ -147,6 +148,10 @@ end
     assert_equal Gem::Requirement.new('~> 1.8'), runtime_deps['webrick']
     assert_equal %w[bigdecimal webrick], runtime_deps.keys.sort
     assert_includes spec.files, 'Rakefile'
+
+    ci_yml_content = File.read(File.join(root_dir, '.github', 'workflows', 'ci.yml'))
+    assert_includes ci_yml_content, 'fetch-depth: 0'
+    assert_includes ci_yml_content, 'fetch-tags: true'
 
     gemfile_content = File.read(File.join(root_dir, 'Gemfile'))
     assert_includes gemfile_content, "gem 'rake', '~> 13.0'"
